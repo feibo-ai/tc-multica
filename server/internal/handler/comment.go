@@ -431,15 +431,10 @@ func (h *Handler) enqueueMentionedAgentTasks(ctx context.Context, issue db.Issue
 		if err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid {
 			continue
 		}
-		// Private agents can only be mentioned by the agent owner or workspace admin/owner.
-		if agent.Visibility == "private" && authorType == "member" {
-			isOwner := uuidToString(agent.OwnerID) == authorID
-			if !isOwner {
-				member, err := h.getWorkspaceMember(ctx, authorID, wsID)
-				if err != nil || !roleAllowed(member.Role, "owner", "admin") {
-					continue
-				}
-			}
+		// Private-agent gate (member→private requires allowed_principals;
+		// agent→agent always passes).
+		if !h.canAccessPrivateAgent(ctx, agent, authorType, authorID, wsID) {
+			continue
 		}
 		// Dedup: skip if this agent already has a pending task for this issue.
 		hasPending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{

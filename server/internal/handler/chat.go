@@ -60,6 +60,14 @@ func (h *Handler) CreateChatSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "agent is archived")
 		return
 	}
+	// Private-agent gate: members must be in allowed_principals to start
+	// a chat with a private agent. Agent-to-agent chat sessions bypass
+	// the gate so A2A collaboration still works.
+	actorType, actorID := h.resolveActor(r, userID, workspaceID)
+	if !h.canAccessPrivateAgent(r.Context(), agent, actorType, actorID, workspaceID) {
+		writeError(w, http.StatusForbidden, "you do not have access to this agent")
+		return
+	}
 
 	session, err := h.Queries.CreateChatSession(r.Context(), db.CreateChatSessionParams{
 		WorkspaceID: workspaceUUID,
@@ -294,6 +302,21 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 	// surfaces these as read-only.
 	if session.Status != "active" {
 		writeError(w, http.StatusBadRequest, "chat session is archived")
+		return
+	}
+	// Re-check the private-agent gate on every send. The session's creator
+	// passed the gate when CreateChatSession ran, but their workspace role
+	// (or the agent's owner) may have changed since — keep stale sessions
+	// from being a back-door into a private agent the user can no longer
+	// reach. Agent senders bypass the gate to preserve A2A collaboration.
+	agent, err := h.Queries.GetAgent(r.Context(), session.AgentID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "agent not found")
+		return
+	}
+	actorType, actorID := h.resolveActor(r, userID, workspaceID)
+	if !h.canAccessPrivateAgent(r.Context(), agent, actorType, actorID, workspaceID) {
+		writeError(w, http.StatusForbidden, "you do not have access to this agent")
 		return
 	}
 
