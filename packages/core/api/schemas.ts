@@ -306,3 +306,32 @@ export const EMPTY_CREATE_AGENT_FROM_TEMPLATE_RESPONSE: CreateAgentFromTemplateR
   imported_skill_ids: [],
   reused_skill_ids: [],
 };
+
+// ---------------------------------------------------------------------------
+// Squad detail — `GET /api/squads/{id}` carries an `issue_count` field that
+// the archive confirmation dialog uses to render "{leader} will take over N
+// issues". Three wire shapes must all be acceptable:
+//   1. Older server: field absent entirely.
+//   2. Current server, count query errored: field present, value `null`.
+//   3. Current server, happy path: field present, value `number`.
+// All three collapse to a single "no count → fall back to count-less copy"
+// branch on the consumer side, so this schema stays lenient and lets every
+// shape through. List/create/update responses don't carry the field by design
+// — the converter on the server side is shared and only the GetSquad handler
+// populates it, so wrapping those endpoints would lie about the wire shape.
+// ---------------------------------------------------------------------------
+export const SquadSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  name: z.string().catch(""),
+  description: z.string().catch(""),
+  instructions: z.string().catch(""),
+  avatar_url: z.string().nullable().catch(null),
+  leader_id: z.string(),
+  creator_id: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  archived_at: z.string().nullable().catch(null),
+  archived_by: z.string().nullable().catch(null),
+  issue_count: z.number().nullable().optional().catch(null),
+}).loose();

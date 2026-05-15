@@ -146,3 +146,17 @@ UPDATE issue
 SET first_executed_at = now()
 WHERE id = $1 AND first_executed_at IS NULL
 RETURNING id, workspace_id, creator_type, creator_id, first_executed_at;
+
+-- name: CountIssuesForSquad :one
+-- Count all issues currently assigned to a squad. No status filter:
+-- archive transfers every assigned issue to the leader (see TransferSquadAssignees
+-- in squad.sql), so count and transfer operate on identical sets. This avoids
+-- leaving archived-squad pointers in the DB, which would otherwise break
+-- name resolution (useActorName reads ListSquads which filters archived_at IS NULL)
+-- and the "no active issue can be assigned to an archived squad" invariant
+-- enforced by validateAssigneePair.
+SELECT COUNT(*)::bigint AS count
+FROM issue
+WHERE workspace_id = $1
+  AND assignee_type = 'squad'
+  AND assignee_id = $2;

@@ -47,5 +47,19 @@
     "description": "小队指引会在 Leader 智能体处理分配给该小队的 issue 时注入到它的 prompt 中。可用来给 Leader 提供贯穿全队的指导、协作规范，或每次任务都应遵循的上下文。",
     "unsaved_changes": "有未保存的修改",
     "save_button": "保存"
+  },
+  "archive_dialog": {
+    "title": "归档小队「{{name}}」？",
+    "description_with_count_one": "{{leader}} 将接管该小队当前 {{count}} 个 issue（含已关闭）。归档后小队不再出现在工作区列表中，该操作不可撤销。",
+    "description_with_count_other": "{{leader}} 将接管该小队当前全部 {{count}} 个 issue（含已关闭）。归档后小队不再出现在工作区列表中，该操作不可撤销。",
+    "description_no_count": "{{leader}} 将接管该小队当前的全部 issue（含已关闭）。归档后小队不再出现在工作区列表中，该操作不可撤销。",
+    "cancel": "取消",
+    "confirm": "归档",
+    "archiving": "归档中…"
+  },
+  "role_editor": {
+    "add_role": "+ 添加角色",
+    "search_placeholder": "输入或选择角色…",
+    "no_suggestions": "尚无已用角色，按 Enter 添加"
   }
 }

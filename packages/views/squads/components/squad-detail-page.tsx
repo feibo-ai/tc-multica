@@ -11,6 +11,7 @@ import { isImeComposing, timeAgo } from "@multica/core/utils";
 import { agentListOptions, memberListOptions, workspaceKeys } from "@multica/core/workspace/queries";
 import { runtimeListOptions } from "@multica/core/runtimes";
 import { CreateAgentDialog } from "../../agents/components/create-agent-dialog";
+import { ArchiveSquadConfirmDialog } from "./archive-squad-confirm-dialog";
 import { useNavigation } from "../../navigation";
 import { AppLink } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
@@ -23,6 +24,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@multica/ui/components/ui/popover";
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+} from "@multica/ui/components/ui/command";
 import {
   Tooltip,
   TooltipContent,
@@ -102,6 +111,7 @@ export function SquadDetailPage() {
 
   const [showAddMember, setShowAddMember] = useState(false);
   const [showCreateAgent, setShowCreateAgent] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
 
   const updateSquadMut = useMutation({
     mutationFn: (data: { name?: string; description?: string; instructions?: string; avatar_url?: string; leader_id?: string }) => api.updateSquad(squadId, data),
@@ -206,7 +216,7 @@ export function SquadDetailPage() {
           <SquadHeaderAvatar squad={squad} initials={initials} />
           <h1 className="text-sm font-medium">{squad.name}</h1>
         </div>
-        <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => { if (confirm("Archive this squad? Issues will be transferred to the leader.")) deleteMut.mutate(); }}>
+        <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setArchiveOpen(true)}>
           <Trash2 className="size-3.5 mr-1" />
           {t(($) => $.inspector.archive_button)}
         </Button>
@@ -268,6 +278,22 @@ export function SquadDetailPage() {
           onCreate={handleCreateAgent}
         />
       )}
+
+      <ArchiveSquadConfirmDialog
+        open={archiveOpen}
+        squadName={squad.name}
+        leaderName={getEntityName("agent", squad.leader_id)}
+        // `issue_count` is `number | null | undefined` — coerce undefined
+        // (older server, list/create/update shapes) to null so the dialog's
+        // "no count" branch covers both cases identically.
+        issueCount={squad.issue_count ?? null}
+        pending={deleteMut.isPending}
+        onCancel={() => setArchiveOpen(false)}
+        onConfirm={async () => {
+          await deleteMut.mutateAsync();
+          setArchiveOpen(false);
+        }}
+      />
     </div>
   );
 }
@@ -642,59 +668,104 @@ function AddMemberDialog({
   );
 }
 
-// Inline click-to-edit role line. Renders the current role as muted text;
-// click (or click the placeholder when empty) to swap in an input that
-// commits on blur / Enter and cancels on Escape. Avoids opening a modal
-// for what is usually a one-word change.
-function RoleEditor({ value, onSave }: { value: string; onSave: (next: string) => Promise<void> }) {
+// Click-to-edit role line, rendered as a Combobox (Popover + Command).
+//
+// The previous inline `<Input>` committed on blur, which made it easy to
+// accidentally save a half-typed role by clicking elsewhere on the page —
+// and there was no edit affordance, so users couldn't tell the muted text
+// was clickable. The combobox fixes both: the Pencil icon is always
+// visible, commit happens only on Enter or selecting an existing role,
+// and clicking outside discards the draft. Suggestions come from the other
+// members' roles so repeated patterns ("Reviewer", "Implementer") get
+// reused instead of drifting into "reviewer", "Reviewers", etc.
+export function RoleEditor({
+  value,
+  suggestions,
+  saving = false,
+  onSave,
+}: {
+  value: string;
+  suggestions: string[];
+  saving?: boolean;
+  onSave: (next: string) => Promise<void>;
+}) {
   const { t } = useT("squads");
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const [saving, setSaving] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
 
-  useEffect(() => { if (!editing) setDraft(value); }, [value, editing]);
+  const uniqueSuggestions = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of suggestions) {
+      const v = s.trim();
+      if (v && v !== value) set.add(v);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [suggestions, value]);
 
-  const commit = async () => {
-    const next = draft.trim();
-    if (next === value.trim()) { setEditing(false); return; }
-    setSaving(true);
+  const commit = async (next: string) => {
+    const trimmed = next.trim();
+    if (trimmed === value.trim()) {
+      setOpen(false);
+      setQuery("");
+      return;
+    }
     try {
-      await onSave(next);
-      setEditing(false);
-    } catch {
-      // toast handled by mutation
+      await onSave(trimmed);
     } finally {
-      setSaving(false);
+      setOpen(false);
+      setQuery("");
     }
   };
 
-  if (editing) {
-    return (
-      <Input
-        autoFocus
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => void commit()}
-        onKeyDown={(e) => {
-          if (isImeComposing(e)) return;
-          if (e.key === "Enter") void commit();
-          else if (e.key === "Escape") { setDraft(value); setEditing(false); }
-        }}
-        disabled={saving}
-        placeholder="Role (e.g. Reviewer)"
-        className="h-6 mt-0.5 text-xs px-1.5"
-      />
-    );
-  }
-
   return (
-    <button
-      type="button"
-      onClick={() => setEditing(true)}
-      className="text-xs text-muted-foreground mt-0.5 text-left hover:text-foreground transition-colors"
-    >
-      {value || <span className="italic opacity-60">{t(($) => $.add_member_dialog.placeholder_role_inline)}</span>}
-    </button>
+    <Popover open={open} onOpenChange={(v) => { if (!saving) setOpen(v); }}>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground mt-0.5 text-left hover:text-foreground transition-colors"
+            aria-label={value || t(($) => $.role_editor.add_role)}
+          >
+            <span>{value || t(($) => $.role_editor.add_role)}</span>
+            {saving ? (
+              <Loader2 data-testid="role-editor-saving" className="size-3 animate-spin" />
+            ) : (
+              <Pencil data-testid="role-editor-pencil" className="size-3 opacity-60" />
+            )}
+          </button>
+        }
+      />
+      <PopoverContent className="p-0 w-56" align="start">
+        <Command>
+          <CommandInput
+            value={query}
+            onValueChange={setQuery}
+            placeholder={t(($) => $.role_editor.search_placeholder)}
+            onKeyDown={(e) => {
+              if (isImeComposing(e)) return;
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void commit(query);
+              } else if (e.key === "Escape") {
+                setOpen(false);
+                setQuery("");
+              }
+            }}
+            autoFocus
+          />
+          <CommandList>
+            <CommandEmpty>{t(($) => $.role_editor.no_suggestions)}</CommandEmpty>
+            <CommandGroup>
+              {uniqueSuggestions.map((s) => (
+                <CommandItem key={s} value={s} onSelect={() => void commit(s)}>
+                  {s}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -1045,6 +1116,16 @@ function SquadMembersTab({
 }) {
   const { t } = useT("squads");
   const p = useWorkspacePaths();
+  // Per-member saving state so the Loader2 spinner only renders on the row
+  // currently being saved — not on every row, which the shared mutation
+  // `isPending` would otherwise cause.
+  const [savingMemberId, setSavingMemberId] = useState<string | null>(null);
+  // Aggregate role suggestions from the squad's existing members. Drives the
+  // RoleEditor combobox; recomputed on `members` changes only.
+  const roleSuggestions = useMemo(
+    () => members.map((m) => m.role).filter((r): r is string => !!r),
+    [members],
+  );
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -1092,7 +1173,16 @@ function SquadMembersTab({
               </div>
               <RoleEditor
                 value={m.role ?? ""}
-                onSave={async (next) => { await onUpdateRole(m, next); }}
+                suggestions={roleSuggestions}
+                saving={savingMemberId === m.id}
+                onSave={async (next) => {
+                  setSavingMemberId(m.id);
+                  try {
+                    await onUpdateRole(m, next);
+                  } finally {
+                    setSavingMemberId(null);
+                  }
+                }}
               />
             </div>
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">

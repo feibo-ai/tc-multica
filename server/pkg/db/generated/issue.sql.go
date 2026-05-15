@@ -129,6 +129,33 @@ func (q *Queries) CountIssues(ctx context.Context, arg CountIssuesParams) (int64
 	return count, err
 }
 
+const countIssuesForSquad = `-- name: CountIssuesForSquad :one
+SELECT COUNT(*)::bigint AS count
+FROM issue
+WHERE workspace_id = $1
+  AND assignee_type = 'squad'
+  AND assignee_id = $2
+`
+
+type CountIssuesForSquadParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	AssigneeID  pgtype.UUID `json:"assignee_id"`
+}
+
+// Count all issues currently assigned to a squad. No status filter:
+// archive transfers every assigned issue to the leader (see TransferSquadAssignees
+// in squad.sql), so count and transfer operate on identical sets. This avoids
+// leaving archived-squad pointers in the DB, which would otherwise break
+// name resolution (useActorName reads ListSquads which filters archived_at IS NULL)
+// and the "no active issue can be assigned to an archived squad" invariant
+// enforced by validateAssigneePair.
+func (q *Queries) CountIssuesForSquad(ctx context.Context, arg CountIssuesForSquadParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countIssuesForSquad, arg.WorkspaceID, arg.AssigneeID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createIssue = `-- name: CreateIssue :one
 INSERT INTO issue (
     workspace_id, title, description, status, priority,

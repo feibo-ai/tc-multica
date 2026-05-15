@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { ApiClient } from "./client";
 import { parseWithFallback } from "./schema";
+import { SquadSchema } from "./schemas";
 
 // Helper: stub fetch with a single JSON response. Status defaults to 200.
 function stubFetchJson(body: unknown, status = 200) {
@@ -218,6 +219,62 @@ describe("ApiClient schema fallback", () => {
       expect(resp.imported_skill_ids).toEqual([]);
       expect(resp.reused_skill_ids).toEqual([]);
     });
+  });
+});
+
+describe("SquadSchema", () => {
+  type SquadShape = Record<string, unknown> & { issue_count?: number | null };
+  const baseSquad: SquadShape = {
+    id: "x",
+    workspace_id: "y",
+    name: "n",
+    description: "",
+    instructions: "",
+    avatar_url: null,
+    leader_id: "l",
+    creator_id: "c",
+    created_at: "t",
+    updated_at: "t",
+    archived_at: null,
+    archived_by: null,
+  };
+  const fallback: SquadShape = { ...baseSquad };
+  const opts = { endpoint: "test SquadSchema" };
+
+  it("accepts a response missing issue_count (older server / list endpoint)", () => {
+    const result = parseWithFallback(baseSquad, SquadSchema, fallback, opts);
+    // Field is optional — undefined or null are both "unknown".
+    expect(result.issue_count ?? null).toBeNull();
+  });
+
+  it("parses a response with issue_count: number", () => {
+    const result = parseWithFallback(
+      { ...baseSquad, issue_count: 3 },
+      SquadSchema,
+      fallback,
+      opts,
+    );
+    expect(result.issue_count).toBe(3);
+  });
+
+  it("parses issue_count: null (server-side count error path)", () => {
+    const result = parseWithFallback(
+      { ...baseSquad, issue_count: null },
+      SquadSchema,
+      fallback,
+      opts,
+    );
+    expect(result.issue_count).toBeNull();
+  });
+
+  it("preserves unknown fields via .loose()", () => {
+    const result = parseWithFallback(
+      { ...baseSquad, future_field: "x" },
+      SquadSchema,
+      fallback,
+      opts,
+    );
+    expect(result.future_field).toBe("x");
   });
 });
 

@@ -47,5 +47,19 @@
     "description": "Squad instructions are injected into the leader agent's prompt whenever it works on an issue assigned to this squad. Use them to give the leader squad-wide guidance, working agreements, or context the leader should follow on every task.",
     "unsaved_changes": "Unsaved changes",
     "save_button": "Save"
+  },
+  "archive_dialog": {
+    "title": "Archive squad \"{{name}}\"?",
+    "description_with_count_one": "{{leader}} will take over {{count}} issue currently assigned to this squad (including closed ones). The squad will no longer appear in the workspace list, and this cannot be undone.",
+    "description_with_count_other": "{{leader}} will take over all {{count}} issues currently assigned to this squad (including closed ones). The squad will no longer appear in the workspace list, and this cannot be undone.",
+    "description_no_count": "{{leader}} will take over all issues currently assigned to this squad (including closed ones). The squad will no longer appear in the workspace list, and this cannot be undone.",
+    "cancel": "Cancel",
+    "confirm": "Archive",
+    "archiving": "Archiving…"
+  },
+  "role_editor": {
+    "add_role": "+ Add role",
+    "search_placeholder": "Type or pick a role…",
+    "no_suggestions": "No existing roles. Press Enter to add."
   }
 }

@@ -28,6 +28,12 @@ type SquadResponse struct {
 	UpdatedAt    string  `json:"updated_at"`
 	ArchivedAt   *string `json:"archived_at"`
 	ArchivedBy   *string `json:"archived_by"`
+	// IssueCount is only populated by GetSquad — list/create/update leave it
+	// nil to avoid an N+1 in the list endpoint and because the value is
+	// semantically irrelevant for the just-written rows. omitempty keeps the
+	// JSON key absent in those responses; older desktop clients that predate
+	// this field continue to deserialize the response unchanged.
+	IssueCount *int64 `json:"issue_count,omitempty"`
 }
 
 type SquadMemberResponse struct {
@@ -195,7 +201,20 @@ func (h *Handler) GetSquad(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, squadToResponse(squad))
+	resp := squadToResponse(squad)
+
+	count, err := h.Queries.CountIssuesForSquad(r.Context(), db.CountIssuesForSquadParams{
+		WorkspaceID: squad.WorkspaceID,
+		AssigneeID:  squad.ID,
+	})
+	if err != nil {
+		// Non-fatal: log and continue with nil. The dialog falls back to
+		// a "no count" copy variant when the count is missing.
+		slog.Warn("count squad issues failed", "squad_id", uuidToString(squad.ID), "error", err)
+	} else {
+		resp.IssueCount = &count
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) UpdateSquad(w http.ResponseWriter, r *http.Request) {
@@ -289,25 +308,52 @@ func (h *Handler) DeleteSquad(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Transfer issues assigned to this squad to the leader agent.
-	if err := h.Queries.TransferSquadAssignees(r.Context(), db.TransferSquadAssigneesParams{
+	userID := requestUserID(r)
+	userUUID, ok := parseUUIDOrBadRequest(w, userID, "user_id")
+	if !ok {
+		return
+	}
+
+	// Transactional: transfer assigned issues to the leader, then archive
+	// the squad. Either both happen or neither happens. Without this, a
+	// transfer error followed by a successful archive would leave issues
+	// pointing at an archived squad (breaking name resolution and the
+	// "no active issue assigned to an archived squad" invariant); a
+	// transfer success followed by an archive failure would silently empty
+	// the squad while reporting failure to the caller.
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to start transaction")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	qtx := h.Queries.WithTx(tx)
+
+	if err := qtx.TransferSquadAssignees(r.Context(), db.TransferSquadAssigneesParams{
 		AssigneeID:   squad.ID,
 		AssigneeID_2: squad.LeaderID,
 	}); err != nil {
-		slog.Warn("transfer squad assignees failed", "squad_id", uuidToString(squad.ID), "error", err)
+		slog.Error("transfer squad assignees failed", "squad_id", uuidToString(squad.ID), "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to transfer squad issues")
+		return
 	}
 
-	userID := requestUserID(r)
-	userUUID, _ := parseUUIDOrBadRequest(w, userID, "user_id")
-
-	if _, err := h.Queries.ArchiveSquad(r.Context(), db.ArchiveSquadParams{
+	if _, err := qtx.ArchiveSquad(r.Context(), db.ArchiveSquadParams{
 		ID:         squad.ID,
 		ArchivedBy: userUUID,
 	}); err != nil {
+		slog.Error("archive squad failed", "squad_id", uuidToString(squad.ID), "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to archive squad")
 		return
 	}
 
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to commit squad archive")
+		return
+	}
+
+	// Publish only after commit — events must never describe state that
+	// was rolled back.
 	h.publish(protocol.EventSquadDeleted, workspaceID, "member", userID, map[string]any{
 		"squad_id":  uuidToString(squad.ID),
 		"leader_id": uuidToString(squad.LeaderID),
