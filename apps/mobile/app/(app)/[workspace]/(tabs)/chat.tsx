@@ -86,6 +86,35 @@ export default function ChatTab() {
   const { data: sessions = [] } = useQuery(chatSessionsOptions(wsId));
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
   const { data: members = [] } = useQuery(memberListOptions(wsId));
+
+  // ── Auto-hydrate active session on first Chat tab entry ────────────────
+  // Mobile-only deviation from web: web's chat-window opens to an empty
+  // state when no `activeSessionId` is persisted, because the sidebar
+  // SessionDropdown makes switching one-click cheap. On a phone, picking
+  // a session is 4 taps (header → sheet open → row → close), so an
+  // always-empty default is friction. Instead, when the user first sees
+  // the Chat tab in this workspace, jump straight to the most recent
+  // session (sessions are server-sorted by updated_at desc, so
+  // sessions[0] is "what they were last working on" 99% of the time).
+  //
+  // Hydration is a one-shot per workspace: once it runs, subsequent
+  // user intent (point + New, delete-active) is respected and never
+  // overwritten by this effect. ref resets when wsId changes so the
+  // next workspace gets its own first-entry hydration.
+  const hydratedWsRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!wsId) return;
+    if (hydratedWsRef.current === wsId) return;
+    if (sessions.length === 0) {
+      // Workspace truly has no chat history — leave activeSessionId null
+      // so the empty-state ("Start the conversation") renders. Mark
+      // hydrated so we don't keep checking on every WS event.
+      hydratedWsRef.current = wsId;
+      return;
+    }
+    hydratedWsRef.current = wsId;
+    setActiveSessionId(sessions[0].id);
+  }, [wsId, sessions]);
   const { data: messages = [], isLoading: messagesLoading } = useQuery(
     chatMessagesOptions(activeSessionId),
   );
