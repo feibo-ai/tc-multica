@@ -27,6 +27,7 @@ import {
   workspaceKeys,
   workspaceListOptions,
 } from "@multica/core/workspace/queries";
+import { issueKeys } from "@multica/core/issues/queries";
 import { api } from "@multica/core/api";
 import {
   resolvePostAuthDestination,
@@ -151,6 +152,14 @@ export function WorkspaceTab() {
       qc.setQueryData(workspaceKeys.list(), (old: Workspace[] | undefined) =>
         old?.map((ws) => (ws.id === updated.id ? updated : ws)),
       );
+      // Issue identifiers (`MUL-123`) are computed from `issue_prefix` at
+      // read time, not stored on each issue row. When the prefix changes,
+      // every cached issue's rendered identifier is stale until refetched.
+      // Limit invalidation to the prefix-changed branch so unrelated saves
+      // (name / description / context) stay cheap.
+      if (includePrefix) {
+        qc.invalidateQueries({ queryKey: issueKeys.all(updated.id) });
+      }
       toast.success(t(($) => $.workspace.toast_saved));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t(($) => $.workspace.toast_save_failed));

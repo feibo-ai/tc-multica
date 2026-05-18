@@ -7,6 +7,7 @@ import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
 const mockUpdateWorkspace = vi.hoisted(() => vi.fn());
+const mockInvalidateQueries = vi.hoisted(() => vi.fn());
 const workspaceRef = vi.hoisted(() => ({
   current: {
     id: "workspace-1",
@@ -27,6 +28,7 @@ vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({
     setQueryData: vi.fn(),
     getQueryData: vi.fn(() => []),
+    invalidateQueries: mockInvalidateQueries,
   }),
 }));
 
@@ -48,6 +50,10 @@ vi.mock("@multica/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
   workspaceListOptions: () => ({ queryKey: ["workspaces"], queryFn: vi.fn() }),
   workspaceKeys: { list: () => ["workspaces"] },
+}));
+
+vi.mock("@multica/core/issues/queries", () => ({
+  issueKeys: { all: (wsId: string) => ["issues", wsId] },
 }));
 
 vi.mock("@multica/core/workspace/mutations", () => ({
@@ -152,6 +158,11 @@ describe("WorkspaceTab — issue prefix editing", () => {
       expect.not.objectContaining({ issue_prefix: expect.anything() }),
     );
     expect(screen.queryByText(/Change issue prefix/i)).toBeNull();
+    // Non-prefix saves must NOT invalidate the issue cache — would
+    // trigger an unnecessary workspace-wide refetch on every name edit.
+    expect(mockInvalidateQueries).not.toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ["issues", "workspace-1"] }),
+    );
   });
 
   it("shows a confirm dialog before saving when the prefix changes, and only saves on confirm", async () => {
@@ -180,6 +191,13 @@ describe("WorkspaceTab — issue prefix editing", () => {
     expect(mockUpdateWorkspace).toHaveBeenCalledWith(
       "workspace-1",
       expect.objectContaining({ issue_prefix: "NEW" }),
+    );
+    // Issue identifiers (`MUL-123`) are recomputed from the workspace
+    // prefix at read time, so cached issues display the stale OLD-N key
+    // until invalidated. Without this the confirm dialog's promise that
+    // "all issues will be renumbered to NEW-N" is a lie.
+    expect(mockInvalidateQueries).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ["issues", "workspace-1"] }),
     );
   });
 
