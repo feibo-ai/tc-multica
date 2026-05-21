@@ -667,74 +667,57 @@ describe("IssueDetail (shared)", () => {
     expect(screen.queryByText("Properties")).not.toBeInTheDocument();
   });
 
-  it("renders every metadata key inline when the bag is below the collapse threshold", async () => {
-    // 4 keys < METADATA_LIMIT_BEFORE_COLLAPSE (5) → all visible, no toggle.
+  it("hides metadata content from the sidebar and shows a button when the bag has keys", async () => {
+    // Metadata is agent-facing; the sidebar only exposes a button that opens
+    // the raw JSON on demand. Keys are NOT rendered inline anywhere.
     mockApiObj.getIssue.mockResolvedValue({
       ...mockIssue,
       metadata: {
         pr_url: "https://example.com/pr/1",
         pipeline_status: "running",
-        deploy_url: "https://example.com/deploy",
-        waiting_on: "review",
       },
     });
 
     renderIssueDetail();
 
     await waitFor(() => {
-      expect(screen.getByText("Metadata")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Metadata" })).toBeInTheDocument();
     });
 
-    expect(screen.getByText("pr_url")).toBeInTheDocument();
-    expect(screen.getByText("pipeline_status")).toBeInTheDocument();
-    expect(screen.getByText("deploy_url")).toBeInTheDocument();
-    expect(screen.getByText("waiting_on")).toBeInTheDocument();
-    // No toggle should appear when the bag fits.
-    expect(screen.queryByText(/Show \d+ more/)).not.toBeInTheDocument();
-    expect(screen.queryByText("Show less")).not.toBeInTheDocument();
+    // Key names are not rendered in the sidebar prior to opening the dialog.
+    expect(screen.queryByText("pr_url")).not.toBeInTheDocument();
+    expect(screen.queryByText("pipeline_status")).not.toBeInTheDocument();
   });
 
-  it("collapses metadata past the threshold and toggles back via Show more / Show less", async () => {
+  it("opens a dialog with formatted JSON when the Metadata button is clicked", async () => {
     mockApiObj.getIssue.mockResolvedValue({
       ...mockIssue,
       metadata: {
-        k1: "v1",
-        k2: "v2",
-        k3: "v3",
-        k4: "v4",
-        k5: "v5",
-        k6: "v6",
-        k7: "v7",
+        pr_url: "https://example.com/pr/1",
+        pipeline_status: "running",
       },
     });
 
     renderIssueDetail();
 
+    const button = await screen.findByRole("button", { name: "Metadata" });
+    fireEvent.click(button);
+
+    // The dialog renders a <pre> containing the formatted JSON; checking the
+    // exact serialized payload also verifies the indent / structure.
+    const expected = JSON.stringify(
+      { pr_url: "https://example.com/pr/1", pipeline_status: "running" },
+      null,
+      2,
+    );
     await waitFor(() => {
-      expect(screen.getByText("Metadata")).toBeInTheDocument();
+      const pre = document.querySelector("pre");
+      expect(pre).not.toBeNull();
+      expect(pre!.textContent).toBe(expected);
     });
-
-    // Collapsed: first 4 keys visible, remaining 3 hidden behind toggle.
-    expect(screen.getByText("k1")).toBeInTheDocument();
-    expect(screen.getByText("k4")).toBeInTheDocument();
-    expect(screen.queryByText("k5")).not.toBeInTheDocument();
-    expect(screen.queryByText("k7")).not.toBeInTheDocument();
-
-    const showMore = screen.getByText("Show 3 more");
-    fireEvent.click(showMore);
-
-    // Expanded: every key visible.
-    expect(screen.getByText("k5")).toBeInTheDocument();
-    expect(screen.getByText("k7")).toBeInTheDocument();
-
-    // Toggle flips to "Show less" and collapses back.
-    const showLess = screen.getByText("Show less");
-    fireEvent.click(showLess);
-    expect(screen.queryByText("k7")).not.toBeInTheDocument();
-    expect(screen.getByText("Show 3 more")).toBeInTheDocument();
   });
 
-  it("hides the Metadata section entirely when the bag is empty", async () => {
+  it("hides the Metadata button entirely when the bag is empty", async () => {
     // Default fixture already has metadata: {}, asserted explicitly here.
     renderIssueDetail();
 
@@ -742,7 +725,7 @@ describe("IssueDetail (shared)", () => {
       expect(screen.getByText("Details")).toBeInTheDocument();
     });
 
-    expect(screen.queryByText("Metadata")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Metadata" })).not.toBeInTheDocument();
   });
 
   it("renders Details section with Created by and dates", async () => {
