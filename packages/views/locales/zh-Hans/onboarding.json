@@ -205,7 +205,7 @@
           "subtitle": "陪你走一遍 issue、agent、squad、autopilot 怎么配合。"
         },
         "welcome_page": {
-          "subtitle": "给你写一个小 HTML 页面，庆祝上手 Multica。"
+          "subtitle": "我用单文件 HTML 演示稿介绍 Multica 能为你做什么，按你的角色定制，复制下来双击就能在浏览器里打开。"
         }
       },
       "success": {
