@@ -289,13 +289,13 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         version: "0.3.6",
         date: "2026-05-22",
-        title: "更顺的欢迎流程、实时智能体状态与更稳的协作",
+        title: "父子 Issue 协作优化、实时智能体工作状态展示",
         changes: [],
         features: [
-          "新用户完成设置后会进入引导式欢迎体验，Multica Helper 可以介绍工作区、带你巡视，或生成幻灯片式欢迎页",
-          "Issue 列表会显示哪些智能体正在工作，包括每个 Issue 的状态提示、悬浮详情和只看进行中工作的快捷筛选",
-          "子 Issue 完成后，父 Issue 会收到平台生成的更新，并通知合适的负责人，同时避免智能体重复触发",
-          "官网新增 Contact Sales 流程，支持商务邮箱表单和提交保护",
+          "父 Issue 会在子 Issue 完成时自动收到更新，并通知对应负责人",
+          "Issue 列表新增实时智能体工作状态，支持详情查看和工作中筛选",
+          "新用户完成设置后，会进入由 Multica Helper 引导的欢迎体验",
+          "官网新增 Contact Sales 流程，支持商务邮箱提交和防滥用保护",
           "桌面端支持 macOS 触控板前进/后退手势",
         ],
         improvements: [
