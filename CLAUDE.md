@@ -128,9 +128,11 @@ pnpm exec playwright test e2e/tests/specific-test.spec.ts
 # Mobile (Expo) — two environments only: dev and staging
 pnpm dev:mobile                  # Metro, dev env       (reads apps/mobile/.env.development.local)
 pnpm dev:mobile:staging          # Metro, staging env   (reads apps/mobile/.env.staging)
-pnpm ios:mobile:device           # Native build + install dev-client to phone, dev env
-pnpm ios:mobile:device:staging   # Native build + install dev-client to phone, staging env
-# Daily flow: run `pnpm dev:mobile:staging` (or :dev). Only re-run `ios:mobile:device*` when
+pnpm ios:mobile                  # Native build + install dev-client to iOS Simulator, dev env
+pnpm ios:mobile:staging          # Native build + install dev-client to iOS Simulator, staging env
+pnpm ios:mobile:device           # Native build + install dev-client to USB iPhone, dev env
+pnpm ios:mobile:device:staging   # Native build + install dev-client to USB iPhone, staging env
+# Daily flow: run `pnpm dev:mobile:staging` (or :dev). Only re-run `ios:mobile*` when
 # native code or any expo-*/react-native-* dependency changes (lockfile drift counts).
 
 # Desktop build & package

@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "expo start",
     "dev:staging": "dotenv -e .env.staging -- cross-env APP_ENV=staging expo start",
+    "ios": "expo run:ios",
+    "ios:staging": "dotenv -e .env.staging -- cross-env APP_ENV=staging expo run:ios",
     "ios:device": "expo run:ios --device",
     "ios:device:staging": "dotenv -e .env.staging -- cross-env APP_ENV=staging expo run:ios --device",
     "ios:device:staging:release": "dotenv -e .env.staging -- cross-env APP_ENV=staging expo run:ios --device --configuration Release",
@@ -18,6 +20,7 @@
     "@react-native-segmented-control/segmented-control": "2.5.7",
     "@react-navigation/elements": "^2.9.17",
     "@rn-primitives/avatar": "^1.4.0",
+    "@rn-primitives/collapsible": "^1.4.0",
     "@rn-primitives/dropdown-menu": "^1.4.0",
     "@rn-primitives/portal": "^1.4.0",
     "@rn-primitives/radio-group": "^1.4.0",
