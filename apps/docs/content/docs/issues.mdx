@@ -47,6 +47,21 @@ Priority has five levels, used to order the default issue list:
 | `Medium` | Medium |
 | `Low` | Low |
 
+## Filtering by labels
+
+Issues can be filtered by label with explicit AND/OR semantics. In the workspace's Issues view, open the **Labels** filter and use the **Match** toggle to choose:
+
+- **Any** (default): show issues that have *any* of the selected labels (OR).
+- **All**: show only issues that have *all* of the selected labels (AND).
+
+The CLI mirrors this. Pass `--label` once per label, then `--labels-mode any|all`:
+
+```bash
+multica issue list --label plan-approved --label urgent --labels-mode all
+```
+
+The API endpoint is `GET /api/issues?labels=plan-approved,urgent&labels_mode=all` — name-based and case-insensitive. If you prefer UUIDs, use the existing `?label_ids=` shape. Use the labels filter on its own for now; composing it with `status`, `priority`, or `assignee_id` server-side is a planned follow-up.
+
 ## Issue numbers
 
 Every issue has a workspace-unique number in the format `<prefix>-<digits>` — for example `MUL-123`. The number is assigned by the system at creation time and **never changes**. See [Workspaces → Issue numbers](/workspaces#issue-numbers).

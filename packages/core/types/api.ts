@@ -95,6 +95,14 @@ export interface ListGroupedIssuesParams {
   project_ids?: string[];
   include_no_project?: boolean;
   label_ids?: string[];
+  /**
+   * Match mode for `label_ids`. "any" (default) keeps the historical OR
+   * semantics; "all" requires every selected label. The grouped endpoint
+   * currently honors only "any" server-side — the frontend narrows the
+   * result client-side via the same flag in `filter.ts`. Kept on the
+   * params type so future backend support is a drop-in.
+   */
+  labels_mode?: "any" | "all";
   group_assignee_type?: IssueAssigneeType | "none";
   group_assignee_id?: string;
   sort_by?: "position" | "priority" | "title" | "created_at" | "start_date" | "due_date";

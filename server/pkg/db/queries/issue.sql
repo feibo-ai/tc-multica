@@ -303,3 +303,51 @@ UPDATE issue
 SET first_executed_at = now()
 WHERE id = $1 AND first_executed_at IS NULL
 RETURNING id, workspace_id, creator_type, creator_id, first_executed_at;
+
+-- name: ListIssuesByLabelNamesAny :many
+-- OR semantics: issue has at least one of the named labels.
+-- Names compared case-insensitively (matches issue_label.workspace_id, lower(name) unique idx).
+-- Used by the GET /api/issues?labels=foo,bar&labels_mode=any path.
+SELECT i.*
+FROM issue i
+WHERE i.workspace_id = $1
+  AND EXISTS (
+    SELECT 1
+    FROM issue_to_label itl
+    JOIN issue_label il ON il.id = itl.label_id
+    WHERE itl.issue_id = i.id
+      AND il.workspace_id = $1
+      AND lower(il.name) = ANY(sqlc.arg('names')::text[])
+  )
+ORDER BY i.position ASC, i.created_at DESC
+LIMIT $2 OFFSET $3;
+
+-- name: ListIssuesByLabelNamesAll :many
+-- AND semantics: issue has ALL the named labels (intersection).
+-- Used by the GET /api/issues?labels=foo,bar&labels_mode=all path. The HAVING
+-- count guarantees every requested label is present on the returned row.
+SELECT i.*
+FROM issue i
+JOIN issue_to_label itl ON itl.issue_id = i.id
+JOIN issue_label il ON il.id = itl.label_id AND il.workspace_id = i.workspace_id
+WHERE i.workspace_id = $1
+  AND lower(il.name) = ANY(sqlc.arg('names')::text[])
+GROUP BY i.id
+HAVING COUNT(DISTINCT lower(il.name)) = COALESCE(array_length(sqlc.arg('names')::text[], 1), 0)
+ORDER BY MAX(i.position) ASC, MAX(i.created_at) DESC
+LIMIT $2 OFFSET $3;
+
+-- name: ListIssuesByLabelIDsAll :many
+-- AND semantics for the existing UUID-based label filter. The current
+-- ListIssues handler already supports ?label_ids= with OR semantics (via
+-- EXISTS … ANY(...)); this query lets ?labels_mode=all also work when
+-- callers pass UUIDs instead of names.
+SELECT i.*
+FROM issue i
+JOIN issue_to_label itl ON itl.issue_id = i.id
+WHERE i.workspace_id = $1
+  AND itl.label_id = ANY(sqlc.arg('ids')::uuid[])
+GROUP BY i.id
+HAVING COUNT(DISTINCT itl.label_id) = COALESCE(array_length(sqlc.arg('ids')::uuid[], 1), 0)
+ORDER BY MAX(i.position) ASC, MAX(i.created_at) DESC
+LIMIT $2 OFFSET $3;

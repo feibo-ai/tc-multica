@@ -10,6 +10,14 @@ export interface IssueFilters {
   projectFilters: string[];
   includeNoProject: boolean;
   labelFilters: string[];
+  /**
+   * Match mode for the labels filter.
+   *   "any" — keep issues that carry at least one of the selected labels (default, OR).
+   *   "all" — keep only issues that carry every selected label (AND).
+   * No effect when `labelFilters` is empty. Optional so existing callers that
+   * never opted in keep their historical OR behavior.
+   */
+  labelsMode?: "any" | "all";
   // When `agentRunningFilter` is true, only keep issues whose id is in
   // `runningIssueIds`. The set is derived by the caller from
   // `agentTaskSnapshot` (one pass over running tasks) so filter.ts stays
@@ -28,7 +36,7 @@ export interface IssueFilters {
  * - When both → show matching assignees + unassigned
  */
 export function filterIssues(issues: Issue[], filters: IssueFilters): Issue[] {
-  const { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, agentRunningFilter, runningIssueIds } = filters;
+  const { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, labelsMode, agentRunningFilter, runningIssueIds } = filters;
   const hasAssigneeFilter = assigneeFilters.length > 0 || includeNoAssignee;
   const hasProjectFilter = projectFilters.length > 0 || includeNoProject;
   // Empty set passed without `agentRunningFilter` is a no-op. When the
@@ -82,11 +90,18 @@ export function filterIssues(issues: Issue[], filters: IssueFilters): Issue[] {
     }
 
     if (labelFilters.length > 0) {
-      // OR semantics within the filter: keep issues that carry any of the
-      // selected labels. Matches existing priority / project multi-select.
+      // Default OR semantics within the filter (Any-of) matches existing
+      // priority / project multi-select. "all" (AND) requires every selected
+      // label to be present on the issue — used by users hunting for the
+      // intersection (e.g. issues that are BOTH "bug" AND "p0").
       const issueLabels = issue.labels;
       if (!issueLabels || issueLabels.length === 0) return false;
-      if (!issueLabels.some((l) => labelFilters.includes(l.id))) return false;
+      const labelIds = issueLabels.map((l) => l.id);
+      if (labelsMode === "all") {
+        if (!labelFilters.every((id) => labelIds.includes(id))) return false;
+      } else {
+        if (!labelIds.some((id) => labelFilters.includes(id))) return false;
+      }
     }
 
     return true;

@@ -433,14 +433,75 @@ function ProjectSubContent({
 // Label sub-menu content
 // ---------------------------------------------------------------------------
 
+export function LabelFilterModeToggle({
+  value,
+  onChange,
+}: {
+  value: "any" | "all";
+  onChange: (mode: "any" | "all") => void;
+}) {
+  const { t } = useT("issues");
+  // Native `button` segmented control — keeping it dependency-light avoids
+  // pulling ToggleGroup into a DropdownMenuSubContent, where the underlying
+  // Toggle primitive's focus management can fight the menu's keyboard model.
+  // The two-state visual is small enough that the extra component isn't
+  // worth the integration cost; the test below asserts both options render
+  // and onChange fires.
+  return (
+    <div
+      role="group"
+      aria-label={t(($) => $.filters.labels_mode)}
+      className="flex items-center gap-2 px-2 py-1.5 border-b border-foreground/5"
+    >
+      <span className="text-xs text-muted-foreground">
+        {t(($) => $.filters.labels_mode)}
+      </span>
+      <div className="ml-auto inline-flex overflow-hidden rounded-md border border-foreground/10">
+        {(["any", "all"] as const).map((mode) => {
+          const active = value === mode;
+          return (
+            <button
+              key={mode}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              data-mode={mode}
+              data-state={active ? "on" : "off"}
+              onClick={(e) => {
+                // The toggle lives inside DropdownMenuSubContent; without
+                // stopPropagation an arrow-key handler one level up steals
+                // focus and instantly closes the submenu.
+                e.preventDefault();
+                e.stopPropagation();
+                if (!active) onChange(mode);
+              }}
+              className={
+                active
+                  ? "bg-primary text-primary-foreground px-2 py-0.5 text-xs"
+                  : "bg-transparent text-muted-foreground hover:bg-accent px-2 py-0.5 text-xs"
+              }
+            >
+              {t(($) => $.filters[mode === "any" ? "mode_any" : "mode_all"])}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function LabelSubContent({
   counts,
   selected,
   onToggle,
+  labelsMode,
+  onChangeLabelsMode,
 }: {
   counts: Map<string, number>;
   selected: string[];
   onToggle: (labelId: string) => void;
+  labelsMode: "any" | "all";
+  onChangeLabelsMode: (mode: "any" | "all") => void;
 }) {
   const { t } = useT("issues");
   const [search, setSearch] = useState("");
@@ -451,6 +512,7 @@ function LabelSubContent({
 
   return (
     <>
+      <LabelFilterModeToggle value={labelsMode} onChange={onChangeLabelsMode} />
       <div className="px-2 py-1.5 border-b border-foreground/5">
         <input
           type="text"
@@ -600,6 +662,7 @@ export function IssueDisplayControls({
   const projectFilters = useViewStore((s) => s.projectFilters);
   const includeNoProject = useViewStore((s) => s.includeNoProject);
   const labelFilters = useViewStore((s) => s.labelFilters);
+  const labelsMode = useViewStore((s) => s.labelsMode);
   const sortBy = useViewStore((s) => s.sortBy);
   const sortDirection = useViewStore((s) => s.sortDirection);
   const grouping = useViewStore((s) => s.grouping);
@@ -849,6 +912,8 @@ export function IssueDisplayControls({
                   counts={counts.label}
                   selected={labelFilters}
                   onToggle={act.toggleLabelFilter}
+                  labelsMode={labelsMode}
+                  onChangeLabelsMode={act.setLabelsMode}
                 />
               </DropdownMenuSubContent>
             </DropdownMenuSub>
