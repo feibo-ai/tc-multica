@@ -983,6 +983,132 @@ func (h *Handler) enqueueMentionedAgentTasks(ctx context.Context, issue db.Issue
 	}
 }
 
+// handleEditMentionDiff compares agent/squad mentions between the old and new
+// content of an edited comment. Removed mentions cancel running tasks; added
+// mentions enqueue new tasks — mirroring CreateComment's enqueueMentionedAgentTasks.
+// If the content changed but the mention set is unchanged, running tasks are
+// cancelled and re-triggered so the agent works on fresh content.
+func (h *Handler) handleEditMentionDiff(ctx context.Context, existing db.Comment, updated db.Comment, oldContent, actorType, actorID string) {
+	oldMentions := util.ParseMentions(oldContent)
+	newMentions := util.ParseMentions(updated.Content)
+
+	oldSet := make(map[string]util.Mention, len(oldMentions))
+	for _, m := range oldMentions {
+		if m.Type == "agent" || m.Type == "squad" {
+			oldSet[m.Type+":"+m.ID] = m
+		}
+	}
+	newSet := make(map[string]util.Mention, len(newMentions))
+	for _, m := range newMentions {
+		if m.Type == "agent" || m.Type == "squad" {
+			newSet[m.Type+":"+m.ID] = m
+		}
+	}
+
+	// Removed mentions → cancel tasks triggered by this comment.
+	hasRemovals := false
+	for key := range oldSet {
+		if _, ok := newSet[key]; !ok {
+			hasRemovals = true
+			break
+		}
+	}
+
+	// Content changed with same mentions → agent is working on stale content.
+	contentChanged := oldContent != updated.Content
+	sameAgentMentions := len(oldSet) == len(newSet) && !hasRemovals
+	needRetrigger := contentChanged && sameAgentMentions && len(oldSet) > 0
+
+	if hasRemovals || needRetrigger {
+		if err := h.TaskService.CancelTasksByTriggerComment(ctx, existing.ID); err != nil {
+			slog.Warn("cancel tasks for edited comment failed", "comment_id", uuidToString(existing.ID), "error", err)
+		}
+	}
+
+	// Added mentions (or re-trigger after content change) → enqueue tasks.
+	var added []util.Mention
+	if needRetrigger {
+		for _, m := range newMentions {
+			if m.Type == "agent" || m.Type == "squad" {
+				added = append(added, m)
+			}
+		}
+	} else {
+		for key, m := range newSet {
+			if _, ok := oldSet[key]; !ok {
+				added = append(added, m)
+			}
+		}
+	}
+
+	if len(added) == 0 {
+		return
+	}
+
+	issue, err := h.Queries.GetIssue(ctx, existing.IssueID)
+	if err != nil {
+		slog.Warn("load issue for edit mention diff failed", "issue_id", uuidToString(existing.IssueID), "error", err)
+		return
+	}
+	wsID := uuidToString(issue.WorkspaceID)
+
+	for _, m := range added {
+		if m.Type == "squad" {
+			squadUUID := parseUUID(m.ID)
+			squad, err := h.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{
+				ID:          squadUUID,
+				WorkspaceID: issue.WorkspaceID,
+			})
+			if err != nil {
+				continue
+			}
+			agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+				ID:          squad.LeaderID,
+				WorkspaceID: issue.WorkspaceID,
+			})
+			if err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid {
+				continue
+			}
+			if !h.canAccessPrivateAgent(ctx, agent, actorType, actorID, wsID) {
+				continue
+			}
+			hasPending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
+				IssueID: issue.ID,
+				AgentID: squad.LeaderID,
+			})
+			if err != nil || hasPending {
+				continue
+			}
+			if _, err := h.TaskService.EnqueueTaskForSquadLeader(ctx, issue, squad.LeaderID, updated.ID); err != nil {
+				slog.Warn("enqueue squad leader mention task on edit failed", "issue_id", uuidToString(issue.ID), "squad_id", m.ID, "error", err)
+			}
+			continue
+		}
+
+		agentUUID := parseUUID(m.ID)
+		agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+			ID:          agentUUID,
+			WorkspaceID: issue.WorkspaceID,
+		})
+		if err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid {
+			continue
+		}
+		if !h.canAccessPrivateAgent(ctx, agent, actorType, actorID, wsID) {
+			continue
+		}
+		hasPending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
+			IssueID: issue.ID,
+			AgentID: agentUUID,
+		})
+		if err != nil || hasPending {
+			continue
+		}
+		if _, err := h.TaskService.EnqueueTaskForMention(ctx, issue, agentUUID, updated.ID); err != nil {
+			slog.Warn("enqueue mention agent task on edit failed", "issue_id", uuidToString(issue.ID), "agent_id", m.ID, "error", err)
+		}
+	}
+}
+
 func (h *Handler) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	commentId := chi.URLParam(r, "commentId")
 
@@ -1048,6 +1174,11 @@ func (h *Handler) UpdateComment(w http.ResponseWriter, r *http.Request) {
 
 	// NOTE: See CreateComment — Markdown is sanitized at render/edit time, not here.
 
+	oldContent := existing.Content
+
+	// Expand bare issue identifiers (same pipeline as CreateComment).
+	req.Content = mention.ExpandIssueIdentifiers(r.Context(), h.Queries, wsUUID, req.Content)
+
 	comment, err := h.Queries.UpdateComment(r.Context(), db.UpdateCommentParams{
 		ID:      commentUUID,
 		Content: req.Content,
@@ -1063,11 +1194,13 @@ func (h *Handler) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	// existing attachment links rather than unlinking everything.
 	if replaceAttachments {
 		if err := h.Queries.ReplaceCommentAttachments(r.Context(), db.ReplaceCommentAttachmentsParams{
-			CommentID: comment.ID,
-			IssueID:   existing.IssueID,
-			Column3:   attachmentIDs,
+			CommentID:     comment.ID,
+			IssueID:       existing.IssueID,
+			AttachmentIds: attachmentIDs,
 		}); err != nil {
 			slog.Error("failed to replace comment attachments", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to update attachments")
+			return
 		}
 	}
 
@@ -1078,6 +1211,12 @@ func (h *Handler) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	resp := commentToResponse(comment, grouped[cid], groupedAtt[cid])
 	slog.Info("comment updated", append(logger.RequestAttrs(r), "comment_id", commentId)...)
 	h.publish(protocol.EventCommentUpdated, workspaceID, actorType, actorID, map[string]any{"comment": resp})
+
+	// --- Post-processing: mention diff ---
+	// An edit is semantically "old version invalidated + new version takes effect".
+	// Diff old vs new agent mentions and cancel/enqueue tasks accordingly.
+	h.handleEditMentionDiff(r.Context(), existing, comment, oldContent, actorType, actorID)
+
 	writeJSON(w, http.StatusOK, resp)
 }
 

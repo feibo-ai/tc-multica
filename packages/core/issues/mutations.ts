@@ -611,13 +611,18 @@ export function useCreateComment(issueId: string) {
 export function useUpdateComment(issueId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ commentId, content, attachmentIds }: { commentId: string; content: string; attachmentIds?: string[] }) =>
+    mutationFn: ({ commentId, content, attachmentIds }: { commentId: string; content: string; attachmentIds: string[] }) =>
       api.updateComment(commentId, content, attachmentIds),
-    onMutate: async ({ commentId, content }) => {
+    onMutate: async ({ commentId, content, attachmentIds }) => {
       await qc.cancelQueries({ queryKey: issueKeys.timeline(issueId) });
       const prev = qc.getQueryData<TimelineCache>(issueKeys.timeline(issueId));
+      const kept = new Set(attachmentIds);
       qc.setQueryData<TimelineCache>(issueKeys.timeline(issueId), (old) =>
-        old?.map((e) => (e.id === commentId ? { ...e, content } : e)),
+        old?.map((e) =>
+          e.id === commentId
+            ? { ...e, content, attachments: e.attachments?.filter((a) => kept.has(a.id)) }
+            : e,
+        ),
       );
       return { prev };
     },
