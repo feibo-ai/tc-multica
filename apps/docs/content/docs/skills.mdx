@@ -35,6 +35,12 @@ After attaching, the agent picks up its skills the next time it starts a task �
 
 After you edit a skill's contents, **only newly created tasks pick up the new version** — tasks already running continue with the old skill.
 
+## Owner and review cadence
+
+Every skill carries an explicit `owner_user_id` — the human currently accountable for the skill, separate from `created_by` which records who first wrote it. Ownership can be reassigned at any time via the owner picker on the skill detail page, or from the CLI with `multica skill update <id> --owner <user-uuid>`.
+
+Each skill also has a `last_reviewed_at` timestamp. The CLI's `multica skill list --stale` and the workspace UI's **Stale** filter surface skills that have not been reviewed in 90 days — these are SOP anti-pattern ❌5 candidates (stale knowledge silently rotting in the workspace). Click **Mark reviewed** on a skill detail page after sign-off to reset the clock; the action stamps `last_reviewed_at = now()`.
+
 ## Safety of third-party skills
 
 Skills imported from GitHub or ClawHub may include scripts and executable content. Multica itself **does not sign, audit, or sandbox them** — skill contents are handed to the corresponding AI coding tool as-is, and whether the tool treats them as executable is up to the tool.
