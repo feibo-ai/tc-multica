@@ -3,11 +3,16 @@
     "title": "Projects",
     "new_project": "New project",
     "empty": "No projects yet",
+    "empty_without_dri": "Every project has a DRI",
     "create_first": "Create your first project",
     "view_compact": "Compact",
     "view_comfortable": "Comfortable",
     "search_placeholder": "Search projects...",
     "no_search_results": "No results match your search"
+  },
+  "filters": {
+    "without_dri": "Without DRI",
+    "without_dri_description": "Projects with no DRI assigned (SOP P-5 risk)"
   },
   "table": {
     "name": "Name",
@@ -62,9 +67,16 @@
     "empty_issues_hint": "Create a new issue or assign existing ones to this project.",
     "empty_issues_new_button": "New Issue",
     "no_issues_yet": "No issues yet",
+    "dri_label": "DRI",
+    "dri_unassigned": "Unassigned (SOP P-5 risk)",
+    "dri_assign": "Assign DRI",
+    "dri_change": "Change DRI",
+    "dri_assign_placeholder": "Find member...",
     "toast_link_copied": "Link copied",
     "toast_project_deleted": "Project deleted",
-    "toast_move_issue_failed": "Failed to move issue"
+    "toast_move_issue_failed": "Failed to move issue",
+    "toast_dri_updated": "DRI updated",
+    "toast_dri_update_failed": "Failed to update DRI"
   },
   "resources": {
     "section_header": "Resources",

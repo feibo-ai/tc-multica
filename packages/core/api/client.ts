@@ -1518,6 +1518,14 @@ export class ApiClient {
     return this.fetch(`/api/projects?${search}`);
   }
 
+  // Triage list: projects with no DRI assigned (SOP v0.4 P-5 risk). Returns
+  // a bare JSON array — not the `{ projects, total }` envelope — because the
+  // backend route is a fixed-purpose triage feed rather than a paginated
+  // list. Mirrors the `multica project list --without-dri` CLI shape.
+  async listProjectsWithoutDRI(): Promise<Project[]> {
+    return this.fetch(`/api/projects?without_dri=true`);
+  }
+
   async getProject(id: string): Promise<Project> {
     return this.fetch(`/api/projects/${id}`);
   }
@@ -1533,6 +1541,16 @@ export class ApiClient {
     return this.fetch(`/api/projects/${id}`, {
       method: "PUT",
       body: JSON.stringify(data),
+    });
+  }
+
+  // PUT /api/projects/{id}/dri — sets or clears the project's DRI. Pass `null`
+  // to clear; the backend interprets an empty string in `dri_user_id` as a
+  // clear request, so that's what we serialise.
+  async assignProjectDRI(projectId: string, userId: string | null): Promise<Project> {
+    return this.fetch(`/api/projects/${projectId}/dri`, {
+      method: "PUT",
+      body: JSON.stringify({ dri_user_id: userId ?? "" }),
     });
   }
 

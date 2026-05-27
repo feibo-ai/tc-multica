@@ -42,6 +42,12 @@ The lead is the person — or agent — accountable for the project. It's a soft
 - A workspace member (human teammate)
 - An [agent](/agents) — useful when the project's work is mostly delegated to an agent (e.g., "Weekly bug triage" led by a triage agent)
 
+## DRI: the human accountable
+
+Every project carries an explicit `dri_user_id` — the human accountable for outcomes — distinct from `lead_type` / `lead_id`, which may be an agent or squad driving execution. The DRI is always a workspace member; the lead can be the agent doing the work. Splitting the two lets you delegate execution to an agent while keeping a named human on the hook for the result.
+
+The CLI's `multica project assign-dri <project> <user-uuid>` sets it, and `--dri` on `project create` / `project update` does the same inline. `multica project list --without-dri` and the web UI's **Without DRI** filter chip surface projects at SOP P-5 risk — work running without a named human accountable. The project detail page exposes a **DRI** picker for re-assignment at any time.
+
 ## Next
 
 - [Issues](/issues) — the unit of work that lives inside projects

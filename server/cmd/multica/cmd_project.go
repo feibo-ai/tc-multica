@@ -59,6 +59,13 @@ var projectStatusCmd = &cobra.Command{
 	RunE:  runProjectStatus,
 }
 
+var projectAssignDRICmd = &cobra.Command{
+	Use:   "assign-dri <project-id> <user-uuid>",
+	Short: "Assign a DRI to a project (SOP P-5: exactly one accountable human)",
+	Args:  exactArgs(2),
+	RunE:  runProjectAssignDRI,
+}
+
 var projectResourceCmd = &cobra.Command{
 	Use:   "resource",
 	Short: "Manage resources attached to a project",
@@ -96,6 +103,7 @@ func init() {
 	projectCmd.AddCommand(projectUpdateCmd)
 	projectCmd.AddCommand(projectDeleteCmd)
 	projectCmd.AddCommand(projectStatusCmd)
+	projectCmd.AddCommand(projectAssignDRICmd)
 	projectCmd.AddCommand(projectResourceCmd)
 
 	projectResourceCmd.AddCommand(projectResourceListCmd)
@@ -106,6 +114,7 @@ func init() {
 	projectListCmd.Flags().String("output", "table", "Output format: table or json")
 	projectListCmd.Flags().Bool("full-id", false, "Show full UUIDs in table output")
 	projectListCmd.Flags().String("status", "", "Filter by status")
+	projectListCmd.Flags().Bool("without-dri", false, "Only show projects with no DRI assigned (SOP P-5 risk)")
 
 	// project get
 	projectGetCmd.Flags().String("output", "json", "Output format: table or json")
@@ -116,6 +125,7 @@ func init() {
 	projectCreateCmd.Flags().String("status", "", "Project status")
 	projectCreateCmd.Flags().String("icon", "", "Project icon (emoji)")
 	projectCreateCmd.Flags().String("lead", "", "Lead name (member or agent)")
+	projectCreateCmd.Flags().String("dri", "", "User UUID for the project DRI (SOP P-5)")
 	projectCreateCmd.Flags().StringArray("repo", nil, "Attach a github_repo resource by URL (may be repeated)")
 	projectCreateCmd.Flags().String("output", "json", "Output format: table or json")
 
@@ -142,6 +152,7 @@ func init() {
 	projectUpdateCmd.Flags().String("status", "", "New status")
 	projectUpdateCmd.Flags().String("icon", "", "New icon (emoji)")
 	projectUpdateCmd.Flags().String("lead", "", "New lead name (member or agent)")
+	projectUpdateCmd.Flags().String("dri", "", "Set DRI user UUID (use empty string to clear)")
 	projectUpdateCmd.Flags().String("output", "json", "Output format: table or json")
 
 	// project delete
@@ -149,6 +160,9 @@ func init() {
 
 	// project status
 	projectStatusCmd.Flags().String("output", "table", "Output format: table or json")
+
+	// project assign-dri
+	projectAssignDRICmd.Flags().String("output", "text", "Output format: text or json")
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +184,9 @@ func runProjectList(cmd *cobra.Command, _ []string) error {
 	}
 	if v, _ := cmd.Flags().GetString("status"); v != "" {
 		params.Set("status", v)
+	}
+	if v, _ := cmd.Flags().GetBool("without-dri"); v {
+		params.Set("without_dri", "true")
 	}
 
 	path := "/api/projects"
@@ -293,6 +310,9 @@ func runProjectCreate(cmd *cobra.Command, _ []string) error {
 		body["lead_type"] = aType
 		body["lead_id"] = aID
 	}
+	if v, _ := cmd.Flags().GetString("dri"); v != "" {
+		body["dri_user_id"] = v
+	}
 
 	// Bundle resources into the create payload so the server attaches them in
 	// the same transaction; this avoids leaving a half-attached project on
@@ -375,9 +395,13 @@ func runProjectUpdate(cmd *cobra.Command, args []string) error {
 		body["lead_type"] = aType
 		body["lead_id"] = aID
 	}
+	if cmd.Flags().Changed("dri") {
+		v, _ := cmd.Flags().GetString("dri")
+		body["dri_user_id"] = v
+	}
 
 	if len(body) == 0 {
-		return fmt.Errorf("no fields to update; use flags like --title, --status, --description, --icon, --lead")
+		return fmt.Errorf("no fields to update; use flags like --title, --status, --description, --icon, --lead, --dri")
 	}
 
 	var result map[string]any
@@ -462,6 +486,28 @@ func runProjectStatus(cmd *cobra.Command, args []string) error {
 	if output == "json" {
 		return cli.PrintJSON(os.Stdout, result)
 	}
+	return nil
+}
+
+func runProjectAssignDRI(cmd *cobra.Command, args []string) error {
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	body := map[string]any{"dri_user_id": args[1]}
+	var result map[string]any
+	if err := client.PutJSON(ctx, "/api/projects/"+args[0]+"/dri", body, &result); err != nil {
+		return fmt.Errorf("assign-dri: %w", err)
+	}
+
+	output, _ := cmd.Flags().GetString("output")
+	if output == "json" {
+		return cli.PrintJSON(os.Stdout, result)
+	}
+	fmt.Printf("Project %s DRI = %s\n", args[0], args[1])
 	return nil
 }
 

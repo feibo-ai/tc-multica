@@ -16,9 +16,9 @@ WHERE id = $1 AND workspace_id = $2;
 -- name: CreateProject :one
 INSERT INTO project (
     workspace_id, title, description, icon, status,
-    lead_type, lead_id, priority
+    lead_type, lead_id, priority, dri_user_id
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8
+    $1, $2, $3, $4, $5, $6, $7, $8, $9
 ) RETURNING *;
 
 -- name: UpdateProject :one
@@ -30,6 +30,7 @@ UPDATE project SET
     priority = COALESCE(sqlc.narg('priority'), priority),
     lead_type = sqlc.narg('lead_type'),
     lead_id = sqlc.narg('lead_id'),
+    dri_user_id = COALESCE(sqlc.narg('dri_user_id'), dri_user_id),
     updated_at = now()
 WHERE id = $1
 RETURNING *;
@@ -49,3 +50,21 @@ SELECT project_id,
 FROM issue
 WHERE project_id = ANY(sqlc.arg('project_ids')::uuid[])
 GROUP BY project_id;
+
+-- name: SetProjectDRI :one
+-- Direct DRI write (no COALESCE — explicit NULL clears the DRI).
+-- Workspace-scoped per the multi-tenancy defensive pattern.
+UPDATE project
+SET dri_user_id = sqlc.arg('dri_user_id'),
+    updated_at = now()
+WHERE id = sqlc.arg('id') AND workspace_id = sqlc.arg('workspace_id')
+RETURNING *;
+
+-- name: ListProjectsWithoutDRI :many
+-- Projects with no human accountable owner — SOP P-5 risk.
+-- Surfaced by `multica project list --without-dri` and the Web UI's
+-- "Without DRI" filter chip.
+SELECT * FROM project
+WHERE workspace_id = $1
+  AND dri_user_id IS NULL
+ORDER BY created_at DESC;
