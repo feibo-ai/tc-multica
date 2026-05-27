@@ -705,6 +705,28 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse ?labels= (name-based) and ?labels_mode=any|all. ?labels_mode also
+	// applies to a future UUID-based ?label_ids= param here; for now this
+	// handler only acts on the name-based input. Default "any" preserves the
+	// historical OR semantics used elsewhere (e.g. ListGroupedIssues).
+	labelNamesRaw := r.URL.Query().Get("labels")
+	var labelNames []string
+	if labelNamesRaw != "" {
+		for _, raw := range strings.Split(labelNamesRaw, ",") {
+			if s := strings.TrimSpace(raw); s != "" {
+				labelNames = append(labelNames, strings.ToLower(s))
+			}
+		}
+	}
+	labelsMode := strings.ToLower(r.URL.Query().Get("labels_mode"))
+	if labelsMode == "" {
+		labelsMode = "any"
+	}
+	if labelsMode != "any" && labelsMode != "all" {
+		writeError(w, http.StatusBadRequest, "labels_mode must be 'any' or 'all'")
+		return
+	}
+
 	// Parse optional filter params. Malformed UUIDs in filters return 400 —
 	// silently coercing them to a zero UUID would mask a client bug and let
 	// the query return an empty result set (or worse, match a NULL row).
@@ -818,6 +840,58 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 		if v, err := strconv.Atoi(o); err == nil {
 			offset = v
 		}
+	}
+
+	// Name-based label filter path. Dispatches to the dedicated sqlc queries
+	// (ListIssuesByLabelNamesAny / All) which handle OR/AND semantics in SQL.
+	// This path does NOT compose with the other dynamic-SQL filters (status /
+	// priority / assignee_id / etc.) in v0.3 — callers that need richer
+	// composition should narrow client-side until we extend the queries.
+	if len(labelNames) > 0 {
+		var issues []db.Issue
+		var qerr error
+		if labelsMode == "all" {
+			issues, qerr = h.Queries.ListIssuesByLabelNamesAll(ctx, db.ListIssuesByLabelNamesAllParams{
+				WorkspaceID: wsUUID,
+				Names:       labelNames,
+				Limit:       int32(limit),
+				Offset:      int32(offset),
+			})
+		} else {
+			issues, qerr = h.Queries.ListIssuesByLabelNamesAny(ctx, db.ListIssuesByLabelNamesAnyParams{
+				WorkspaceID: wsUUID,
+				Names:       labelNames,
+				Limit:       int32(limit),
+				Offset:      int32(offset),
+			})
+		}
+		if qerr != nil {
+			slog.Warn("ListIssues label-name query failed", "error", qerr)
+			writeError(w, http.StatusInternalServerError, "failed to list issues")
+			return
+		}
+
+		prefix := h.getIssuePrefix(ctx, wsUUID)
+		ids := make([]pgtype.UUID, len(issues))
+		for i, issue := range issues {
+			ids[i] = issue.ID
+		}
+		labelsMap := h.labelsByIssue(ctx, wsUUID, ids)
+		resp := make([]IssueResponse, len(issues))
+		for i, issue := range issues {
+			resp[i] = issueToResponse(issue, prefix)
+			labels := labelsMap[resp[i].ID]
+			if labels == nil {
+				labels = []LabelResponse{}
+			}
+			resp[i].Labels = &labels
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"issues": resp,
+			"total":  len(resp),
+		})
+		return
 	}
 
 	var statusFilter pgtype.Text
