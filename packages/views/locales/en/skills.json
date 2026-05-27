@@ -9,7 +9,8 @@
       "all": { "label": "All", "description": "All skills in this workspace" },
       "used": { "label": "In use", "description": "Skills assigned to at least one agent" },
       "unused": { "label": "Unused", "description": "Skills not assigned to any agent" },
-      "mine": { "label": "Created by me", "description": "Skills you created" }
+      "mine": { "label": "Created by me", "description": "Skills you created" },
+      "stale": { "label": "Stale", "description": "Not reviewed in 90 days, or never reviewed" }
     },
     "empty": {
       "title": "No skills yet",
@@ -38,6 +39,8 @@
     "name": "Name",
     "used_by": "Used by",
     "source": "Source · Added by",
+    "owner": "Owner",
+    "last_reviewed": "Last reviewed",
     "updated": "Updated",
     "no_description": "No description",
     "lock_tooltip": "Read-only — only creator or admin can edit",
@@ -50,6 +53,17 @@
     "source_clawhub": "From ClawHub",
     "source_skills_sh": "From Skills.sh",
     "source_github": "From GitHub"
+  },
+  "owner": {
+    "unassigned": "No owner",
+    "assign": "Assign owner",
+    "change": "Change owner"
+  },
+  "review": {
+    "never": "Never",
+    "mark_reviewed": "Mark reviewed",
+    "marked_reviewed": "Marked reviewed",
+    "mark_reviewed_failed": "Failed to mark reviewed"
   },
   "detail": {
     "all_skills": "All skills",

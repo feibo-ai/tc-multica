@@ -43,14 +43,28 @@ const COL_WIDTHS = {
   name: 240,
   usedBy: 140,
   source: 220,
+  owner: 160,
+  lastReviewed: 140,
   updated: 100,
   chevron: 48,
 } as const;
 
+// Threshold for marking a skill as "stale". Mirrors the backend filter at
+// server/internal/handler/skill.go (90d window). Centralising the constant
+// here makes it possible to assert on the boundary in tests without
+// reaching into i18n strings.
+export const STALE_AFTER_MS = 90 * 24 * 60 * 60 * 1000;
+
 // Hook returns column defs that close over a translation function. Defining
 // columns inside a hook (rather than as a module-level static) is the i18n
 // price for header strings — same pattern used by inbox `useTypeLabels`.
-export function useSkillColumns(): ColumnDef<SkillRow>[] {
+//
+// Members are passed in (rather than fetched here) so the columns stay pure
+// renderers — the page already owns the workspace-scoped query and can
+// thread the same list into both the rows and the column defs.
+export function useSkillColumns(
+  members: MemberWithUser[],
+): ColumnDef<SkillRow>[] {
   const { t } = useT("skills");
   const timeAgo = useTimeAgo();
   return [
@@ -77,6 +91,25 @@ export function useSkillColumns(): ColumnDef<SkillRow>[] {
           skill={row.original.skill}
           creator={row.original.creator}
           runtime={row.original.runtime}
+        />
+      ),
+    },
+    {
+      id: "owner",
+      header: t(($) => $.table.owner),
+      size: COL_WIDTHS.owner,
+      cell: ({ row }) => (
+        <OwnerCell ownerId={row.original.skill.owner_user_id} members={members} />
+      ),
+    },
+    {
+      id: "lastReviewed",
+      header: t(($) => $.table.last_reviewed),
+      size: COL_WIDTHS.lastReviewed,
+      cell: ({ row }) => (
+        <LastReviewedCell
+          lastReviewedAt={row.original.skill.last_reviewed_at}
+          timeAgo={timeAgo}
         />
       ),
     },
@@ -176,6 +209,77 @@ function AgentAssignees({ agents }: { agents: Agent[] }) {
         </span>
       )}
     </div>
+  );
+}
+
+// Owner column — name + avatar when we can resolve the UUID against the
+// workspace member list, a "No owner" red callout when the field is null,
+// and a truncated UUID fallback when the owner exists but is no longer in
+// the member list (deleted user, etc.). The fallback avoids dropping the
+// signal entirely so we don't appear to silently unassign on member
+// changes.
+function OwnerCell({
+  ownerId,
+  members,
+}: {
+  ownerId: string | null;
+  members: MemberWithUser[];
+}) {
+  const { t } = useT("skills");
+  if (!ownerId) {
+    return (
+      <span className="text-xs text-red-500">
+        {t(($) => $.owner.unassigned)}
+      </span>
+    );
+  }
+  const member = members.find((m) => m.user_id === ownerId) ?? null;
+  if (!member) {
+    return (
+      <span className="font-mono text-xs text-muted-foreground/70">
+        {ownerId.slice(0, 8)}…
+      </span>
+    );
+  }
+  return (
+    <div className="flex min-w-0 items-center gap-1.5 text-xs">
+      <ActorAvatar
+        name={member.name}
+        initials={member.name.slice(0, 2).toUpperCase()}
+        avatarUrl={member.avatar_url}
+        size={18}
+      />
+      <span className="truncate text-foreground">{member.name}</span>
+    </div>
+  );
+}
+
+// Last-reviewed column — "Never" in red when null, the relative timestamp
+// otherwise (red when older than 90 days). Matches the backend's stale
+// threshold so the visual cue and the Stale filter agree on what's stale.
+function LastReviewedCell({
+  lastReviewedAt,
+  timeAgo,
+}: {
+  lastReviewedAt: string | null;
+  timeAgo: (ts: string) => string;
+}) {
+  const { t } = useT("skills");
+  if (!lastReviewedAt) {
+    return (
+      <span className="text-xs text-red-500">{t(($) => $.review.never)}</span>
+    );
+  }
+  const age = Date.now() - new Date(lastReviewedAt).getTime();
+  const isStale = age > STALE_AFTER_MS;
+  return (
+    <span
+      className={`whitespace-nowrap text-xs ${
+        isStale ? "text-red-500" : "text-muted-foreground"
+      }`}
+    >
+      {timeAgo(lastReviewedAt)}
+    </span>
   );
 }
 

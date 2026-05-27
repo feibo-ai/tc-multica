@@ -43,9 +43,9 @@ import { CreateSkillDialog } from "./create-skill-dialog";
 import { type SkillRow, useSkillColumns } from "./skill-columns";
 import { useT } from "../../i18n";
 
-type FilterKey = "all" | "used" | "unused" | "mine";
+type FilterKey = "all" | "used" | "unused" | "mine" | "stale";
 
-const SCOPE_KEYS: FilterKey[] = ["all", "used", "unused", "mine"];
+const SCOPE_KEYS: FilterKey[] = ["all", "used", "unused", "mine", "stale"];
 
 // ---------------------------------------------------------------------------
 // Page header bar — uses shared PageHeader so the mobile sidebar trigger and
@@ -180,12 +180,20 @@ export default function SkillsPage() {
   const navigation = useNavigation();
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
 
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<FilterKey>("all");
+  const [createOpen, setCreateOpen] = useState(false);
+
+  // Stale is the only scope that pushes filtering to the server (it uses the
+  // backend's `ListStaleSkills` query under the hood). All the other scopes
+  // are client-side narrowings of the full list, so we keep the query keyed
+  // on `stale: false` for them and let `filtered` do the rest of the work.
   const {
     data: skills = [],
     isLoading,
     error: listError,
     refetch: refetchList,
-  } = useQuery(skillListOptions(wsId));
+  } = useQuery(skillListOptions(wsId, { stale: filter === "stale" }));
   const { data: agents = [], error: agentsError } = useQuery(
     agentListOptions(wsId),
   );
@@ -195,10 +203,6 @@ export default function SkillsPage() {
   const { data: runtimes = [], error: runtimesError } = useQuery(
     runtimeListOptions(wsId),
   );
-
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<FilterKey>("all");
-  const [createOpen, setCreateOpen] = useState(false);
 
   const assignments = useMemo(
     () => selectSkillAssignments(agents),
@@ -273,7 +277,7 @@ export default function SkillsPage() {
     myRole,
   ]);
 
-  const columns = useSkillColumns();
+  const columns = useSkillColumns(members);
 
   const table = useReactTable({
     data: skillRows,

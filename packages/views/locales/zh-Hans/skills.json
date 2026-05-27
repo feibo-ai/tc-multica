@@ -21,6 +21,10 @@
       "mine": {
         "label": "我创建的",
         "description": "你创建的 skill"
+      },
+      "stale": {
+        "label": "陈旧",
+        "description": "90 天未复核，或从未复核"
       }
     },
     "empty": {
@@ -50,6 +54,8 @@
     "name": "名称",
     "used_by": "被谁使用",
     "source": "来源 · 添加者",
+    "owner": "负责人",
+    "last_reviewed": "上次复核",
     "updated": "更新时间",
     "no_description": "无描述",
     "lock_tooltip": "只读——只有创建者或管理员能编辑",
@@ -62,6 +68,17 @@
     "source_clawhub": "来自 ClawHub",
     "source_skills_sh": "来自 Skills.sh",
     "source_github": "来自 GitHub"
+  },
+  "owner": {
+    "unassigned": "无负责人",
+    "assign": "指定负责人",
+    "change": "更换负责人"
+  },
+  "review": {
+    "never": "从未",
+    "mark_reviewed": "标记已复核",
+    "marked_reviewed": "已标记复核",
+    "mark_reviewed_failed": "标记复核失败"
   },
   "detail": {
     "all_skills": "全部 skill",

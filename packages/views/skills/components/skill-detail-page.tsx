@@ -5,6 +5,7 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowLeft,
+  CheckCircle2,
   ChevronRight,
   HardDrive,
   Loader2,
@@ -49,6 +50,13 @@ import {
 } from "@multica/ui/components/ui/dialog";
 import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@multica/ui/components/ui/select";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Textarea } from "@multica/ui/components/ui/textarea";
 import {
@@ -282,6 +290,8 @@ export function SkillDetailPage({ skillId }: { skillId: string }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [addingFile, setAddingFile] = useState(false);
   const [conflictPending, setConflictPending] = useState(false);
+  const [markingReviewed, setMarkingReviewed] = useState(false);
+  const [ownerUpdating, setOwnerUpdating] = useState(false);
 
   const draftRef = useRef({ name, description, content, files });
   draftRef.current = { name, description, content, files };
@@ -417,10 +427,10 @@ export function SkillDetailPage({ skillId }: { skillId: string }) {
       seedFromSkill(updated);
       seededKeyRef.current = `${wsId}:${updated.id}@${updated.updated_at}`;
       setConflictPending(false);
-      qc.invalidateQueries({
-        queryKey: workspaceKeys.skills(wsId),
-        exact: true,
-      });
+      // No `exact: true` — the skill list query key now carries a scope
+      // suffix ("all" | "stale"), so we need prefix-match invalidation to
+      // refetch both buckets after a save.
+      qc.invalidateQueries({ queryKey: workspaceKeys.skills(wsId) });
       qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
       toast.success(t(($) => $.detail.toast_saved));
     } catch (err) {
@@ -468,6 +478,52 @@ export function SkillDetailPage({ skillId }: { skillId: string }) {
     if (selectedPath === SKILL_MD) return;
     setFiles((prev) => prev.filter((f) => f.path !== selectedPath));
     setSelectedPath(SKILL_MD);
+  };
+
+  // Mark Reviewed action — bumps last_reviewed_at without touching any
+  // other field. Optimistically patches the detail cache so the badge
+  // updates instantly, then broadly invalidates the skill list so the
+  // Stale scope drops this row on the next refetch.
+  const handleMarkReviewed = async () => {
+    if (!skill) return;
+    setMarkingReviewed(true);
+    try {
+      const updated = await api.touchSkillReviewed(skill.id);
+      qc.setQueryData(skillDetailOptions(wsId, skill.id).queryKey, updated);
+      qc.invalidateQueries({ queryKey: workspaceKeys.skills(wsId) });
+      toast.success(t(($) => $.review.marked_reviewed));
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : t(($) => $.review.mark_reviewed_failed),
+      );
+    } finally {
+      setMarkingReviewed(false);
+    }
+  };
+
+  // Owner picker — sends "" to clear, UUID to set, matching the backend
+  // contract in server/internal/handler/skill.go where omitted means no-
+  // change and empty string means clear.
+  const handleOwnerChange = async (newOwnerId: string) => {
+    if (!skill) return;
+    const current = skill.owner_user_id ?? "";
+    if (newOwnerId === current) return;
+    setOwnerUpdating(true);
+    try {
+      const updated = await api.updateSkill(skill.id, {
+        owner_user_id: newOwnerId,
+      });
+      qc.setQueryData(skillDetailOptions(wsId, skill.id).queryKey, updated);
+      qc.invalidateQueries({ queryKey: workspaceKeys.skills(wsId) });
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : t(($) => $.detail.toast_save_failed),
+      );
+    } finally {
+      setOwnerUpdating(false);
+    }
   };
 
   const handleFileContentChange = (newContent: string) => {
@@ -574,6 +630,22 @@ export function SkillDetailPage({ skillId }: { skillId: string }) {
               <Lock className="h-3 w-3" />
               {t(($) => $.detail.read_only)}
             </span>
+          )}
+          {canEdit && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="xs"
+              onClick={handleMarkReviewed}
+              disabled={markingReviewed}
+            >
+              {markingReviewed ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-3 w-3" />
+              )}
+              {t(($) => $.review.mark_reviewed)}
+            </Button>
           )}
           {canEdit && (
             <Tooltip>
@@ -871,6 +943,87 @@ export function SkillDetailPage({ skillId }: { skillId: string }) {
               <OriginSidebarCard origin={origin} runtime={originRuntime} />
             </div>
           )}
+
+          {/* Owner + review status. Owner picker is read-only when the
+              current viewer can't edit (CapabilityBanner above surfaces the
+              reason). Last reviewed renders as "Never" in red when null and
+              red when older than 90d — same threshold the Stale filter
+              uses on the list page so the visual stays in sync. */}
+          <div>
+            <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              {t(($) => $.table.owner)}
+            </h3>
+            {canEdit ? (
+              <Select
+                value={skill.owner_user_id ?? ""}
+                onValueChange={(v) => handleOwnerChange(v ?? "")}
+                disabled={ownerUpdating}
+              >
+                <SelectTrigger className="w-full" size="sm">
+                  <SelectValue
+                    placeholder={t(($) => $.owner.unassigned)}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">
+                    {t(($) => $.owner.unassigned)}
+                  </SelectItem>
+                  {members.map((m) => (
+                    <SelectItem key={m.user_id} value={m.user_id}>
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="text-xs">
+                {(() => {
+                  if (!skill.owner_user_id) {
+                    return (
+                      <span className="text-red-500">
+                        {t(($) => $.owner.unassigned)}
+                      </span>
+                    );
+                  }
+                  const owner = members.find(
+                    (m) => m.user_id === skill.owner_user_id,
+                  );
+                  return owner ? (
+                    <span>{owner.name}</span>
+                  ) : (
+                    <span className="font-mono text-muted-foreground/70">
+                      {skill.owner_user_id.slice(0, 8)}…
+                    </span>
+                  );
+                })()}
+              </div>
+            )}
+            <div className="mt-3 flex gap-2 text-xs">
+              <dt className="min-w-20 text-muted-foreground">
+                {t(($) => $.table.last_reviewed)}
+              </dt>
+              <dd className="min-w-0 flex-1">
+                {(() => {
+                  const ts = skill.last_reviewed_at;
+                  if (!ts) {
+                    return (
+                      <span className="text-red-500">
+                        {t(($) => $.review.never)}
+                      </span>
+                    );
+                  }
+                  const isStale =
+                    Date.now() - new Date(ts).getTime() >
+                    90 * 24 * 60 * 60 * 1000;
+                  return (
+                    <span className={isStale ? "text-red-500" : undefined}>
+                      {timeAgo(ts)}
+                    </span>
+                  );
+                })()}
+              </dd>
+            </div>
+          </div>
 
           <div>
             <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
