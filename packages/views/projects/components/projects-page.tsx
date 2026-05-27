@@ -13,6 +13,11 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@multica/ui/components/ui/tooltip";
 import { cn } from "@multica/ui/lib/utils";
 import type { Project, UpdateProjectRequest } from "@multica/core/types";
 import { PageHeader } from "../../layout/page-header";
@@ -186,7 +191,15 @@ export function ProjectsPage() {
   const viewMode = useProjectViewStore((s) => s.viewMode);
   const setViewMode = useProjectViewStore((s) => s.setViewMode);
   const isCompact = viewMode === "compact";
-  const { data: projects = [], isLoading } = useQuery(projectListOptions(wsId));
+  // The "Without DRI" chip toggles a server-side filter (the backend route
+  // GET /api/projects?without_dri=true returns the triage list of projects
+  // missing a DRI per SOP v0.4 P-5). The flag is part of the queryKey so the
+  // default and triage caches stay isolated — switching the chip swaps the
+  // cached row set rather than blowing away the full list.
+  const [withoutDri, setWithoutDri] = useState(false);
+  const { data: projects = [], isLoading } = useQuery(
+    projectListOptions(wsId, { withoutDri }),
+  );
   const openCreateProject = () => useModalStore.getState().open("create-project");
 
   const [search, setSearch] = useState("");
@@ -215,16 +228,42 @@ export function ProjectsPage() {
       </PageHeader>
 
       <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
-        {(projects.length > 0 || isLoading) && (
+        {(projects.length > 0 || isLoading || withoutDri) && (
           <div className="flex h-12 shrink-0 items-center justify-between border-b px-4 gap-2 sm:gap-3">
-            <div className="relative flex-1 sm:flex-none">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={t(($) => $.page.search_placeholder)}
-                className="h-8 w-full sm:w-64 pl-8 text-sm"
-              />
+            <div className="flex items-center gap-2 flex-1 sm:flex-none min-w-0">
+              <div className="relative flex-1 sm:flex-none">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t(($) => $.page.search_placeholder)}
+                  className="h-8 w-full sm:w-64 pl-8 text-sm"
+                />
+              </div>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      aria-pressed={withoutDri}
+                      onClick={() => setWithoutDri((v) => !v)}
+                      className={cn(
+                        "shrink-0",
+                        withoutDri
+                          ? "bg-accent text-accent-foreground hover:bg-accent/80"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {t(($) => $.filters.without_dri)}
+                    </Button>
+                  }
+                />
+                <TooltipContent side="bottom">
+                  {t(($) => $.filters.without_dri_description)}
+                </TooltipContent>
+              </Tooltip>
             </div>
 
             <div className="flex items-center gap-2 sm:gap-4 shrink-0">
@@ -297,13 +336,23 @@ export function ProjectsPage() {
               </div>
             )
           ) : projects.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-24 text-muted-foreground">
-              <FolderKanban className="h-10 w-10 mb-3 opacity-30" />
-              <p className="text-sm">{t(($) => $.page.empty)}</p>
-              <Button size="sm" variant="outline" className="mt-3" onClick={openCreateProject}>
-                {t(($) => $.page.create_first)}
-              </Button>
-            </div>
+            withoutDri ? (
+              // Triage view, no rows: every project already has a DRI. This
+              // is a "clean board" message, not a first-time empty state —
+              // don't offer the create CTA here.
+              <div className="flex flex-col items-center justify-center py-24 text-muted-foreground">
+                <FolderKanban className="h-10 w-10 mb-3 opacity-30" />
+                <p className="text-sm">{t(($) => $.page.empty_without_dri)}</p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-24 text-muted-foreground">
+                <FolderKanban className="h-10 w-10 mb-3 opacity-30" />
+                <p className="text-sm">{t(($) => $.page.empty)}</p>
+                <Button size="sm" variant="outline" className="mt-3" onClick={openCreateProject}>
+                  {t(($) => $.page.create_first)}
+                </Button>
+              </div>
+            )
           ) : filteredProjects.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 text-muted-foreground">
               <Search className="h-10 w-10 mb-3 opacity-30" />

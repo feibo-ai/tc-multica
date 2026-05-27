@@ -12,6 +12,12 @@ export interface Project {
   priority: ProjectPriority;
   lead_type: "member" | "agent" | null;
   lead_id: string | null;
+  // DRI (Directly Responsible Individual) — the human user accountable for
+  // the project per SOP v0.4 P-5. Distinct from `lead_id` (which is
+  // polymorphic and may be an agent); DRI is always a member user_id, or
+  // null when unset. Surfacing a null here as red in the UI is the
+  // P-5-risk signal the backend list/filter is built to support.
+  dri_user_id: string | null;
   created_at: string;
   updated_at: string;
   issue_count: number;
@@ -27,6 +33,7 @@ export interface CreateProjectRequest {
   priority?: ProjectPriority;
   lead_type?: "member" | "agent";
   lead_id?: string;
+  dri_user_id?: string;
   // Resources to attach in the same transaction as the project. Server returns
   // 4xx (and rolls back) if any one is invalid or duplicate.
   resources?: CreateProjectResourceRequest[];
@@ -40,6 +47,7 @@ export interface UpdateProjectRequest {
   priority?: ProjectPriority;
   lead_type?: "member" | "agent" | null;
   lead_id?: string | null;
+  dri_user_id?: string | null;
 }
 
 export interface ListProjectsResponse {

@@ -4,13 +4,23 @@ import { projectKeys } from "./queries";
 import { useWorkspaceId } from "../hooks";
 import type { Project, CreateProjectRequest, UpdateProjectRequest, ListProjectsResponse } from "../types";
 
+// The "all" list cache lives under [...projectKeys.list(wsId), "all"]; the
+// "without_dri" triage cache lives under the same prefix with the
+// "without_dri" suffix. Optimistic writes here only patch the default
+// envelope — the triage cache is refetched by the prefix invalidate on
+// settle, because membership in "without DRI" depends on the new
+// `dri_user_id` value and we don't want to predict the new membership
+// here.
+const projectListAllKey = (wsId: string) =>
+  [...projectKeys.list(wsId), "all"] as const;
+
 export function useCreateProject() {
   const qc = useQueryClient();
   const wsId = useWorkspaceId();
   return useMutation({
     mutationFn: (data: CreateProjectRequest) => api.createProject(data),
     onSuccess: (newProject) => {
-      qc.setQueryData<ListProjectsResponse>(projectKeys.list(wsId), (old) =>
+      qc.setQueryData<ListProjectsResponse>(projectListAllKey(wsId), (old) =>
         old && !old.projects.some((p) => p.id === newProject.id)
           ? { ...old, projects: [...old.projects, newProject], total: old.total + 1 }
           : old,
@@ -30,9 +40,9 @@ export function useUpdateProject() {
       api.updateProject(id, data),
     onMutate: ({ id, ...data }) => {
       qc.cancelQueries({ queryKey: projectKeys.list(wsId) });
-      const prevList = qc.getQueryData<ListProjectsResponse>(projectKeys.list(wsId));
+      const prevList = qc.getQueryData<ListProjectsResponse>(projectListAllKey(wsId));
       const prevDetail = qc.getQueryData<Project>(projectKeys.detail(wsId, id));
-      qc.setQueryData<ListProjectsResponse>(projectKeys.list(wsId), (old) =>
+      qc.setQueryData<ListProjectsResponse>(projectListAllKey(wsId), (old) =>
         old ? { ...old, projects: old.projects.map((p) => (p.id === id ? { ...p, ...data } : p)) } : old,
       );
       qc.setQueryData<Project>(projectKeys.detail(wsId, id), (old) =>
@@ -41,7 +51,7 @@ export function useUpdateProject() {
       return { prevList, prevDetail, id };
     },
     onError: (_err, _vars, ctx) => {
-      if (ctx?.prevList) qc.setQueryData(projectKeys.list(wsId), ctx.prevList);
+      if (ctx?.prevList) qc.setQueryData(projectListAllKey(wsId), ctx.prevList);
       if (ctx?.prevDetail) qc.setQueryData(projectKeys.detail(wsId, ctx.id), ctx.prevDetail);
     },
     onSettled: (_data, _err, vars) => {
@@ -58,15 +68,15 @@ export function useDeleteProject() {
     mutationFn: (id: string) => api.deleteProject(id),
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: projectKeys.list(wsId) });
-      const prevList = qc.getQueryData<ListProjectsResponse>(projectKeys.list(wsId));
-      qc.setQueryData<ListProjectsResponse>(projectKeys.list(wsId), (old) =>
+      const prevList = qc.getQueryData<ListProjectsResponse>(projectListAllKey(wsId));
+      qc.setQueryData<ListProjectsResponse>(projectListAllKey(wsId), (old) =>
         old ? { ...old, projects: old.projects.filter((p) => p.id !== id), total: old.total - 1 } : old,
       );
       qc.removeQueries({ queryKey: projectKeys.detail(wsId, id) });
       return { prevList };
     },
     onError: (_err, _id, ctx) => {
-      if (ctx?.prevList) qc.setQueryData(projectKeys.list(wsId), ctx.prevList);
+      if (ctx?.prevList) qc.setQueryData(projectListAllKey(wsId), ctx.prevList);
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: projectKeys.list(wsId) });

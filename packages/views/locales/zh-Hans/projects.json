@@ -3,11 +3,16 @@
     "title": "项目",
     "new_project": "新建项目",
     "empty": "还没有项目",
+    "empty_without_dri": "所有项目都有 DRI",
     "create_first": "创建第一个项目",
     "view_compact": "紧凑视图",
     "view_comfortable": "舒适视图",
     "search_placeholder": "搜索项目...",
     "no_search_results": "未找到匹配的项目"
+  },
+  "filters": {
+    "without_dri": "无 DRI",
+    "without_dri_description": "没有指定 DRI 的项目（SOP P-5 风险）"
   },
   "table": {
     "name": "名称",
@@ -62,9 +67,16 @@
     "empty_issues_hint": "新建一个 issue，或把已有的 issue 关联到这个项目。",
     "empty_issues_new_button": "新建 issue",
     "no_issues_yet": "目前还没有 issue",
+    "dri_label": "DRI",
+    "dri_unassigned": "未指定（SOP P-5 风险）",
+    "dri_assign": "指定 DRI",
+    "dri_change": "更换 DRI",
+    "dri_assign_placeholder": "查找成员...",
     "toast_link_copied": "已复制链接",
     "toast_project_deleted": "已删除项目",
-    "toast_move_issue_failed": "移动 issue 失败"
+    "toast_move_issue_failed": "移动 issue 失败",
+    "toast_dri_updated": "已更新 DRI",
+    "toast_dri_update_failed": "更新 DRI 失败"
   },
   "resources": {
     "section_header": "资源",
