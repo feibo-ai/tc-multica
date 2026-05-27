@@ -58,6 +58,13 @@ var skillImportCmd = &cobra.Command{
 	RunE:  runSkillImport,
 }
 
+var skillTouchReviewedCmd = &cobra.Command{
+	Use:   "touch-reviewed <id>",
+	Short: "Mark a skill as reviewed today (resets the 90-day stale clock)",
+	Args:  exactArgs(1),
+	RunE:  runSkillTouchReviewed,
+}
+
 // Skill file subcommands.
 
 var skillFilesCmd = &cobra.Command{
@@ -93,6 +100,7 @@ func init() {
 	skillCmd.AddCommand(skillUpdateCmd)
 	skillCmd.AddCommand(skillDeleteCmd)
 	skillCmd.AddCommand(skillImportCmd)
+	skillCmd.AddCommand(skillTouchReviewedCmd)
 	skillCmd.AddCommand(skillFilesCmd)
 
 	skillFilesCmd.AddCommand(skillFilesListCmd)
@@ -101,6 +109,7 @@ func init() {
 
 	// skill list
 	skillListCmd.Flags().String("output", "table", "Output format: table or json")
+	skillListCmd.Flags().Bool("stale", false, "Only show skills not reviewed in 90 days")
 
 	// skill get
 	skillGetCmd.Flags().String("output", "json", "Output format: table or json")
@@ -110,6 +119,7 @@ func init() {
 	skillCreateCmd.Flags().String("description", "", "Skill description")
 	skillCreateCmd.Flags().String("content", "", "Skill content (SKILL.md body)")
 	skillCreateCmd.Flags().String("config", "", "Skill config as JSON string")
+	skillCreateCmd.Flags().String("owner", "", "User UUID to set as owner (SOP ❌5)")
 	skillCreateCmd.Flags().String("output", "json", "Output format: table or json")
 
 	// skill update
@@ -117,6 +127,7 @@ func init() {
 	skillUpdateCmd.Flags().String("description", "", "New description")
 	skillUpdateCmd.Flags().String("content", "", "New content")
 	skillUpdateCmd.Flags().String("config", "", "New config as JSON string")
+	skillUpdateCmd.Flags().String("owner", "", "Set owner user UUID (use empty string to clear)")
 	skillUpdateCmd.Flags().String("output", "json", "Output format: table or json")
 
 	// skill delete
@@ -125,6 +136,9 @@ func init() {
 	// skill import
 	skillImportCmd.Flags().String("url", "", "URL to import from (required)")
 	skillImportCmd.Flags().String("output", "json", "Output format: table or json")
+
+	// skill touch-reviewed
+	skillTouchReviewedCmd.Flags().String("output", "text", "Output format: text or json")
 
 	// skill files list
 	skillFilesListCmd.Flags().String("output", "table", "Output format: table or json")
@@ -148,8 +162,13 @@ func runSkillList(cmd *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
+	path := "/api/skills"
+	if stale, _ := cmd.Flags().GetBool("stale"); stale {
+		path += "?stale=true"
+	}
+
 	var skills []map[string]any
-	if err := client.GetJSON(ctx, "/api/skills", &skills); err != nil {
+	if err := client.GetJSON(ctx, path, &skills); err != nil {
 		return fmt.Errorf("list skills: %w", err)
 	}
 
@@ -230,6 +249,9 @@ func runSkillCreate(cmd *cobra.Command, _ []string) error {
 		}
 		body["config"] = config
 	}
+	if v, _ := cmd.Flags().GetString("owner"); v != "" {
+		body["owner_user_id"] = v
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -275,9 +297,14 @@ func runSkillUpdate(cmd *cobra.Command, args []string) error {
 		}
 		body["config"] = config
 	}
+	if cmd.Flags().Changed("owner") {
+		v, _ := cmd.Flags().GetString("owner")
+		// Pass through empty string explicitly; backend treats "" as "clear".
+		body["owner_user_id"] = v
+	}
 
 	if len(body) == 0 {
-		return fmt.Errorf("no fields to update; use --name, --description, --content, or --config")
+		return fmt.Errorf("no fields to update; use --name, --description, --content, --config, or --owner")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -355,6 +382,28 @@ func runSkillImport(cmd *cobra.Command, _ []string) error {
 	}
 
 	fmt.Printf("Skill imported: %s (%s)\n", strVal(result, "name"), strVal(result, "id"))
+	return nil
+}
+
+func runSkillTouchReviewed(cmd *cobra.Command, args []string) error {
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	var result map[string]any
+	if err := client.PostJSON(ctx, "/api/skills/"+args[0]+"/touch-reviewed", nil, &result); err != nil {
+		return fmt.Errorf("touch-reviewed: %w", err)
+	}
+
+	output, _ := cmd.Flags().GetString("output")
+	if output == "json" {
+		return cli.PrintJSON(os.Stdout, result)
+	}
+	fmt.Printf("Skill %s marked reviewed at %s\n", strVal(result, "id"), strVal(result, "last_reviewed_at"))
 	return nil
 }
 
