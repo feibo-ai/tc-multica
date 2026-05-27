@@ -1375,11 +1375,31 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// labels_mode applies to the label_ids filter on the grouped path.
+	// Default "any" preserves the historical OR-via-EXISTS-ANY semantic.
+	// "all" switches to AND semantics via a COUNT-distinct subquery so the
+	// frontend's "Match: All" toggle is honored server-side, matching the
+	// ListIssues path. Mirror of the ListIssuesByLabelIDsAll sqlc query.
+	groupedLabelsMode := strings.ToLower(r.URL.Query().Get("labels_mode"))
+	if groupedLabelsMode == "" {
+		groupedLabelsMode = "any"
+	}
+	if groupedLabelsMode != "any" && groupedLabelsMode != "all" {
+		writeError(w, http.StatusBadRequest, "labels_mode must be 'any' or 'all'")
+		return
+	}
 	if len(labelIDs) > 0 {
-		where = append(where, fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM issue_to_label itl WHERE itl.issue_id = i.id AND itl.label_id = ANY(%s::uuid[]))",
-			addArg(labelIDs),
-		))
+		if groupedLabelsMode == "all" {
+			where = append(where, fmt.Sprintf(
+				"(SELECT COUNT(DISTINCT itl.label_id) FROM issue_to_label itl WHERE itl.issue_id = i.id AND itl.label_id = ANY(%s::uuid[])) = %d",
+				addArg(labelIDs), len(labelIDs),
+			))
+		} else {
+			where = append(where, fmt.Sprintf(
+				"EXISTS (SELECT 1 FROM issue_to_label itl WHERE itl.issue_id = i.id AND itl.label_id = ANY(%s::uuid[]))",
+				addArg(labelIDs),
+			))
+		}
 	}
 
 	if groupAssigneeType := r.URL.Query().Get("group_assignee_type"); groupAssigneeType != "" {
