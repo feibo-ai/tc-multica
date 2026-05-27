@@ -262,6 +262,8 @@ func init() {
 	issueListCmd.Flags().String("assignee-id", "", "Filter by assignee UUID — member, agent, or squad (mutually exclusive with --assignee)")
 	issueListCmd.Flags().String("project", "", "Filter by project ID")
 	issueListCmd.Flags().StringSlice("metadata", nil, "Filter by metadata key=value (repeatable; combined with AND). Value is JSON-parsed: 'true'/'false' → bool, numbers → number, otherwise string. Wrap as '\"42\"' to force a string when the value would otherwise sniff as a number.")
+	issueListCmd.Flags().StringSlice("label", nil, "Filter by label name (repeatable; default mode=any/OR)")
+	issueListCmd.Flags().String("labels-mode", "any", "Combine multiple --label flags: any (OR) or all (AND)")
 	issueListCmd.Flags().Int("limit", 50, "Maximum number of issues to return")
 	issueListCmd.Flags().Int("offset", 0, "Number of issues to skip (for pagination)")
 
@@ -412,6 +414,13 @@ func runIssueList(cmd *cobra.Command, _ []string) error {
 			return err
 		}
 		params.Set("metadata", filter)
+	}
+	if labels, _ := cmd.Flags().GetStringSlice("label"); len(labels) > 0 {
+		params.Set("labels", strings.Join(labels, ","))
+		mode, _ := cmd.Flags().GetString("labels-mode")
+		if mode != "any" {
+			params.Set("labels_mode", mode)
+		}
 	}
 
 	path := "/api/issues"
