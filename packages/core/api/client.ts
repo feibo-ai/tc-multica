@@ -1293,8 +1293,9 @@ export class ApiClient {
   }
 
   // Skills
-  async listSkills(): Promise<SkillSummary[]> {
-    return this.fetch("/api/skills");
+  async listSkills(opts?: { stale?: boolean }): Promise<SkillSummary[]> {
+    const path = opts?.stale ? "/api/skills?stale=true" : "/api/skills";
+    return this.fetch(path);
   }
 
   async getSkill(id: string): Promise<Skill> {
@@ -1313,6 +1314,13 @@ export class ApiClient {
       method: "PUT",
       body: JSON.stringify(data),
     });
+  }
+
+  // Bumps `last_reviewed_at` to now without touching any other field. Used by
+  // the Mark Reviewed button on the detail page to clear staleness without an
+  // edit-and-save round-trip.
+  async touchSkillReviewed(id: string): Promise<Skill> {
+    return this.fetch(`/api/skills/${id}/touch-reviewed`, { method: "POST" });
   }
 
   async deleteSkill(id: string): Promise<void> {

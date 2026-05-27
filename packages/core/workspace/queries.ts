@@ -71,10 +71,18 @@ export function squadMemberStatusOptions(wsId: string, squadId: string) {
   });
 }
 
-export function skillListOptions(wsId: string) {
+// The `stale` flag is part of the queryKey so the "All" and "Stale" caches
+// stay isolated — switching the scope swaps the cached row set instead of
+// blowing the existing list away. Detail-page invalidations now use the
+// `workspaceKeys.skills(wsId)` prefix (no `exact: true`) so both buckets
+// are refetched after a save / touch-reviewed.
+export function skillListOptions(wsId: string, opts?: { stale?: boolean }) {
   return queryOptions({
-    queryKey: workspaceKeys.skills(wsId),
-    queryFn: () => api.listSkills(),
+    queryKey: [
+      ...workspaceKeys.skills(wsId),
+      opts?.stale ? "stale" : "all",
+    ] as const,
+    queryFn: () => api.listSkills(opts),
   });
 }
 

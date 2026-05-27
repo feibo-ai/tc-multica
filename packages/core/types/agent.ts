@@ -337,6 +337,18 @@ export interface SkillSummary {
   description: string;
   config: Record<string, unknown>;
   created_by: string | null;
+  /**
+   * UUID of the workspace member currently accountable for the skill. Null
+   * when no one has been assigned ownership. Owner-or-admin can edit; owner
+   * is also the natural target for staleness review reminders.
+   */
+  owner_user_id: string | null;
+  /**
+   * RFC3339 timestamp of the last `touch-reviewed` ack. Null until the skill
+   * has been reviewed once. `now - last_reviewed_at > 90d` (or null) marks
+   * the skill as stale.
+   */
+  last_reviewed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -360,6 +372,11 @@ export interface CreateSkillRequest {
   description?: string;
   content?: string;
   config?: Record<string, unknown>;
+  /**
+   * UUID of the member to assign as owner, or empty string to leave
+   * unowned. Omit to keep the server default (creator becomes owner).
+   */
+  owner_user_id?: string;
   files?: { path: string; content: string }[];
 }
 
@@ -368,6 +385,12 @@ export interface UpdateSkillRequest {
   description?: string;
   content?: string;
   config?: Record<string, unknown>;
+  /**
+   * UUID of the new owner. Empty string clears ownership. Omit the field
+   * entirely to leave the current owner unchanged — the backend treats
+   * missing as no-change, empty as clear.
+   */
+  owner_user_id?: string;
   files?: { path: string; content: string }[];
 }
 
