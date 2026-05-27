@@ -497,9 +497,14 @@ func runProjectAssignDRI(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
+	projectRef, err := resolveProjectID(ctx, client, args[0])
+	if err != nil {
+		return err
+	}
+
 	body := map[string]any{"dri_user_id": args[1]}
 	var result map[string]any
-	if err := client.PutJSON(ctx, "/api/projects/"+args[0]+"/dri", body, &result); err != nil {
+	if err := client.PutJSON(ctx, "/api/projects/"+projectRef.ID+"/dri", body, &result); err != nil {
 		return fmt.Errorf("assign-dri: %w", err)
 	}
 
@@ -507,7 +512,7 @@ func runProjectAssignDRI(cmd *cobra.Command, args []string) error {
 	if output == "json" {
 		return cli.PrintJSON(os.Stdout, result)
 	}
-	fmt.Printf("Project %s DRI = %s\n", args[0], args[1])
+	fmt.Printf("Project %s DRI = %s\n", projectRef.Display, args[1])
 	return nil
 }
 

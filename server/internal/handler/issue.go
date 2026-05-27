@@ -730,6 +730,13 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	// Parse optional filter params. Malformed UUIDs in filters return 400 —
 	// silently coercing them to a zero UUID would mask a client bug and let
 	// the query return an empty result set (or worse, match a NULL row).
+	// Status and priority are parsed here (not inside the regular ListIssues
+	// branch only) so the label-name dispatch path below can also pass them
+	// through to its dedicated queries — see `?labels=foo&status=open`.
+	var statusFilter pgtype.Text
+	if s := r.URL.Query().Get("status"); s != "" {
+		statusFilter = pgtype.Text{String: s, Valid: true}
+	}
 	var priorityFilter pgtype.Text
 	if p := r.URL.Query().Get("priority"); p != "" {
 		priorityFilter = pgtype.Text{String: p, Valid: true}
@@ -844,9 +851,12 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 
 	// Name-based label filter path. Dispatches to the dedicated sqlc queries
 	// (ListIssuesByLabelNamesAny / All) which handle OR/AND semantics in SQL.
-	// This path does NOT compose with the other dynamic-SQL filters (status /
-	// priority / assignee_id / etc.) in v0.3 — callers that need richer
-	// composition should narrow client-side until we extend the queries.
+	// Composes with the four common ListIssues filters (status, priority,
+	// assignee_id, project_id) so `?labels=foo&status=open` narrows by both
+	// axes instead of dropping status. The other ListIssues filters
+	// (creator_id, assignee_ids, involves_user_id, metadata) are not yet
+	// plumbed through the label-name queries — callers needing those should
+	// narrow client-side.
 	if len(labelNames) > 0 {
 		var issues []db.Issue
 		var qerr error
@@ -854,6 +864,10 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 			issues, qerr = h.Queries.ListIssuesByLabelNamesAll(ctx, db.ListIssuesByLabelNamesAllParams{
 				WorkspaceID: wsUUID,
 				Names:       labelNames,
+				Status:      statusFilter,
+				Priority:    priorityFilter,
+				AssigneeID:  assigneeFilter,
+				ProjectID:   projectFilter,
 				Limit:       int32(limit),
 				Offset:      int32(offset),
 			})
@@ -861,6 +875,10 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 			issues, qerr = h.Queries.ListIssuesByLabelNamesAny(ctx, db.ListIssuesByLabelNamesAnyParams{
 				WorkspaceID: wsUUID,
 				Names:       labelNames,
+				Status:      statusFilter,
+				Priority:    priorityFilter,
+				AssigneeID:  assigneeFilter,
+				ProjectID:   projectFilter,
 				Limit:       int32(limit),
 				Offset:      int32(offset),
 			})
@@ -892,11 +910,6 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 			"total":  len(resp),
 		})
 		return
-	}
-
-	var statusFilter pgtype.Text
-	if s := r.URL.Query().Get("status"); s != "" {
-		statusFilter = pgtype.Text{String: s, Valid: true}
 	}
 
 	// scheduled=true restricts the result to issues that have at least one of
@@ -1375,11 +1388,31 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// labels_mode applies to the label_ids filter on the grouped path.
+	// Default "any" preserves the historical OR-via-EXISTS-ANY semantic.
+	// "all" switches to AND semantics via a COUNT-distinct subquery so the
+	// frontend's "Match: All" toggle is honored server-side, matching the
+	// ListIssues path. Mirror of the ListIssuesByLabelIDsAll sqlc query.
+	groupedLabelsMode := strings.ToLower(r.URL.Query().Get("labels_mode"))
+	if groupedLabelsMode == "" {
+		groupedLabelsMode = "any"
+	}
+	if groupedLabelsMode != "any" && groupedLabelsMode != "all" {
+		writeError(w, http.StatusBadRequest, "labels_mode must be 'any' or 'all'")
+		return
+	}
 	if len(labelIDs) > 0 {
-		where = append(where, fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM issue_to_label itl WHERE itl.issue_id = i.id AND itl.label_id = ANY(%s::uuid[]))",
-			addArg(labelIDs),
-		))
+		if groupedLabelsMode == "all" {
+			where = append(where, fmt.Sprintf(
+				"(SELECT COUNT(DISTINCT itl.label_id) FROM issue_to_label itl WHERE itl.issue_id = i.id AND itl.label_id = ANY(%s::uuid[])) = %d",
+				addArg(labelIDs), len(labelIDs),
+			))
+		} else {
+			where = append(where, fmt.Sprintf(
+				"EXISTS (SELECT 1 FROM issue_to_label itl WHERE itl.issue_id = i.id AND itl.label_id = ANY(%s::uuid[]))",
+				addArg(labelIDs),
+			))
+		}
 	}
 
 	if groupAssigneeType := r.URL.Query().Get("group_assignee_type"); groupAssigneeType != "" {

@@ -308,6 +308,9 @@ RETURNING id, workspace_id, creator_type, creator_id, first_executed_at;
 -- OR semantics: issue has at least one of the named labels.
 -- Names compared case-insensitively (matches issue_label.workspace_id, lower(name) unique idx).
 -- Used by the GET /api/issues?labels=foo,bar&labels_mode=any path.
+-- Composes with the four common ListIssues filters (status, priority,
+-- assignee_id, project_id) via narg so callers can narrow by both label and
+-- another axis in one request.
 SELECT i.*
 FROM issue i
 WHERE i.workspace_id = $1
@@ -319,6 +322,10 @@ WHERE i.workspace_id = $1
       AND il.workspace_id = $1
       AND lower(il.name) = ANY(sqlc.arg('names')::text[])
   )
+  AND (sqlc.narg('status')::text IS NULL OR i.status = sqlc.narg('status'))
+  AND (sqlc.narg('priority')::text IS NULL OR i.priority = sqlc.narg('priority'))
+  AND (sqlc.narg('assignee_id')::uuid IS NULL OR i.assignee_id = sqlc.narg('assignee_id'))
+  AND (sqlc.narg('project_id')::uuid IS NULL OR i.project_id = sqlc.narg('project_id'))
 ORDER BY i.position ASC, i.created_at DESC
 LIMIT $2 OFFSET $3;
 
@@ -326,12 +333,18 @@ LIMIT $2 OFFSET $3;
 -- AND semantics: issue has ALL the named labels (intersection).
 -- Used by the GET /api/issues?labels=foo,bar&labels_mode=all path. The HAVING
 -- count guarantees every requested label is present on the returned row.
+-- Composes with the four common ListIssues filters (status, priority,
+-- assignee_id, project_id) via narg.
 SELECT i.*
 FROM issue i
 JOIN issue_to_label itl ON itl.issue_id = i.id
 JOIN issue_label il ON il.id = itl.label_id AND il.workspace_id = i.workspace_id
 WHERE i.workspace_id = $1
   AND lower(il.name) = ANY(sqlc.arg('names')::text[])
+  AND (sqlc.narg('status')::text IS NULL OR i.status = sqlc.narg('status'))
+  AND (sqlc.narg('priority')::text IS NULL OR i.priority = sqlc.narg('priority'))
+  AND (sqlc.narg('assignee_id')::uuid IS NULL OR i.assignee_id = sqlc.narg('assignee_id'))
+  AND (sqlc.narg('project_id')::uuid IS NULL OR i.project_id = sqlc.narg('project_id'))
 GROUP BY i.id
 HAVING COUNT(DISTINCT lower(il.name)) = COALESCE(array_length(sqlc.arg('names')::text[], 1), 0)
 ORDER BY MAX(i.position) ASC, MAX(i.created_at) DESC
@@ -341,12 +354,17 @@ LIMIT $2 OFFSET $3;
 -- AND semantics for the existing UUID-based label filter. The current
 -- ListIssues handler already supports ?label_ids= with OR semantics (via
 -- EXISTS … ANY(...)); this query lets ?labels_mode=all also work when
--- callers pass UUIDs instead of names.
+-- callers pass UUIDs instead of names. Composes with the four common
+-- ListIssues filters (status, priority, assignee_id, project_id) via narg.
 SELECT i.*
 FROM issue i
 JOIN issue_to_label itl ON itl.issue_id = i.id
 WHERE i.workspace_id = $1
   AND itl.label_id = ANY(sqlc.arg('ids')::uuid[])
+  AND (sqlc.narg('status')::text IS NULL OR i.status = sqlc.narg('status'))
+  AND (sqlc.narg('priority')::text IS NULL OR i.priority = sqlc.narg('priority'))
+  AND (sqlc.narg('assignee_id')::uuid IS NULL OR i.assignee_id = sqlc.narg('assignee_id'))
+  AND (sqlc.narg('project_id')::uuid IS NULL OR i.project_id = sqlc.narg('project_id'))
 GROUP BY i.id
 HAVING COUNT(DISTINCT itl.label_id) = COALESCE(array_length(sqlc.arg('ids')::uuid[], 1), 0)
 ORDER BY MAX(i.position) ASC, MAX(i.created_at) DESC

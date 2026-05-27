@@ -67,6 +67,75 @@ func TestListIssues_LabelsMode_Invalid(t *testing.T) {
 	}
 }
 
+// Verifies the label-name filter composes with the status filter — i.e. the
+// label dispatch path no longer silently drops other filter params. Before
+// this fix, `?labels=plan-approved&status=in_progress` returned every issue
+// with the label regardless of status.
+func TestListIssues_LabelsComposesWithStatusFilter(t *testing.T) {
+	labelIDs := seedIssueLabelSet(t)
+	defer cleanupIssueLabelSet(t, labelIDs)
+
+	// Move i2 to status=in_progress so we can verify the status filter narrows
+	// the label-matched set.
+	if _, err := testPool.Exec(context.Background(),
+		`UPDATE issue SET status = 'in_progress' WHERE workspace_id = $1 AND title = 'i2-plan-approved-and-urgent'`,
+		testWorkspaceID); err != nil {
+		t.Fatalf("update issue status: %v", err)
+	}
+
+	// ?labels=plan-approved alone: 2 issues (i1 + i2).
+	w := httptest.NewRecorder()
+	req := newRequest("GET", "/api/issues?labels=plan-approved&workspace_id="+testWorkspaceID, nil)
+	testHandler.ListIssues(w, req)
+	if w.Code != 200 {
+		t.Fatalf("labels alone: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := len(extractIssueIDs(w.Body.Bytes())); got != 2 {
+		t.Fatalf("labels alone: expected 2 issues, got %d", got)
+	}
+
+	// ?labels=plan-approved&status=in_progress: only i2.
+	w = httptest.NewRecorder()
+	req = newRequest("GET",
+		"/api/issues?labels=plan-approved&status=in_progress&workspace_id="+testWorkspaceID, nil)
+	testHandler.ListIssues(w, req)
+	if w.Code != 200 {
+		t.Fatalf("labels+status: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	ids := extractIssueIDs(w.Body.Bytes())
+	if len(ids) != 1 {
+		t.Fatalf("labels+status: expected 1 issue (only i2 has both label and status), got %d (%v)", len(ids), ids)
+	}
+
+	// ?labels=plan-approved&status=backlog: only i1 (i2 was moved to in_progress).
+	w = httptest.NewRecorder()
+	req = newRequest("GET",
+		"/api/issues?labels=plan-approved&status=backlog&workspace_id="+testWorkspaceID, nil)
+	testHandler.ListIssues(w, req)
+	if w.Code != 200 {
+		t.Fatalf("labels+status=backlog: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	ids = extractIssueIDs(w.Body.Bytes())
+	if len(ids) != 1 {
+		t.Fatalf("labels+status=backlog: expected 1 issue (only i1), got %d (%v)", len(ids), ids)
+	}
+
+	// labels_mode=all also composes — ?labels=plan-approved,urgent&labels_mode=all
+	// alone matches i2; adding &status=backlog should match nothing (i2 is now
+	// in_progress), proving the AND-mode query also honors the status filter.
+	w = httptest.NewRecorder()
+	req = newRequest("GET",
+		"/api/issues?labels=plan-approved,urgent&labels_mode=all&status=backlog&workspace_id="+testWorkspaceID, nil)
+	testHandler.ListIssues(w, req)
+	if w.Code != 200 {
+		t.Fatalf("labels_mode=all+status: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	ids = extractIssueIDs(w.Body.Bytes())
+	if len(ids) != 0 {
+		t.Fatalf("labels_mode=all+status=backlog: expected 0 issues, got %d (%v)", len(ids), ids)
+	}
+}
+
 // extractIssueIDs returns the "id" string for every row in a JSON array OR
 // a {"issues":[...]} envelope, whichever ListIssues returns.
 func extractIssueIDs(body []byte) []string {
