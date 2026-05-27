@@ -26,10 +26,14 @@ type ProjectResponse struct {
 	Priority    string  `json:"priority"`
 	LeadType    *string `json:"lead_type"`
 	LeadID      *string `json:"lead_id"`
-	CreatedAt   string  `json:"created_at"`
-	UpdatedAt   string  `json:"updated_at"`
-	IssueCount  int64   `json:"issue_count"`
-	DoneCount   int64   `json:"done_count"`
+	// DriUserID is the human accountable for the project (SOP v0.4 P-5).
+	// Distinct from LeadID/LeadType (which is polymorphic and may be an agent)
+	// — DRI is always a human user. Null when no DRI has been set.
+	DriUserID *string `json:"dri_user_id"`
+	CreatedAt string  `json:"created_at"`
+	UpdatedAt string  `json:"updated_at"`
+	IssueCount int64  `json:"issue_count"`
+	DoneCount  int64  `json:"done_count"`
 	// ResourceCount is a breadcrumb pointing at the sub-collection at
 	// /api/projects/{id}/resources. Resources themselves stay out of this
 	// payload to keep parent metadata and child collections separate; clients
@@ -48,6 +52,7 @@ func projectToResponse(p db.Project) ProjectResponse {
 		Priority:    p.Priority,
 		LeadType:    textToPtr(p.LeadType),
 		LeadID:      uuidToPtr(p.LeadID),
+		DriUserID:   uuidToPtr(p.DriUserID),
 		CreatedAt:   timestampToString(p.CreatedAt),
 		UpdatedAt:   timestampToString(p.UpdatedAt),
 	}
@@ -77,6 +82,7 @@ type CreateProjectRequest struct {
 	Priority    string                                `json:"priority"`
 	LeadType    *string                               `json:"lead_type"`
 	LeadID      *string                               `json:"lead_id"`
+	DriUserID   *string                               `json:"dri_user_id,omitempty"`
 	Resources   []CreateProjectResourceRequestPayload `json:"resources,omitempty"`
 }
 
@@ -98,6 +104,7 @@ type UpdateProjectRequest struct {
 	Priority    *string `json:"priority"`
 	LeadType    *string `json:"lead_type"`
 	LeadID      *string `json:"lead_id"`
+	DriUserID   *string `json:"dri_user_id,omitempty"`
 }
 
 func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
@@ -106,6 +113,25 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
+	// Triage list: projects with no human accountable owner (SOP v0.4 P-5
+	// risk). Surfaced by `multica project list --without-dri` and the Web UI
+	// "Without DRI" filter chip. Returns a bare array (no pagination envelope)
+	// — this is a fixed-purpose triage feed, not a general list.
+	if r.URL.Query().Get("without_dri") == "true" {
+		projects, err := h.Queries.ListProjectsWithoutDRI(r.Context(), wsUUID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list projects without DRI")
+			return
+		}
+		resp := make([]ProjectResponse, len(projects))
+		for i, p := range projects {
+			resp[i] = projectToResponse(p)
+		}
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+
 	var statusFilter pgtype.Text
 	if s := r.URL.Query().Get("status"); s != "" {
 		statusFilter = pgtype.Text{String: s, Valid: true}
@@ -217,6 +243,18 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		}
 		leadID = id
 	}
+	// DRI (human accountable per SOP v0.4 P-5). Validate up-front so a malformed
+	// UUID yields 400 before any DB work; passed inline to CreateProject because
+	// the sqlc params accept pgtype.UUID — an unset pgtype.UUID{Valid: false}
+	// becomes SQL NULL, which matches the column default.
+	var driUUID pgtype.UUID
+	if req.DriUserID != nil && *req.DriUserID != "" {
+		u, ok := parseUUIDOrBadRequest(w, *req.DriUserID, "dri_user_id")
+		if !ok {
+			return
+		}
+		driUUID = u
+	}
 	wsUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace_id")
 	if !ok {
 		return
@@ -248,6 +286,7 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		LeadType:    leadType,
 		LeadID:      leadID,
 		Priority:    priority,
+		DriUserID:   driUUID,
 	}
 
 	// Without resources, keep the simple non-tx path.
@@ -421,10 +460,37 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 			params.LeadID = pgtype.UUID{Valid: false}
 		}
 	}
+	// Pre-validate dri_user_id before touching the DB so a malformed UUID
+	// produces a clean 400 with no partial work. Final write happens via
+	// SetProjectDRI below — UpdateProject's COALESCE cannot clear a column
+	// to NULL, so empty-string -> clear must use the explicit setter.
+	var driUUID pgtype.UUID
+	if req.DriUserID != nil && *req.DriUserID != "" {
+		u, ok := parseUUIDOrBadRequest(w, *req.DriUserID, "dri_user_id")
+		if !ok {
+			return
+		}
+		driUUID = u
+	}
 	project, err := h.Queries.UpdateProject(r.Context(), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update project")
 		return
+	}
+	// Explicit DRI write after UpdateProject. Mirrors A.3's SetSkillOwner
+	// pattern — UpdateProject uses COALESCE for partial fields and COALESCE
+	// can never clear a column to NULL. A caller passing `"dri_user_id": ""`
+	// must be able to remove the DRI.
+	if req.DriUserID != nil {
+		project, err = h.Queries.SetProjectDRI(r.Context(), db.SetProjectDRIParams{
+			ID:          project.ID,
+			WorkspaceID: project.WorkspaceID,
+			DriUserID:   driUUID,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update DRI: "+err.Error())
+			return
+		}
 	}
 	resp := projectToResponse(project)
 	resp.ResourceCount = h.loadProjectResourceCount(r.Context(), project.ID)
@@ -463,6 +529,68 @@ func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	}
 	h.publish(protocol.EventProjectDeleted, workspaceID, "member", userID, map[string]any{"project_id": uuidToString(project.ID)})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// AssignProjectDRI sets or clears the DRI on a project.
+// PUT /api/projects/{id}/dri
+// Body: { "dri_user_id": "<uuid>" } to set, { "dri_user_id": "" } to clear.
+//
+// SOP v0.4 P-5: exactly one human accountable per project. Workspace
+// membership is enforced by the parent route's RequireWorkspaceMember
+// middleware; project lookup re-checks workspace scoping defensively.
+func (h *Handler) AssignProjectDRI(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	workspaceID := h.resolveWorkspaceID(r)
+	idUUID, ok := parseUUIDOrBadRequest(w, id, "project id")
+	if !ok {
+		return
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return
+	}
+	project, err := h.Queries.GetProjectInWorkspace(r.Context(), db.GetProjectInWorkspaceParams{
+		ID: idUUID, WorkspaceID: wsUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+
+	var body struct {
+		DriUserID *string `json:"dri_user_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	var driUUID pgtype.UUID
+	if body.DriUserID != nil && *body.DriUserID != "" {
+		u, ok := parseUUIDOrBadRequest(w, *body.DriUserID, "dri_user_id")
+		if !ok {
+			return
+		}
+		driUUID = u
+	}
+
+	updated, err := h.Queries.SetProjectDRI(r.Context(), db.SetProjectDRIParams{
+		ID:          project.ID,
+		WorkspaceID: project.WorkspaceID,
+		DriUserID:   driUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "set DRI failed: "+err.Error())
+		return
+	}
+	resp := projectToResponse(updated)
+	resp.ResourceCount = h.loadProjectResourceCount(r.Context(), updated.ID)
+	h.publish(protocol.EventProjectUpdated, workspaceID, "member", userID, map[string]any{"project": resp})
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // SearchProjectResponse extends ProjectResponse with search metadata.
@@ -582,7 +710,7 @@ func buildProjectSearchQuery(phrase string, terms []string, includeClosed bool) 
 	offsetParam := nextArg(nil)
 
 	query := fmt.Sprintf(`SELECT p.id, p.workspace_id, p.title, p.description, p.icon,
-		p.status, p.priority, p.lead_type, p.lead_id,
+		p.status, p.priority, p.lead_type, p.lead_id, p.dri_user_id,
 		p.created_at, p.updated_at,
 		COUNT(*) OVER() AS total_count,
 		%s AS match_source
@@ -667,6 +795,7 @@ func (h *Handler) SearchProjects(w http.ResponseWriter, r *http.Request) {
 			&row.project.Priority,
 			&row.project.LeadType,
 			&row.project.LeadID,
+			&row.project.DriUserID,
 			&row.project.CreatedAt,
 			&row.project.UpdatedAt,
 			&row.totalCount,
