@@ -36,15 +36,17 @@ func sanitizeNullBytes(s string) string {
 // --- Response structs ---
 
 type SkillResponse struct {
-	ID          string  `json:"id"`
-	WorkspaceID string  `json:"workspace_id"`
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	Content     string  `json:"content"`
-	Config      any     `json:"config"`
-	CreatedBy   *string `json:"created_by"`
-	CreatedAt   string  `json:"created_at"`
-	UpdatedAt   string  `json:"updated_at"`
+	ID             string  `json:"id"`
+	WorkspaceID    string  `json:"workspace_id"`
+	Name           string  `json:"name"`
+	Description    string  `json:"description"`
+	Content        string  `json:"content"`
+	Config         any     `json:"config"`
+	CreatedBy      *string `json:"created_by"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
+	OwnerUserID    *string `json:"owner_user_id"`
+	LastReviewedAt *string `json:"last_reviewed_at"`
 }
 
 // SkillSummaryResponse is the list-endpoint shape: everything SkillResponse
@@ -53,14 +55,16 @@ type SkillResponse struct {
 // links (GH multica-ai/multica#2174). Detail endpoints still return the full
 // SkillResponse with content.
 type SkillSummaryResponse struct {
-	ID          string  `json:"id"`
-	WorkspaceID string  `json:"workspace_id"`
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	Config      any     `json:"config"`
-	CreatedBy   *string `json:"created_by"`
-	CreatedAt   string  `json:"created_at"`
-	UpdatedAt   string  `json:"updated_at"`
+	ID             string  `json:"id"`
+	WorkspaceID    string  `json:"workspace_id"`
+	Name           string  `json:"name"`
+	Description    string  `json:"description"`
+	Config         any     `json:"config"`
+	CreatedBy      *string `json:"created_by"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
+	OwnerUserID    *string `json:"owner_user_id"`
+	LastReviewedAt *string `json:"last_reviewed_at"`
 }
 
 // AgentSkillSummary is the still-narrower shape used for skills embedded in
@@ -90,15 +94,36 @@ type SkillWithFilesResponse struct {
 
 func skillToResponse(s db.Skill) SkillResponse {
 	return SkillResponse{
-		ID:          uuidToString(s.ID),
-		WorkspaceID: uuidToString(s.WorkspaceID),
-		Name:        s.Name,
-		Description: s.Description,
-		Content:     s.Content,
-		Config:      decodeSkillConfig(s.Config),
-		CreatedBy:   uuidToPtr(s.CreatedBy),
-		CreatedAt:   timestampToString(s.CreatedAt),
-		UpdatedAt:   timestampToString(s.UpdatedAt),
+		ID:             uuidToString(s.ID),
+		WorkspaceID:    uuidToString(s.WorkspaceID),
+		Name:           s.Name,
+		Description:    s.Description,
+		Content:        s.Content,
+		Config:         decodeSkillConfig(s.Config),
+		CreatedBy:      uuidToPtr(s.CreatedBy),
+		CreatedAt:      timestampToString(s.CreatedAt),
+		UpdatedAt:      timestampToString(s.UpdatedAt),
+		OwnerUserID:    uuidToPtr(s.OwnerUserID),
+		LastReviewedAt: timestampToPtr(s.LastReviewedAt),
+	}
+}
+
+// skillToSummaryResponse projects a full db.Skill into the SkillSummaryResponse
+// shape (omits SKILL.md `content`). Used by the stale-skill list path which
+// reuses db.Skill rows from ListStaleSkills — the existing
+// ListSkillSummariesByWorkspace path has its own narrow row shape.
+func skillToSummaryResponse(s db.Skill) SkillSummaryResponse {
+	return SkillSummaryResponse{
+		ID:             uuidToString(s.ID),
+		WorkspaceID:    uuidToString(s.WorkspaceID),
+		Name:           s.Name,
+		Description:    s.Description,
+		Config:         decodeSkillConfig(s.Config),
+		CreatedBy:      uuidToPtr(s.CreatedBy),
+		CreatedAt:      timestampToString(s.CreatedAt),
+		UpdatedAt:      timestampToString(s.UpdatedAt),
+		OwnerUserID:    uuidToPtr(s.OwnerUserID),
+		LastReviewedAt: timestampToPtr(s.LastReviewedAt),
 	}
 }
 
@@ -121,16 +146,20 @@ func skillSummaryToResponse(
 	config []byte,
 	createdBy pgtype.UUID,
 	createdAt, updatedAt pgtype.Timestamptz,
+	ownerUserID pgtype.UUID,
+	lastReviewedAt pgtype.Timestamptz,
 ) SkillSummaryResponse {
 	return SkillSummaryResponse{
-		ID:          uuidToString(id),
-		WorkspaceID: uuidToString(workspaceID),
-		Name:        name,
-		Description: description,
-		Config:      decodeSkillConfig(config),
-		CreatedBy:   uuidToPtr(createdBy),
-		CreatedAt:   timestampToString(createdAt),
-		UpdatedAt:   timestampToString(updatedAt),
+		ID:             uuidToString(id),
+		WorkspaceID:    uuidToString(workspaceID),
+		Name:           name,
+		Description:    description,
+		Config:         decodeSkillConfig(config),
+		CreatedBy:      uuidToPtr(createdBy),
+		CreatedAt:      timestampToString(createdAt),
+		UpdatedAt:      timestampToString(updatedAt),
+		OwnerUserID:    uuidToPtr(ownerUserID),
+		LastReviewedAt: timestampToPtr(lastReviewedAt),
 	}
 }
 
@@ -152,6 +181,7 @@ type CreateSkillRequest struct {
 	Description string                   `json:"description"`
 	Content     string                   `json:"content"`
 	Config      any                      `json:"config"`
+	OwnerUserID *string                  `json:"owner_user_id,omitempty"`
 	Files       []CreateSkillFileRequest `json:"files,omitempty"`
 }
 
@@ -165,6 +195,7 @@ type UpdateSkillRequest struct {
 	Description *string                  `json:"description"`
 	Content     *string                  `json:"content"`
 	Config      any                      `json:"config"`
+	OwnerUserID *string                  `json:"owner_user_id,omitempty"`
 	Files       []CreateSkillFileRequest `json:"files,omitempty"`
 }
 
@@ -216,8 +247,27 @@ func (h *Handler) loadSkillForUser(w http.ResponseWriter, r *http.Request, id st
 
 func (h *Handler) ListSkills(w http.ResponseWriter, r *http.Request) {
 	workspaceID := h.resolveWorkspaceID(r)
+	wsUUID := parseUUID(workspaceID)
 
-	skills, err := h.Queries.ListSkillSummariesByWorkspace(r.Context(), parseUUID(workspaceID))
+	// Stale-skill triage list: never-reviewed or last_reviewed_at > 90d ago.
+	// Surfaced by `multica skill list --stale` (SOP v0.4 anti-pattern ❌5).
+	// Uses the full Skill row shape (omitting content via skillToSummaryResponse)
+	// so the UI can render Owner / Last reviewed columns without an extra fetch.
+	if r.URL.Query().Get("stale") == "true" {
+		stale, err := h.Queries.ListStaleSkills(r.Context(), wsUUID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list stale skills")
+			return
+		}
+		resp := make([]SkillSummaryResponse, len(stale))
+		for i, s := range stale {
+			resp[i] = skillToSummaryResponse(s)
+		}
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+
+	skills, err := h.Queries.ListSkillSummariesByWorkspace(r.Context(), wsUUID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list skills")
 		return
@@ -228,6 +278,7 @@ func (h *Handler) ListSkills(w http.ResponseWriter, r *http.Request) {
 		resp[i] = skillSummaryToResponse(
 			s.ID, s.WorkspaceID, s.Name, s.Description, s.Config,
 			s.CreatedBy, s.CreatedAt, s.UpdatedAt,
+			s.OwnerUserID, s.LastReviewedAt,
 		)
 	}
 
@@ -289,6 +340,17 @@ func (h *Handler) CreateSkill(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Validate owner_user_id before opening the create transaction so a bad
+	// UUID returns 400 cleanly instead of partial work.
+	var ownerUUID pgtype.UUID
+	if req.OwnerUserID != nil && *req.OwnerUserID != "" {
+		u, ok := parseUUIDOrBadRequest(w, *req.OwnerUserID, "owner_user_id")
+		if !ok {
+			return
+		}
+		ownerUUID = u
+	}
+
 	resp, err := h.createSkillWithFiles(r.Context(), skillCreateInput{
 		WorkspaceID: workspaceUUID,
 		CreatorID:   creatorUUID,
@@ -305,6 +367,25 @@ func (h *Handler) CreateSkill(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, http.StatusInternalServerError, "failed to create skill: "+err.Error())
 		return
+	}
+	// Apply the explicit owner after the create tx commits. SetSkillOwner is a
+	// separate write so the create path stays unchanged for the (common) case
+	// where no owner is provided; the new row's owner_user_id defaults to NULL.
+	// On failure here the skill exists without an owner — the client can retry
+	// the owner-set via PUT /api/skills/{id} (UpdateSkill plumbs the same field).
+	if ownerUUID.Valid {
+		// parseUUID panics on malformed input, but resp.SkillResponse.ID came
+		// from the just-returned db row — chi's Recoverer maps any panic to 500.
+		updated, err := h.Queries.SetSkillOwner(r.Context(), db.SetSkillOwnerParams{
+			ID:          parseUUID(resp.SkillResponse.ID),
+			WorkspaceID: workspaceUUID,
+			OwnerUserID: ownerUUID,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to set owner: "+err.Error())
+			return
+		}
+		resp.SkillResponse = skillToResponse(updated)
 	}
 	actorType, actorID := h.resolveActor(r, creatorID, workspaceID)
 	h.publish(protocol.EventSkillCreated, workspaceID, actorType, actorID, map[string]any{"skill": resp})
@@ -387,6 +468,32 @@ func (h *Handler) UpdateSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Owner change is a separate write because UpdateSkill uses COALESCE
+	// for partial updates and COALESCE can never clear a column to NULL —
+	// a caller passing `"owner_user_id": ""` must be able to remove the
+	// owner. SetSkillOwner does the explicit write (set or clear). Runs
+	// inside the same transaction so a file write below cannot leave the
+	// owner half-changed.
+	if req.OwnerUserID != nil {
+		var ownerUUID pgtype.UUID
+		if *req.OwnerUserID != "" {
+			u, ok := parseUUIDOrBadRequest(w, *req.OwnerUserID, "owner_user_id")
+			if !ok {
+				return
+			}
+			ownerUUID = u
+		}
+		skill, err = qtx.SetSkillOwner(r.Context(), db.SetSkillOwnerParams{
+			ID:          skill.ID,
+			WorkspaceID: skill.WorkspaceID,
+			OwnerUserID: ownerUUID,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update owner: "+err.Error())
+			return
+		}
+	}
+
 	// If files are provided, replace all files.
 	var fileResps []SkillFileResponse
 	if req.Files != nil {
@@ -450,6 +557,34 @@ func (h *Handler) DeleteSkill(w http.ResponseWriter, r *http.Request) {
 	actorType, actorID := h.resolveActor(r, requestUserID(r), uuidToString(skill.WorkspaceID))
 	h.publish(protocol.EventSkillDeleted, uuidToString(skill.WorkspaceID), actorType, actorID, map[string]any{"skill_id": uuidToString(skill.ID)})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// TouchSkillReviewed stamps last_reviewed_at = now() on an authorized skill.
+// POST /api/skills/{id}/touch-reviewed
+//
+// Authorization mirrors UpdateSkill: only the skill creator or a workspace
+// owner/admin may mark a skill reviewed. This is a "I attest this skill is
+// still correct and current" signal, so it must come from someone who can
+// vouch for the content.
+func (h *Handler) TouchSkillReviewed(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	skill, ok := h.loadSkillForUser(w, r, id)
+	if !ok {
+		return
+	}
+	if !h.canManageSkill(w, r, skill) {
+		return
+	}
+
+	updated, err := h.Queries.TouchSkillReviewed(r.Context(), db.TouchSkillReviewedParams{
+		ID:          skill.ID,
+		WorkspaceID: skill.WorkspaceID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "touch-reviewed failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, skillToResponse(updated))
 }
 
 // --- Skill import ---
@@ -1773,6 +1908,7 @@ func (h *Handler) ListAgentSkills(w http.ResponseWriter, r *http.Request) {
 		resp[i] = skillSummaryToResponse(
 			s.ID, s.WorkspaceID, s.Name, s.Description, s.Config,
 			s.CreatedBy, s.CreatedAt, s.UpdatedAt,
+			s.OwnerUserID, s.LastReviewedAt,
 		)
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -1839,6 +1975,7 @@ func (h *Handler) SetAgentSkills(w http.ResponseWriter, r *http.Request) {
 		resp[i] = skillSummaryToResponse(
 			s.ID, s.WorkspaceID, s.Name, s.Description, s.Config,
 			s.CreatedBy, s.CreatedAt, s.UpdatedAt,
+			s.OwnerUserID, s.LastReviewedAt,
 		)
 	}
 	actorType, actorID := h.resolveActor(r, requestUserID(r), uuidToString(agent.WorkspaceID))

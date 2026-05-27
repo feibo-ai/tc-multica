@@ -207,7 +207,8 @@ func (q *Queries) GetSkillInWorkspace(ctx context.Context, arg GetSkillInWorkspa
 }
 
 const listAgentSkillSummaries = `-- name: ListAgentSkillSummaries :many
-SELECT s.id, s.workspace_id, s.name, s.description, s.config, s.created_by, s.created_at, s.updated_at
+SELECT s.id, s.workspace_id, s.name, s.description, s.config, s.created_by, s.created_at, s.updated_at,
+       s.owner_user_id, s.last_reviewed_at
 FROM skill s
 JOIN agent_skill ask ON ask.skill_id = s.id
 WHERE ask.agent_id = $1
@@ -215,14 +216,16 @@ ORDER BY s.name ASC
 `
 
 type ListAgentSkillSummariesRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	Name        string             `json:"name"`
-	Description string             `json:"description"`
-	Config      []byte             `json:"config"`
-	CreatedBy   pgtype.UUID        `json:"created_by"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	Name           string             `json:"name"`
+	Description    string             `json:"description"`
+	Config         []byte             `json:"config"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	OwnerUserID    pgtype.UUID        `json:"owner_user_id"`
+	LastReviewedAt pgtype.Timestamptz `json:"last_reviewed_at"`
 }
 
 // Summary variant for the agent skills list endpoint — omits `content` for
@@ -245,6 +248,8 @@ func (q *Queries) ListAgentSkillSummaries(ctx context.Context, agentID pgtype.UU
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.OwnerUserID,
+			&i.LastReviewedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -373,21 +378,24 @@ func (q *Queries) ListSkillFiles(ctx context.Context, skillID pgtype.UUID) ([]Sk
 }
 
 const listSkillSummariesByWorkspace = `-- name: ListSkillSummariesByWorkspace :many
-SELECT id, workspace_id, name, description, config, created_by, created_at, updated_at
+SELECT id, workspace_id, name, description, config, created_by, created_at, updated_at,
+       owner_user_id, last_reviewed_at
 FROM skill
 WHERE workspace_id = $1
 ORDER BY name ASC
 `
 
 type ListSkillSummariesByWorkspaceRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	Name        string             `json:"name"`
-	Description string             `json:"description"`
-	Config      []byte             `json:"config"`
-	CreatedBy   pgtype.UUID        `json:"created_by"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	Name           string             `json:"name"`
+	Description    string             `json:"description"`
+	Config         []byte             `json:"config"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	OwnerUserID    pgtype.UUID        `json:"owner_user_id"`
+	LastReviewedAt pgtype.Timestamptz `json:"last_reviewed_at"`
 }
 
 // Same as ListSkillsByWorkspace but omits the SKILL.md `content` column. Used
@@ -412,6 +420,8 @@ func (q *Queries) ListSkillSummariesByWorkspace(ctx context.Context, workspaceID
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.OwnerUserID,
+			&i.LastReviewedAt,
 		); err != nil {
 			return nil, err
 		}
