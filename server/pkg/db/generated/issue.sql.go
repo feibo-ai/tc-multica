@@ -833,6 +833,10 @@ FROM issue i
 JOIN issue_to_label itl ON itl.issue_id = i.id
 WHERE i.workspace_id = $1
   AND itl.label_id = ANY($4::uuid[])
+  AND ($5::text IS NULL OR i.status = $5)
+  AND ($6::text IS NULL OR i.priority = $6)
+  AND ($7::uuid IS NULL OR i.assignee_id = $7)
+  AND ($8::uuid IS NULL OR i.project_id = $8)
 GROUP BY i.id
 HAVING COUNT(DISTINCT itl.label_id) = COALESCE(array_length($4::uuid[], 1), 0)
 ORDER BY MAX(i.position) ASC, MAX(i.created_at) DESC
@@ -844,18 +848,27 @@ type ListIssuesByLabelIDsAllParams struct {
 	Limit       int32         `json:"limit"`
 	Offset      int32         `json:"offset"`
 	Ids         []pgtype.UUID `json:"ids"`
+	Status      pgtype.Text   `json:"status"`
+	Priority    pgtype.Text   `json:"priority"`
+	AssigneeID  pgtype.UUID   `json:"assignee_id"`
+	ProjectID   pgtype.UUID   `json:"project_id"`
 }
 
 // AND semantics for the existing UUID-based label filter. The current
 // ListIssues handler already supports ?label_ids= with OR semantics (via
 // EXISTS … ANY(...)); this query lets ?labels_mode=all also work when
-// callers pass UUIDs instead of names.
+// callers pass UUIDs instead of names. Composes with the four common
+// ListIssues filters (status, priority, assignee_id, project_id) via narg.
 func (q *Queries) ListIssuesByLabelIDsAll(ctx context.Context, arg ListIssuesByLabelIDsAllParams) ([]Issue, error) {
 	rows, err := q.db.Query(ctx, listIssuesByLabelIDsAll,
 		arg.WorkspaceID,
 		arg.Limit,
 		arg.Offset,
 		arg.Ids,
+		arg.Status,
+		arg.Priority,
+		arg.AssigneeID,
+		arg.ProjectID,
 	)
 	if err != nil {
 		return nil, err
@@ -907,6 +920,10 @@ JOIN issue_to_label itl ON itl.issue_id = i.id
 JOIN issue_label il ON il.id = itl.label_id AND il.workspace_id = i.workspace_id
 WHERE i.workspace_id = $1
   AND lower(il.name) = ANY($4::text[])
+  AND ($5::text IS NULL OR i.status = $5)
+  AND ($6::text IS NULL OR i.priority = $6)
+  AND ($7::uuid IS NULL OR i.assignee_id = $7)
+  AND ($8::uuid IS NULL OR i.project_id = $8)
 GROUP BY i.id
 HAVING COUNT(DISTINCT lower(il.name)) = COALESCE(array_length($4::text[], 1), 0)
 ORDER BY MAX(i.position) ASC, MAX(i.created_at) DESC
@@ -918,17 +935,27 @@ type ListIssuesByLabelNamesAllParams struct {
 	Limit       int32       `json:"limit"`
 	Offset      int32       `json:"offset"`
 	Names       []string    `json:"names"`
+	Status      pgtype.Text `json:"status"`
+	Priority    pgtype.Text `json:"priority"`
+	AssigneeID  pgtype.UUID `json:"assignee_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
 }
 
 // AND semantics: issue has ALL the named labels (intersection).
 // Used by the GET /api/issues?labels=foo,bar&labels_mode=all path. The HAVING
 // count guarantees every requested label is present on the returned row.
+// Composes with the four common ListIssues filters (status, priority,
+// assignee_id, project_id) via narg.
 func (q *Queries) ListIssuesByLabelNamesAll(ctx context.Context, arg ListIssuesByLabelNamesAllParams) ([]Issue, error) {
 	rows, err := q.db.Query(ctx, listIssuesByLabelNamesAll,
 		arg.WorkspaceID,
 		arg.Limit,
 		arg.Offset,
 		arg.Names,
+		arg.Status,
+		arg.Priority,
+		arg.AssigneeID,
+		arg.ProjectID,
 	)
 	if err != nil {
 		return nil, err
@@ -985,6 +1012,10 @@ WHERE i.workspace_id = $1
       AND il.workspace_id = $1
       AND lower(il.name) = ANY($4::text[])
   )
+  AND ($5::text IS NULL OR i.status = $5)
+  AND ($6::text IS NULL OR i.priority = $6)
+  AND ($7::uuid IS NULL OR i.assignee_id = $7)
+  AND ($8::uuid IS NULL OR i.project_id = $8)
 ORDER BY i.position ASC, i.created_at DESC
 LIMIT $2 OFFSET $3
 `
@@ -994,17 +1025,28 @@ type ListIssuesByLabelNamesAnyParams struct {
 	Limit       int32       `json:"limit"`
 	Offset      int32       `json:"offset"`
 	Names       []string    `json:"names"`
+	Status      pgtype.Text `json:"status"`
+	Priority    pgtype.Text `json:"priority"`
+	AssigneeID  pgtype.UUID `json:"assignee_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
 }
 
 // OR semantics: issue has at least one of the named labels.
 // Names compared case-insensitively (matches issue_label.workspace_id, lower(name) unique idx).
 // Used by the GET /api/issues?labels=foo,bar&labels_mode=any path.
+// Composes with the four common ListIssues filters (status, priority,
+// assignee_id, project_id) via narg so callers can narrow by both label and
+// another axis in one request.
 func (q *Queries) ListIssuesByLabelNamesAny(ctx context.Context, arg ListIssuesByLabelNamesAnyParams) ([]Issue, error) {
 	rows, err := q.db.Query(ctx, listIssuesByLabelNamesAny,
 		arg.WorkspaceID,
 		arg.Limit,
 		arg.Offset,
 		arg.Names,
+		arg.Status,
+		arg.Priority,
+		arg.AssigneeID,
+		arg.ProjectID,
 	)
 	if err != nil {
 		return nil, err
