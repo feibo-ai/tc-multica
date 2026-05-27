@@ -827,6 +827,228 @@ func (q *Queries) ListIssues(ctx context.Context, arg ListIssuesParams) ([]ListI
 	return items, nil
 }
 
+const listIssuesByLabelIDsAll = `-- name: ListIssuesByLabelIDsAll :many
+SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata
+FROM issue i
+JOIN issue_to_label itl ON itl.issue_id = i.id
+WHERE i.workspace_id = $1
+  AND itl.label_id = ANY($4::uuid[])
+GROUP BY i.id
+HAVING COUNT(DISTINCT itl.label_id) = COALESCE(array_length($4::uuid[], 1), 0)
+ORDER BY MAX(i.position) ASC, MAX(i.created_at) DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListIssuesByLabelIDsAllParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	Limit       int32         `json:"limit"`
+	Offset      int32         `json:"offset"`
+	Ids         []pgtype.UUID `json:"ids"`
+}
+
+// AND semantics for the existing UUID-based label filter. The current
+// ListIssues handler already supports ?label_ids= with OR semantics (via
+// EXISTS … ANY(...)); this query lets ?labels_mode=all also work when
+// callers pass UUIDs instead of names.
+func (q *Queries) ListIssuesByLabelIDsAll(ctx context.Context, arg ListIssuesByLabelIDsAllParams) ([]Issue, error) {
+	rows, err := q.db.Query(ctx, listIssuesByLabelIDsAll,
+		arg.WorkspaceID,
+		arg.Limit,
+		arg.Offset,
+		arg.Ids,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Issue{}
+	for rows.Next() {
+		var i Issue
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Title,
+			&i.Description,
+			&i.Status,
+			&i.Priority,
+			&i.AssigneeType,
+			&i.AssigneeID,
+			&i.CreatorType,
+			&i.CreatorID,
+			&i.ParentIssueID,
+			&i.AcceptanceCriteria,
+			&i.ContextRefs,
+			&i.Position,
+			&i.DueDate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Number,
+			&i.ProjectID,
+			&i.OriginType,
+			&i.OriginID,
+			&i.FirstExecutedAt,
+			&i.StartDate,
+			&i.Metadata,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIssuesByLabelNamesAll = `-- name: ListIssuesByLabelNamesAll :many
+SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata
+FROM issue i
+JOIN issue_to_label itl ON itl.issue_id = i.id
+JOIN issue_label il ON il.id = itl.label_id AND il.workspace_id = i.workspace_id
+WHERE i.workspace_id = $1
+  AND lower(il.name) = ANY($4::text[])
+GROUP BY i.id
+HAVING COUNT(DISTINCT lower(il.name)) = COALESCE(array_length($4::text[], 1), 0)
+ORDER BY MAX(i.position) ASC, MAX(i.created_at) DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListIssuesByLabelNamesAllParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Limit       int32       `json:"limit"`
+	Offset      int32       `json:"offset"`
+	Names       []string    `json:"names"`
+}
+
+// AND semantics: issue has ALL the named labels (intersection).
+// Used by the GET /api/issues?labels=foo,bar&labels_mode=all path. The HAVING
+// count guarantees every requested label is present on the returned row.
+func (q *Queries) ListIssuesByLabelNamesAll(ctx context.Context, arg ListIssuesByLabelNamesAllParams) ([]Issue, error) {
+	rows, err := q.db.Query(ctx, listIssuesByLabelNamesAll,
+		arg.WorkspaceID,
+		arg.Limit,
+		arg.Offset,
+		arg.Names,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Issue{}
+	for rows.Next() {
+		var i Issue
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Title,
+			&i.Description,
+			&i.Status,
+			&i.Priority,
+			&i.AssigneeType,
+			&i.AssigneeID,
+			&i.CreatorType,
+			&i.CreatorID,
+			&i.ParentIssueID,
+			&i.AcceptanceCriteria,
+			&i.ContextRefs,
+			&i.Position,
+			&i.DueDate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Number,
+			&i.ProjectID,
+			&i.OriginType,
+			&i.OriginID,
+			&i.FirstExecutedAt,
+			&i.StartDate,
+			&i.Metadata,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIssuesByLabelNamesAny = `-- name: ListIssuesByLabelNamesAny :many
+SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata
+FROM issue i
+WHERE i.workspace_id = $1
+  AND EXISTS (
+    SELECT 1
+    FROM issue_to_label itl
+    JOIN issue_label il ON il.id = itl.label_id
+    WHERE itl.issue_id = i.id
+      AND il.workspace_id = $1
+      AND lower(il.name) = ANY($4::text[])
+  )
+ORDER BY i.position ASC, i.created_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListIssuesByLabelNamesAnyParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Limit       int32       `json:"limit"`
+	Offset      int32       `json:"offset"`
+	Names       []string    `json:"names"`
+}
+
+// OR semantics: issue has at least one of the named labels.
+// Names compared case-insensitively (matches issue_label.workspace_id, lower(name) unique idx).
+// Used by the GET /api/issues?labels=foo,bar&labels_mode=any path.
+func (q *Queries) ListIssuesByLabelNamesAny(ctx context.Context, arg ListIssuesByLabelNamesAnyParams) ([]Issue, error) {
+	rows, err := q.db.Query(ctx, listIssuesByLabelNamesAny,
+		arg.WorkspaceID,
+		arg.Limit,
+		arg.Offset,
+		arg.Names,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Issue{}
+	for rows.Next() {
+		var i Issue
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Title,
+			&i.Description,
+			&i.Status,
+			&i.Priority,
+			&i.AssigneeType,
+			&i.AssigneeID,
+			&i.CreatorType,
+			&i.CreatorID,
+			&i.ParentIssueID,
+			&i.AcceptanceCriteria,
+			&i.ContextRefs,
+			&i.Position,
+			&i.DueDate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Number,
+			&i.ProjectID,
+			&i.OriginType,
+			&i.OriginID,
+			&i.FirstExecutedAt,
+			&i.StartDate,
+			&i.Metadata,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOpenIssues = `-- name: ListOpenIssues :many
 SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
        i.assignee_type, i.assignee_id, i.creator_type, i.creator_id,
