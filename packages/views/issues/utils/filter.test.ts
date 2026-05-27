@@ -207,6 +207,34 @@ describe("filterIssues", () => {
     expect(result.map((i) => i.id)).not.toContain("L5");
   });
 
+  it("filters by multiple labels with AND semantics when labelsMode='all'", () => {
+    // Only L3 carries both bug AND p0; L1 has bug only, L2 has feature only.
+    const result = filterIssues(labeledIssues, {
+      ...NO_FILTER,
+      labelFilters: ["lab-bug", "lab-p0"],
+      labelsMode: "all",
+    });
+    expect(result.map((i) => i.id)).toEqual(["L3"]);
+  });
+
+  it("treats missing labelsMode as 'any' (backwards compat)", () => {
+    const result = filterIssues(labeledIssues, {
+      ...NO_FILTER,
+      labelFilters: ["lab-bug", "lab-feat"],
+      // labelsMode omitted on purpose — historical callers don't set it.
+    });
+    expect(result.map((i) => i.id)).toEqual(["L1", "L2", "L3"]);
+  });
+
+  it("treats labelsMode='any' identically to OR semantics", () => {
+    const result = filterIssues(labeledIssues, {
+      ...NO_FILTER,
+      labelFilters: ["lab-bug", "lab-feat"],
+      labelsMode: "any",
+    });
+    expect(result.map((i) => i.id)).toEqual(["L1", "L2", "L3"]);
+  });
+
   // --- Agent running quick filter ---
   it("keeps only running issues when agentRunningFilter is on", () => {
     const result = filterIssues(issues, {

@@ -483,6 +483,9 @@ export class ApiClient {
     if (params.project_ids?.length) search.set("project_ids", params.project_ids.join(","));
     if (params.include_no_project) search.set("include_no_project", "true");
     if (params.label_ids?.length) search.set("label_ids", params.label_ids.join(","));
+    if (params.labels_mode && params.labels_mode !== "any") {
+      search.set("labels_mode", params.labels_mode);
+    }
     if (params.group_assignee_type) search.set("group_assignee_type", params.group_assignee_type);
     if (params.group_assignee_id) search.set("group_assignee_id", params.group_assignee_id);
     if (params.sort_by) search.set("sort", params.sort_by);

@@ -70,6 +70,13 @@ export interface IssueViewState {
   projectFilters: string[];
   includeNoProject: boolean;
   labelFilters: string[];
+  /**
+   * Match mode for the labels filter.
+   *   "any" — keep issues that carry at least one of the selected labels (OR; default).
+   *   "all" — keep only issues that carry every selected label (AND).
+   * Has no effect when `labelFilters` is empty.
+   */
+  labelsMode: "any" | "all";
   // When true, the list only shows issues that currently have at least one
   // agent task in `running` status. Drives the workspace "agents working"
   // quick filter chip in the issues header. Not persisted across reloads —
@@ -103,6 +110,7 @@ export interface IssueViewState {
   toggleProjectFilter: (projectId: string) => void;
   toggleNoProject: () => void;
   toggleLabelFilter: (labelId: string) => void;
+  setLabelsMode: (mode: "any" | "all") => void;
   toggleAgentRunningFilter: () => void;
   hideStatus: (status: IssueStatus) => void;
   showStatus: (status: IssueStatus) => void;
@@ -129,6 +137,7 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
   projectFilters: [],
   includeNoProject: false,
   labelFilters: [],
+  labelsMode: "any",
   agentRunningFilter: false,
   sortBy: "position",
   sortDirection: "asc",
@@ -208,6 +217,7 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
         ? state.labelFilters.filter((id) => id !== labelId)
         : [...state.labelFilters, labelId],
     })),
+  setLabelsMode: (mode) => set({ labelsMode: mode }),
   toggleAgentRunningFilter: () =>
     set((state) => ({ agentRunningFilter: !state.agentRunningFilter })),
   hideStatus: (status) =>
@@ -236,6 +246,7 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
       projectFilters: [],
       includeNoProject: false,
       labelFilters: [],
+      labelsMode: "any",
       agentRunningFilter: false,
     }),
   setSortBy: (field) => set({ sortBy: field }),
@@ -289,6 +300,7 @@ export const viewStorePersistOptions = (name: string) => ({
     projectFilters: state.projectFilters,
     includeNoProject: state.includeNoProject,
     labelFilters: state.labelFilters,
+    labelsMode: state.labelsMode,
     sortBy: state.sortBy,
     sortDirection: state.sortDirection,
     cardProperties: state.cardProperties,
