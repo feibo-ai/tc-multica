@@ -130,3 +130,13 @@ export type {
   SquadMemberStatus,
   SquadMemberStatusListResponse,
 } from "./squad";
+export type {
+  Integration,
+  IntegrationKind,
+  IntegrationStatus,
+  IntegrationStatusSummary,
+  IntegrationDeployment,
+  DeploymentStatus,
+  SecretKey,
+  SecretValue,
+} from "./integration";

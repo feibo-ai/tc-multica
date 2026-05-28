@@ -101,6 +101,10 @@ import type {
   Squad,
   SquadMember,
   SquadMemberStatusListResponse,
+  Integration,
+  IntegrationStatusSummary,
+  SecretKey,
+  SecretValue,
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import type {
@@ -154,6 +158,14 @@ import {
   TimelineEntriesSchema,
   UserSchema,
   WebhookDeliveryResponseSchema,
+  IntegrationSchema,
+  IntegrationListSchema,
+  IntegrationStatusSummarySchema,
+  SecretKeySchema,
+  SecretKeyListSchema,
+  SecretValueSchema,
+  EMPTY_INTEGRATION,
+  EMPTY_INTEGRATION_STATUS,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -1864,5 +1876,115 @@ export class ApiClient {
 
   async listIssuePullRequests(issueId: string): Promise<{ pull_requests: GitHubPullRequest[] }> {
     return this.fetch(`/api/issues/${issueId}/pull-requests`);
+  }
+
+  // -------------------------------------------------------------------------
+  // Control plane (Plan 4 / PR D). All routes are workspace-scoped and only
+  // mounted when MULTICA_CONTROL_PLANE_ENABLED=true on the server — callers
+  // get 404 when the feature is off, which lets the UI gracefully hide its
+  // entry point. parseWithFallback catches any drift so a misbehaving server
+  // never white-screens the workspace.
+  // -------------------------------------------------------------------------
+
+  async listIntegrations(kind?: string): Promise<Integration[]> {
+    const qs = kind ? `?kind=${encodeURIComponent(kind)}` : "";
+    const raw = await this.fetch<unknown>(`/api/integrations${qs}`);
+    return parseWithFallback(raw, IntegrationListSchema, [], {
+      
+      endpoint: "listIntegrations",
+    });
+  }
+
+  async getIntegration(id: string): Promise<Integration> {
+    const raw = await this.fetch<unknown>(`/api/integrations/${id}`);
+    return parseWithFallback(raw, IntegrationSchema, EMPTY_INTEGRATION, {
+      
+      endpoint: "getIntegration",
+    });
+  }
+
+  async getIntegrationStatus(id: string): Promise<IntegrationStatusSummary> {
+    const raw = await this.fetch<unknown>(`/api/integrations/${id}/status`);
+    return parseWithFallback(raw, IntegrationStatusSummarySchema, EMPTY_INTEGRATION_STATUS, {
+      
+      endpoint: "getIntegrationStatus",
+    });
+  }
+
+  async createIntegration(body: {
+    kind: string;
+    name: string;
+    config?: Record<string, unknown>;
+    deployment_webhook_url?: string;
+    config_schema_ref?: string;
+  }): Promise<Integration> {
+    const raw = await this.fetch<unknown>("/api/integrations", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return parseWithFallback(raw, IntegrationSchema, EMPTY_INTEGRATION, {
+      
+      endpoint: "createIntegration",
+    });
+  }
+
+  async updateIntegrationConfig(id: string, config: Record<string, unknown>): Promise<Integration> {
+    const raw = await this.fetch<unknown>(`/api/integrations/${id}/config`, {
+      method: "PATCH",
+      body: JSON.stringify({ config }),
+    });
+    return parseWithFallback(raw, IntegrationSchema, EMPTY_INTEGRATION, {
+      
+      endpoint: "updateIntegrationConfig",
+    });
+  }
+
+  async restartIntegration(id: string): Promise<{ ok: boolean }> {
+    return this.fetch(`/api/integrations/${id}/restart`, { method: "POST" });
+  }
+
+  async redeployIntegration(id: string): Promise<{ ok: boolean; webhook_error?: string }> {
+    return this.fetch(`/api/integrations/${id}/redeploy`, { method: "POST" });
+  }
+
+  async deleteIntegration(id: string): Promise<void> {
+    await this.fetch(`/api/integrations/${id}`, { method: "DELETE" });
+  }
+
+  async listIntegrationSecretKeys(integrationId: string): Promise<SecretKey[]> {
+    const raw = await this.fetch<unknown>(`/api/integrations/${integrationId}/secrets`);
+    return parseWithFallback(raw, SecretKeyListSchema, [], {
+      
+      endpoint: "listIntegrationSecretKeys",
+    });
+  }
+
+  async getIntegrationSecret(integrationId: string, key: string): Promise<SecretValue> {
+    const raw = await this.fetch<unknown>(
+      `/api/integrations/${integrationId}/secrets/${encodeURIComponent(key)}`,
+    );
+    return parseWithFallback(raw, SecretValueSchema, { key, value: "", version: 0 }, {
+      
+      endpoint: "getIntegrationSecret",
+    });
+  }
+
+  async upsertIntegrationSecret(integrationId: string, key: string, value: string): Promise<SecretKey> {
+    const raw = await this.fetch<unknown>(
+      `/api/integrations/${integrationId}/secrets/${encodeURIComponent(key)}`,
+      { method: "PUT", body: JSON.stringify({ value }) },
+    );
+    return parseWithFallback(
+      raw,
+      SecretKeySchema,
+      { key, version: 0, created_by: null, created_at: "", updated_at: "" },
+      { endpoint: "upsertIntegrationSecret" },
+    );
+  }
+
+  async deleteIntegrationSecret(integrationId: string, key: string): Promise<void> {
+    await this.fetch(`/api/integrations/${integrationId}/secrets/${encodeURIComponent(key)}`, {
+      method: "DELETE",
+    });
   }
 }
