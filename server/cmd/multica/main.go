@@ -82,6 +82,7 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(integrationCmd)
 	rootCmd.AddCommand(secretCmd)
+	rootCmd.AddCommand(deploymentCmd)
 
 	initHelp(rootCmd)
 }
