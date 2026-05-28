@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/multica-ai/multica/server/internal/audit"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -110,6 +111,23 @@ func (h *Handler) RegisterDeployment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to register deployment")
 		return
 	}
+
+	userID, _ := requireUserID(w, r)
+	workspaceID := uuidToString(integration.WorkspaceID)
+	actorType, _ := h.resolveActor(r, userID, workspaceID)
+	h.Audit.Record(r.Context(), audit.EventDeploymentRegistered, audit.Subject{
+		WorkspaceID: workspaceID,
+		ActorUserID: userID,
+		ActorType:   actorType,
+		Resource:    "deployment:" + uuidToString(created.ID),
+		IPAddress:   r.RemoteAddr,
+		Metadata: map[string]any{
+			"integration_id":  uuidToString(integration.ID),
+			"image_or_commit": req.ImageOrCommit,
+			"version":         req.Version,
+		},
+	})
+
 	writeJSON(w, http.StatusCreated, deploymentToResponse(created))
 }
 

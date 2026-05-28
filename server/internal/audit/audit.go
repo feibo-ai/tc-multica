@@ -30,6 +30,12 @@ const (
 	EventSecretRotated = "secret:rotated"
 	EventSecretDeleted = "secret:deleted"
 	EventSecretRead    = "secret:read" // sensitive — every read recorded
+
+	EventDeploymentRegistered = "deployment:registered"
+	EventDeploymentStopped    = "deployment:stopped"
+	// Heartbeats are intentionally NOT audited — too frequent to be useful;
+	// would dwarf every other entry. Use deployment status changes (via
+	// register / stop) as the audit trail instead.
 )
 
 // Subject is the input shape for Recorder.Record. WorkspaceID is required;
@@ -80,8 +86,22 @@ func (r *Recorder) Record(ctx context.Context, eventType string, s Subject) {
 	}
 
 	actorType := s.ActorType
-	if actorType == "" {
+	// Normalize multica's internal actor labels to the coarse audit-log
+	// category (user / agent / system). The audit_log_actor_type_check
+	// constraint rejects anything else.
+	switch actorType {
+	case "", "member":
 		actorType = "user"
+	case "user", "agent", "system":
+		// pass through
+	default:
+		// Unknown source — log it as 'system' rather than failing the insert.
+		// The original label is preserved in metadata for forensics.
+		if meta["original_actor_type"] == nil {
+			meta["original_actor_type"] = actorType
+			metaJSON, _ = json.Marshal(meta)
+		}
+		actorType = "system"
 	}
 
 	_, err = r.queries.CreateAuditLog(ctx, db.CreateAuditLogParams{
