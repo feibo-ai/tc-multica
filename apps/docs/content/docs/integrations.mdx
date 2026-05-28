@@ -1,0 +1,101 @@
+---
+title: Integrations (Control Plane)
+description: "Manage external service configurations and encrypted secrets from inside Multica. Useful for centralizing MCP server config, feishu credentials, and autopilot-bot deployment metadata."
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+The control plane lets a workspace DRI manage **MCP servers**, **feishu / lark credentials**, and **autopilot bot deployments** from inside Multica itself, instead of scattering `.env` files across team machines. Services running outside Multica can pull their config and subscribe to a `integration:config-changed` event for hot-reload.
+
+<Callout type="warn">
+  The control plane is **off by default**. Existing self-hosted deployments are
+  unaffected on upgrade. See *Enabling* below.
+</Callout>
+
+## Concepts
+
+- **Integration** — a typed config record (`kind` is one of `mcp-server`, `feishu`, `autopilot-bot`) with a JSON `config` blob, optional `deployment_webhook_url`, and a monotonically-increasing version.
+- **Secret** — an encrypted credential attached to an integration. Values are sealed with NaCl secretbox using a workspace-server master key. List endpoints never return ciphertext; only `GET /secrets/{key}` does, and every such call is recorded in the audit log.
+- **Deployment** — a record of an instance of the integration that has registered itself and is sending heartbeats. The UI surfaces stale-heartbeat deployments as `degraded` automatically.
+- **Audit log** — append-only record of every control-plane write and every secret read.
+
+## Enabling
+
+On the multica server (DRI runs this once):
+
+```bash
+# 1. Generate a 32-byte master key. Save it in your team password manager —
+#    losing it means every encrypted secret is unrecoverable.
+openssl rand -base64 32
+
+# 2. Add both vars to your .env and restart the server.
+MULTICA_CONTROL_PLANE_ENABLED=true
+MULTICA_SECRET_MASTER_KEY=<output of step 1>
+```
+
+If `MULTICA_CONTROL_PLANE_ENABLED=true` but the master key is missing or invalid, the server refuses to start with a clear error.
+
+## Capabilities
+
+Permission gating is **role-derived**. The full matrix lives in `server/internal/middleware/capabilities.go`:
+
+| Role     | `integrations:read` | `integrations:write` | `secrets:read` | `secrets:write` |
+| -------- | ------------------- | -------------------- | -------------- | --------------- |
+| owner    | ✓                   | ✓                    | ✓              | ✓               |
+| admin    | ✓                   | ✓                    | ✓              | ✓               |
+| member   | ✓                   | —                    | —              | —               |
+
+Members can browse integration configs but never see secret values. Cross-workspace access is rejected at the loader layer (404, never 403, to avoid existence leaks).
+
+## CLI
+
+```bash
+# Create + list
+multica integration create --kind mcp-server --name tcmcp --workspace acme
+multica integration list --workspace acme
+
+# Update config (merge KEY=VALUE pairs into existing config.{...})
+multica integration set tcmcp feishu_team_chat_id=oc_xxx --workspace acme
+
+# Or replace the whole config from a file
+multica integration patch tcmcp --config-file ./new-config.json --workspace acme
+
+# Restart / redeploy
+multica integration restart tcmcp --workspace acme
+multica integration redeploy tcmcp --workspace acme   # POSTs to deployment_webhook_url
+
+# Status
+multica integration status tcmcp --workspace acme
+```
+
+### Secrets
+
+The CLI **never accepts secret values on argv** (shell history, `ps`, and `/proc/<pid>/cmdline` would leak them). Use stdin or `--value-file`:
+
+```bash
+# Pipe a value in
+echo -n "$YOUR_APP_SECRET" | multica secret set FEISHU_APP_SECRET \
+    --integration tcmcp --workspace acme
+
+# Or read from a 0600 file
+multica secret set FEISHU_APP_SECRET --integration tcmcp \
+    --workspace acme --value-file ~/.config/multica-secrets/feishu
+
+# List keys + versions (no values)
+multica secret list --integration tcmcp --workspace acme
+
+# Fetch a value (writes an audit row server-side)
+multica secret get FEISHU_APP_SECRET --integration tcmcp --workspace acme
+
+# Rotate / delete
+multica secret rotate FEISHU_APP_SECRET --integration tcmcp --workspace acme
+multica secret delete FEISHU_APP_SECRET --integration tcmcp --workspace acme
+```
+
+## Web UI
+
+Navigate to `/{workspace}/integrations`. The list view groups by kind; the detail page exposes config editor, status, restart/redeploy actions, and a secret manager with click-to-reveal (auto-hides after 30 seconds).
+
+## Hot-reload via WebSocket
+
+Runtime services can subscribe to the workspace WS topic and watch for `integration:config-changed` events. Each event carries the integration id, kind, new version, and the reason (`created` / `config-changed` / `restart` / `redeploy` / `secret-changed` / `secret-deleted` / `deleted`). The recommended pattern is "fetch on event" — re-call `GET /api/integrations/{id}` instead of reading the payload, so the runtime always picks up the full current config including secrets if it has `secrets:read`.

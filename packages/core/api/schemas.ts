@@ -655,3 +655,85 @@ export const EMPTY_USER: User = {
   created_at: "",
   updated_at: "",
 };
+
+
+// ---------------------------------------------------------------------------
+// Control plane (Plan 4 / PR D). Workspace-scoped resources gated by the
+// MULTICA_CONTROL_PLANE_ENABLED feature flag on the server. Schemas are
+// permissive in the same way as IssueSchema — unknown server enum values
+// fall back via .catch, unknown fields pass through via .loose.
+// ---------------------------------------------------------------------------
+
+export const IntegrationSchema = z.object({
+  id: z.string().default(""),
+  workspace_id: z.string().default(""),
+  kind: z.enum(["mcp-server", "feishu", "autopilot-bot"]).catch("mcp-server"),
+  name: z.string().default(""),
+  config: z.record(z.string(), z.unknown()).default({}),
+  version: z.number().int().nonnegative().default(1),
+  status: z.enum(["pending", "running", "stopped", "degraded"]).catch("pending"),
+  deployment_webhook_url: z.string().nullable().optional(),
+  config_schema_ref: z.string().nullable().optional(),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const IntegrationListSchema = z.array(IntegrationSchema);
+
+export const IntegrationDeploymentSchema = z.object({
+  id: z.string().default(""),
+  integration_id: z.string().default(""),
+  image_or_commit: z.string().default(""),
+  host_url: z.string().nullable().optional(),
+  version: z.number().int().nonnegative().default(1),
+  status: z.enum(["starting", "running", "degraded", "stopped"]).catch("starting"),
+  last_heartbeat: z.string().nullable().optional(),
+  config_applied_version: z.number().int().nullable().optional(),
+  started_at: z.string().default(""),
+  stopped_at: z.string().nullable().optional(),
+}).loose();
+
+export const IntegrationStatusSummarySchema = z.object({
+  integration_id: z.string().default(""),
+  integration_status: z.enum(["pending", "running", "stopped", "degraded"]).catch("pending"),
+  config_version: z.number().int().nonnegative().default(1),
+  active_deployment: IntegrationDeploymentSchema.nullable().optional(),
+}).loose();
+
+export const SecretKeySchema = z.object({
+  key: z.string().default(""),
+  version: z.number().int().nonnegative().default(1),
+  created_by: z.string().nullable().optional(),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const SecretKeyListSchema = z.array(SecretKeySchema);
+
+export const SecretValueSchema = z.object({
+  key: z.string().default(""),
+  value: z.string().default(""),
+  version: z.number().int().nonnegative().default(1),
+}).loose();
+
+
+export const EMPTY_INTEGRATION: import("../types").Integration = {
+  id: "",
+  workspace_id: "",
+  kind: "mcp-server",
+  name: "",
+  config: {},
+  version: 0,
+  status: "pending",
+  deployment_webhook_url: null,
+  config_schema_ref: null,
+  created_at: "",
+  updated_at: "",
+};
+
+export const EMPTY_INTEGRATION_STATUS: import("../types").IntegrationStatusSummary = {
+  integration_id: "",
+  integration_status: "pending",
+  config_version: 0,
+  active_deployment: null,
+};

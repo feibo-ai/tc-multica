@@ -114,6 +114,19 @@ type Attachment struct {
 	ChatMessageID pgtype.UUID        `json:"chat_message_id"`
 }
 
+// Append-only audit trail for control plane reads/writes
+type AuditLog struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ActorUserID pgtype.UUID        `json:"actor_user_id"`
+	ActorType   string             `json:"actor_type"`
+	EventType   string             `json:"event_type"`
+	Resource    string             `json:"resource"`
+	Metadata    []byte             `json:"metadata"`
+	IpAddress   *netip.Addr        `json:"ip_address"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type Autopilot struct {
 	ID                 pgtype.UUID        `json:"id"`
 	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
@@ -328,6 +341,48 @@ type InboxItem struct {
 	ActorType     pgtype.Text        `json:"actor_type"`
 	ActorID       pgtype.UUID        `json:"actor_id"`
 	Details       []byte             `json:"details"`
+}
+
+// Control plane: managed external service configurations
+type Integration struct {
+	ID                   pgtype.UUID        `json:"id"`
+	WorkspaceID          pgtype.UUID        `json:"workspace_id"`
+	Kind                 string             `json:"kind"`
+	Name                 string             `json:"name"`
+	Config               []byte             `json:"config"`
+	Version              int32              `json:"version"`
+	Status               string             `json:"status"`
+	DeploymentWebhookUrl pgtype.Text        `json:"deployment_webhook_url"`
+	ConfigSchemaRef      pgtype.Text        `json:"config_schema_ref"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Control plane: running instance tracker
+type IntegrationDeployment struct {
+	ID                   pgtype.UUID        `json:"id"`
+	IntegrationID        pgtype.UUID        `json:"integration_id"`
+	ImageOrCommit        string             `json:"image_or_commit"`
+	HostUrl              pgtype.Text        `json:"host_url"`
+	Version              int32              `json:"version"`
+	Status               string             `json:"status"`
+	LastHeartbeat        pgtype.Timestamptz `json:"last_heartbeat"`
+	ConfigAppliedVersion pgtype.Int4        `json:"config_applied_version"`
+	StartedAt            pgtype.Timestamptz `json:"started_at"`
+	StoppedAt            pgtype.Timestamptz `json:"stopped_at"`
+}
+
+// Control plane: encrypted credentials per integration
+type IntegrationSecret struct {
+	ID             pgtype.UUID        `json:"id"`
+	IntegrationID  pgtype.UUID        `json:"integration_id"`
+	Key            string             `json:"key"`
+	EncryptedValue []byte             `json:"encrypted_value"`
+	Nonce          []byte             `json:"nonce"`
+	Version        int32              `json:"version"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Issue struct {

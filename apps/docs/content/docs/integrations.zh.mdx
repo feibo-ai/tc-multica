@@ -1,0 +1,100 @@
+---
+title: 集成（控制平面）
+description: "在 Multica 内部统一管理外部服务的配置和加密凭证。适合集中管理 MCP server 配置、飞书凭证、autopilot 机器人部署元数据。"
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+控制平面让工作区 DRI 在 Multica 里集中管理 **MCP server**、**飞书 / Lark 凭证**、**autopilot 机器人部署**，而不是把 `.env` 文件散落在各个团队成员的机器上。运行在 Multica 之外的服务可以拉取自己的配置，并订阅 `integration:config-changed` 事件做热更新。
+
+<Callout type="warn">
+  控制平面**默认关闭**。已有的自部署实例升级时不受影响。开启方法见下文 *启用*。
+</Callout>
+
+## 概念
+
+- **Integration（集成）**——一条带类型的配置记录（`kind` 取值 `mcp-server` / `feishu` / `autopilot-bot`），含一个 JSON 的 `config`、可选的 `deployment_webhook_url`、以及单调递增的 version。
+- **Secret（密钥）**——附属于集成的加密凭证。使用 NaCl secretbox 加密，主密钥保存在 multica server 的环境变量里。列表接口**不返回密文**；只有 `GET /secrets/{key}` 才返回明文，且每次调用都会写一条审计日志。
+- **Deployment（部署）**——集成的某个运行实例向 server 注册并发送心跳的记录。心跳过期的部署会被自动标记为 `degraded`。
+- **Audit log（审计日志）**——只追加的控制平面读写记录。
+
+## 启用
+
+DRI 在 multica server 上执行一次：
+
+```bash
+# 1. 生成 32 字节主密钥，存到团队密码管理器里。
+#    丢了的话，所有已加密 secret 都无法恢复。
+openssl rand -base64 32
+
+# 2. 把以下两个变量加到 .env 并重启 server。
+MULTICA_CONTROL_PLANE_ENABLED=true
+MULTICA_SECRET_MASTER_KEY=<上一步的输出>
+```
+
+如果 `MULTICA_CONTROL_PLANE_ENABLED=true` 但主密钥缺失或非法，server 启动时会报错并拒绝启动。
+
+## 权限矩阵
+
+权限是**按角色派生**的，完整矩阵在 `server/internal/middleware/capabilities.go`：
+
+| 角色     | `integrations:read` | `integrations:write` | `secrets:read` | `secrets:write` |
+| -------- | ------------------- | -------------------- | -------------- | --------------- |
+| owner    | ✓                   | ✓                    | ✓              | ✓               |
+| admin    | ✓                   | ✓                    | ✓              | ✓               |
+| member   | ✓                   | —                    | —              | —               |
+
+普通成员能看到集成配置但永远看不到 secret 的值。跨工作区访问在 loader 层就被拒绝（返回 404，避免存在性泄露）。
+
+## CLI
+
+```bash
+# 创建 + 列表
+multica integration create --kind mcp-server --name tcmcp --workspace acme
+multica integration list --workspace acme
+
+# 更新配置（把 KEY=VALUE 合并到现有 config.{...}）
+multica integration set tcmcp feishu_team_chat_id=oc_xxx --workspace acme
+
+# 或者整个替换配置
+multica integration patch tcmcp --config-file ./new-config.json --workspace acme
+
+# 重启 / 重新部署
+multica integration restart tcmcp --workspace acme
+multica integration redeploy tcmcp --workspace acme   # 触发 deployment_webhook_url
+
+# 查询状态
+multica integration status tcmcp --workspace acme
+```
+
+### Secret 操作
+
+CLI **从不接受命令行参数里直接写值**（shell history、`ps`、`/proc/<pid>/cmdline` 都会泄露）。只能用 stdin 或 `--value-file`：
+
+```bash
+# 用 stdin 喂值
+echo -n "$YOUR_APP_SECRET" | multica secret set FEISHU_APP_SECRET \
+    --integration tcmcp --workspace acme
+
+# 或从 0600 文件读
+multica secret set FEISHU_APP_SECRET --integration tcmcp \
+    --workspace acme --value-file ~/.config/multica-secrets/feishu
+
+# 列出 key + 版本（不返回值）
+multica secret list --integration tcmcp --workspace acme
+
+# 取值（server 端会写一条审计日志）
+multica secret get FEISHU_APP_SECRET --integration tcmcp --workspace acme
+
+# 轮转 / 删除
+multica secret rotate FEISHU_APP_SECRET --integration tcmcp --workspace acme
+multica secret delete FEISHU_APP_SECRET --integration tcmcp --workspace acme
+```
+
+## Web 界面
+
+访问 `/{workspace}/integrations`。列表页按 kind 分组；详情页有配置编辑器、状态面板、Restart/Redeploy 操作、以及带 click-to-reveal（30 秒后自动隐藏）的 secret 管理器。
+
+## 通过 WebSocket 热更新
+
+运行时服务可以订阅工作区 WS topic，监听 `integration:config-changed` 事件。事件携带 integration id、kind、新版本号、以及 reason（`created` / `config-changed` / `restart` / `redeploy` / `secret-changed` / `secret-deleted` / `deleted`）。**推荐模式：收到事件后重新调 `GET /api/integrations/{id}`**——而不是直接读 payload——这样运行时拿到的总是最新完整配置（含 secret，如果有 `secrets:read` 权限）。
