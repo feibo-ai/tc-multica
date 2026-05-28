@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -164,6 +165,45 @@ func (h *Handler) HeartbeatDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "at": time.Now().UTC().Format(time.RFC3339)})
+}
+
+// ListDeployments: GET /api/integrations/{id}/deployments?limit=N
+// Returns the most recent N deployments for an integration, newest first.
+// Used by the web UI timeline view.
+func (h *Handler) ListDeployments(w http.ResponseWriter, r *http.Request) {
+	integration, ok := h.loadIntegrationForUser(w, r, chi.URLParam(r, "id"))
+	if !ok {
+		return
+	}
+	limit := int32(20)
+	if l := r.URL.Query().Get("limit"); l != "" {
+		var parsed int
+		_, err := fmt.Sscanf(l, "%d", &parsed)
+		if err == nil && parsed > 0 && parsed <= 100 {
+			limit = int32(parsed)
+		}
+	}
+	rows, err := h.Queries.ListIntegrationDeployments(r.Context(), db.ListIntegrationDeploymentsParams{
+		IntegrationID: integration.ID,
+		Limit:         limit,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list deployments")
+		return
+	}
+	now := time.Now()
+	resp := make([]IntegrationDeploymentResponse, len(rows))
+	for i, row := range rows {
+		dr := deploymentToResponse(row)
+		// Same stale-heartbeat downgrade as GetActiveDeployment so the timeline
+		// view shows a consistent status.
+		if row.LastHeartbeat.Valid && now.Sub(row.LastHeartbeat.Time) > 90*time.Second &&
+			(dr.Status == "starting" || dr.Status == "running") {
+			dr.Status = "degraded"
+		}
+		resp[i] = dr
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // GetActiveDeployment: GET /api/integrations/{id}/active-deployment

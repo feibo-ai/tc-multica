@@ -716,6 +716,9 @@ export const SecretValueSchema = z.object({
   version: z.number().int().nonnegative().default(1),
 }).loose();
 
+export const IntegrationDeploymentListSchema = z.array(IntegrationDeploymentSchema);
+
+
 
 export const EMPTY_INTEGRATION: import("../types").Integration = {
   id: "",

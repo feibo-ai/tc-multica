@@ -603,6 +603,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 						r.Get("/", h.GetIntegration)
 						r.Get("/status", h.GetIntegrationStatus)
 						r.Get("/active-deployment", h.GetActiveDeployment)
+					r.Get("/deployments", h.ListDeployments)
 						r.With(middleware.RequireCapability(middleware.CapIntegrationsWrite)).
 							Patch("/config", h.UpdateIntegrationConfig)
 						r.With(middleware.RequireCapability(middleware.CapIntegrationsWrite)).

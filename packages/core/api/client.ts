@@ -102,6 +102,7 @@ import type {
   SquadMember,
   SquadMemberStatusListResponse,
   Integration,
+  IntegrationDeployment,
   IntegrationStatusSummary,
   SecretKey,
   SecretValue,
@@ -161,6 +162,7 @@ import {
   IntegrationSchema,
   IntegrationListSchema,
   IntegrationStatusSummarySchema,
+  IntegrationDeploymentListSchema,
   SecretKeySchema,
   SecretKeyListSchema,
   SecretValueSchema,
@@ -1949,6 +1951,14 @@ export class ApiClient {
 
   async deleteIntegration(id: string): Promise<void> {
     await this.fetch(`/api/integrations/${id}`, { method: "DELETE" });
+  }
+
+  async listIntegrationDeployments(id: string, limit?: number): Promise<IntegrationDeployment[]> {
+    const qs = limit ? `?limit=${limit}` : "";
+    const raw = await this.fetch<unknown>(`/api/integrations/${id}/deployments${qs}`);
+    return parseWithFallback(raw, IntegrationDeploymentListSchema, [], {
+      endpoint: "listIntegrationDeployments",
+    });
   }
 
   async listIntegrationSecretKeys(integrationId: string): Promise<SecretKey[]> {
