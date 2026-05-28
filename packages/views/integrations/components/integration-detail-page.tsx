@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, EyeOff, RefreshCw, Trash2 } from "lucide-react";
-import type { SecretValue } from "@multica/core/types";
+import type { IntegrationKind, SecretValue } from "@multica/core/types";
 import { api } from "@multica/core/api";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { Button } from "@multica/ui/components/ui/button";
@@ -11,6 +11,7 @@ import { Input } from "@multica/ui/components/ui/input";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { useNavigation } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
+import { KindConfigForm, hasFormForKind } from "./config-forms";
 
 // Detail page for one integration (Plan 4 / PR D, Tasks D-12/D-13/D-14
 // combined into a single screen to keep the v1 web surface compact).
@@ -85,7 +86,11 @@ export function IntegrationDetailPage({ id }: { id: string }) {
           </div>
         </section>
 
-        <ConfigEditor integrationId={id} initialConfig={integration.config} />
+        <ConfigEditor
+          integrationId={id}
+          kind={integration.kind}
+          initialConfig={integration.config}
+        />
 
         <SecretsSection integrationId={id} />
       </div>
@@ -142,24 +147,44 @@ function HeaderActions({ integrationId }: { integrationId: string }) {
   );
 }
 
-// --- config editor: textarea + save (no Monaco — keeps bundle small) ---
+// --- config editor: per-kind form OR raw JSON textarea ---
+//
+// Two modes share one source of truth: the parsed config object held in local
+// state. Switching modes serializes / deserializes; if the textarea contains
+// invalid JSON when switching back to Form, the toggle stays in JSON mode
+// with an inline error so user input is never silently dropped.
+
+type EditorMode = "form" | "json";
 
 function ConfigEditor({
   integrationId,
+  kind,
   initialConfig,
 }: {
   integrationId: string;
+  kind: IntegrationKind;
   initialConfig: Record<string, unknown>;
 }) {
   const qc = useQueryClient();
   const workspaceId = useWorkspaceId();
-  const initialText = useMemo(() => JSON.stringify(initialConfig, null, 2), [initialConfig]);
-  const [text, setText] = useState(initialText);
+  const hasForm = hasFormForKind(kind);
+
+  // Single source of truth = the parsed JS object.
+  const [config, setConfig] = useState<Record<string, unknown>>(() => initialConfig);
+  // Mirror for the textarea so the user can keep typing freely without our
+  // JSON.stringify reformatting between keystrokes.
+  const [text, setText] = useState(() => JSON.stringify(initialConfig, null, 2));
+  const [mode, setMode] = useState<EditorMode>(hasForm ? "form" : "json");
   const [error, setError] = useState<string | null>(null);
 
+  // When the server returns a new config (e.g. after save or via WS event),
+  // resync both states.
+  const initialText = useMemo(() => JSON.stringify(initialConfig, null, 2), [initialConfig]);
   useEffect(() => {
+    setConfig(initialConfig);
     setText(initialText);
-  }, [initialText]);
+    setError(null);
+  }, [initialConfig, initialText]);
 
   const save = useMutation({
     mutationFn: (cfg: Record<string, unknown>) => api.updateIntegrationConfig(integrationId, cfg),
@@ -170,32 +195,100 @@ function ConfigEditor({
     onError: (e: Error) => setError(e.message),
   });
 
+  // Switching mode: form → json is always safe (stringify the object). json →
+  // form requires the textarea to parse cleanly; otherwise we surface the
+  // error and stay in JSON mode.
+  const switchTo = (next: EditorMode) => {
+    if (next === mode) return;
+    if (next === "form") {
+      try {
+        const parsed = JSON.parse(text);
+        if (typeof parsed !== "object" || parsed === null) {
+          setError("Cannot switch to form: top-level value must be a JSON object.");
+          return;
+        }
+        setConfig(parsed as Record<string, unknown>);
+        setError(null);
+        setMode("form");
+      } catch (e) {
+        setError(`Cannot switch to form — fix JSON first: ${(e as Error).message}`);
+      }
+    } else {
+      setText(JSON.stringify(config, null, 2));
+      setError(null);
+      setMode("json");
+    }
+  };
+
   return (
     <section>
-      <h3 className="mb-2 text-sm font-semibold uppercase text-muted-foreground">Config</h3>
-      <textarea
-        className="h-64 w-full rounded-md border bg-card p-3 font-mono text-xs"
-        value={text}
-        spellCheck={false}
-        onChange={(e) => setText(e.target.value)}
-      />
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-sm font-semibold uppercase text-muted-foreground">Config</h3>
+        {hasForm && (
+          <div className="flex gap-1 rounded-md border bg-card p-0.5">
+            <Button
+              size="sm"
+              variant={mode === "form" ? "default" : "ghost"}
+              className="h-7 px-3 text-xs"
+              onClick={() => switchTo("form")}
+            >
+              Form
+            </Button>
+            <Button
+              size="sm"
+              variant={mode === "json" ? "default" : "ghost"}
+              className="h-7 px-3 text-xs"
+              onClick={() => switchTo("json")}
+            >
+              Raw JSON
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {mode === "form" && hasForm ? (
+        <div className="rounded-md border bg-card p-4">
+          <KindConfigForm kind={kind} value={config} onChange={setConfig} />
+        </div>
+      ) : (
+        <textarea
+          className="h-64 w-full rounded-md border bg-card p-3 font-mono text-xs"
+          value={text}
+          spellCheck={false}
+          onChange={(e) => setText(e.target.value)}
+        />
+      )}
+
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+
       <div className="mt-2 flex justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={() => setText(initialText)}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setConfig(initialConfig);
+            setText(initialText);
+            setError(null);
+          }}
+        >
           Reset
         </Button>
         <Button
           size="sm"
           onClick={() => {
-            try {
-              const parsed = JSON.parse(text);
-              if (typeof parsed !== "object" || parsed === null) {
-                setError("Config must be a JSON object");
-                return;
+            if (mode === "json") {
+              try {
+                const parsed = JSON.parse(text);
+                if (typeof parsed !== "object" || parsed === null) {
+                  setError("Config must be a JSON object");
+                  return;
+                }
+                save.mutate(parsed as Record<string, unknown>);
+              } catch (e) {
+                setError(`Invalid JSON: ${(e as Error).message}`);
               }
-              save.mutate(parsed);
-            } catch (e) {
-              setError(`Invalid JSON: ${(e as Error).message}`);
+            } else {
+              save.mutate(config);
             }
           }}
           disabled={save.isPending}
