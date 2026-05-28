@@ -983,6 +983,17 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	if metadataFilter != nil {
 		where = append(where, fmt.Sprintf("i.metadata @> %s::jsonb", addArg(string(metadataFilter))))
 	}
+	// updated_after: ISO date or RFC3339 timestamp. Used by daily-summary
+	// autopilots that want only issues touched in the last N hours/days.
+	// Accept both `YYYY-MM-DD` (treated as UTC midnight) and full RFC3339.
+	if ua := strings.TrimSpace(r.URL.Query().Get("updated_after")); ua != "" {
+		ts, err := parseUpdatedAfter(ua)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid updated_after — expected YYYY-MM-DD or RFC3339")
+			return
+		}
+		where = append(where, fmt.Sprintf("i.updated_at > %s", addArg(ts)))
+	}
 	if involvesUserFilter.Valid {
 		ref := addArg(involvesUserFilter)
 		where = append(where, fmt.Sprintf(`(

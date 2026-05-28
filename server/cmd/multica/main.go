@@ -33,7 +33,13 @@ func init() {
 	cli.ClientVersion = version
 
 	rootCmd.PersistentFlags().String("server-url", "", "Multica server URL (env: MULTICA_SERVER_URL)")
-	rootCmd.PersistentFlags().String("workspace-id", "", "Workspace ID (env: MULTICA_WORKSPACE_ID)")
+	rootCmd.PersistentFlags().String("workspace-id", "", "Workspace ID — UUID (env: MULTICA_WORKSPACE_ID)")
+	// --workspace is the user-friendly slug-or-id variant. It's the form
+	// referenced by docs and shell scripts (`--workspace team-context`); we
+	// resolve slug→UUID lazily via the workspaces list endpoint. Empty here
+	// is the same as "not provided" — resolveWorkspaceID falls back to env
+	// and config.
+	rootCmd.PersistentFlags().String("workspace", "", "Workspace slug or UUID (env: MULTICA_WORKSPACE)")
 	rootCmd.PersistentFlags().String("profile", "", "Configuration profile name (e.g. dev) — isolates config, daemon state, and workspaces")
 
 	// Core commands
@@ -83,6 +89,7 @@ func init() {
 	rootCmd.AddCommand(integrationCmd)
 	rootCmd.AddCommand(secretCmd)
 	rootCmd.AddCommand(deploymentCmd)
+	rootCmd.AddCommand(auditLogCmd)
 
 	initHelp(rootCmd)
 }

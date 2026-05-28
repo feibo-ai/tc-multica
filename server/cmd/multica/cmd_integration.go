@@ -95,10 +95,12 @@ func init() {
 
 	integrationCreateCmd.Flags().String("kind", "", "Integration kind: mcp-server | feishu | autopilot-bot (required)")
 	integrationCreateCmd.Flags().String("name", "", "Integration name (required, unique within workspace)")
+	integrationCreateCmd.Flags().String("config", "", "Inline JSON config (mutually exclusive with --config-file)")
 	integrationCreateCmd.Flags().String("config-file", "", "Path to a JSON file containing the initial config")
 	integrationCreateCmd.Flags().String("deployment-webhook", "", "URL invoked by `multica integration redeploy`")
 	integrationCreateCmd.Flags().String("config-schema-ref", "", "Optional reference for runtime config validation")
 	integrationCreateCmd.Flags().String("output", "json", "Output format: table or json")
+	integrationCreateCmd.MarkFlagsMutuallyExclusive("config", "config-file")
 
 	integrationListCmd.Flags().String("kind", "", "Filter by kind")
 	integrationListCmd.Flags().String("output", "table", "Output format: table or json")
@@ -170,7 +172,11 @@ func runIntegrationCreate(cmd *cobra.Command, _ []string) error {
 	}
 
 	cfg := map[string]any{}
-	if path, _ := cmd.Flags().GetString("config-file"); path != "" {
+	if inline, _ := cmd.Flags().GetString("config"); inline != "" {
+		if err := json.Unmarshal([]byte(inline), &cfg); err != nil {
+			return fmt.Errorf("--config is not valid JSON: %w", err)
+		}
+	} else if path, _ := cmd.Flags().GetString("config-file"); path != "" {
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("read config-file: %w", err)

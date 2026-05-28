@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -85,6 +86,23 @@ func parseIssueMetadata(raw []byte) map[string]any {
 		return map[string]any{}
 	}
 	return out
+}
+
+// parseUpdatedAfter accepts the `updated_after` query param in two forms:
+//   - `YYYY-MM-DD`      (UTC midnight)
+//   - RFC3339           (`2026-05-28T09:00:00Z`)
+//
+// Returns the parsed time in UTC suitable for direct comparison with
+// issue.updated_at. Empty input is a programmer error — caller should
+// short-circuit before calling.
+func parseUpdatedAfter(raw string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return t.UTC(), nil
+	}
+	if t, err := time.Parse("2006-01-02", raw); err == nil {
+		return t.UTC(), nil
+	}
+	return time.Time{}, fmt.Errorf("unrecognized timestamp format")
 }
 
 // parseMetadataFilterParam reads the `metadata` query parameter (a JSON

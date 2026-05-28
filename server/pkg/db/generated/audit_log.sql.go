@@ -100,6 +100,63 @@ func (q *Queries) ListAuditLogsByEventTypes(ctx context.Context, arg ListAuditLo
 	return items, nil
 }
 
+const listAuditLogsByWorkspace = `-- name: ListAuditLogsByWorkspace :many
+SELECT id, workspace_id, actor_user_id, actor_type, event_type, resource, metadata, ip_address, created_at FROM audit_log
+WHERE workspace_id = $1
+  AND ($3::text IS NULL OR resource = $3::text)
+  AND (cardinality($4::text[]) = 0 OR event_type = ANY($4::text[]))
+  AND ($5::timestamptz IS NULL OR created_at > $5::timestamptz)
+ORDER BY created_at DESC
+LIMIT $2
+`
+
+type ListAuditLogsByWorkspaceParams struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Limit       int32              `json:"limit"`
+	Resource    pgtype.Text        `json:"resource"`
+	EventTypes  []string           `json:"event_types"`
+	Since       pgtype.Timestamptz `json:"since"`
+}
+
+// Generic list with optional filters used by `multica audit-log list` and
+// the future UI audit tab. Empty filters (sqlc.narg('resource') NULL,
+// empty event_types array, NULL since) skip the corresponding WHERE clause.
+func (q *Queries) ListAuditLogsByWorkspace(ctx context.Context, arg ListAuditLogsByWorkspaceParams) ([]AuditLog, error) {
+	rows, err := q.db.Query(ctx, listAuditLogsByWorkspace,
+		arg.WorkspaceID,
+		arg.Limit,
+		arg.Resource,
+		arg.EventTypes,
+		arg.Since,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuditLog{}
+	for rows.Next() {
+		var i AuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ActorUserID,
+			&i.ActorType,
+			&i.EventType,
+			&i.Resource,
+			&i.Metadata,
+			&i.IpAddress,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAuditLogsForResource = `-- name: ListAuditLogsForResource :many
 SELECT id, workspace_id, actor_user_id, actor_type, event_type, resource, metadata, ip_address, created_at FROM audit_log
 WHERE workspace_id = $1 AND resource = $2

@@ -37,6 +37,16 @@ var authLogoutCmd = &cobra.Command{
 	RunE:  runAuthLogout,
 }
 
+var authIssueTokenCmd = &cobra.Command{
+	Use:   "issue-token",
+	Short: "Issue a PAT on behalf of another user (admin-only; service-bot onboarding)",
+	Long: "Self-host operators use this to issue a long-lived PAT for a service " +
+		"account (e.g. autopilot-bot) after creating it with `multica user " +
+		"create`. The token is printed exactly once to stdout — capture it " +
+		"immediately into a secret manager or pipe into `multica secret set`.",
+	RunE: runAuthIssueToken,
+}
+
 // callbackHostFlag lets users override the host/IP that goes into the OAuth
 // cli_callback URL. Useful when the CLI sits behind a reverse proxy or the
 // auto-detected LAN IP isn't the one the browser can reach.
@@ -45,6 +55,47 @@ const callbackHostFlag = "callback-host"
 func init() {
 	authCmd.AddCommand(authStatusCmd)
 	authCmd.AddCommand(authLogoutCmd)
+	authCmd.AddCommand(authIssueTokenCmd)
+
+	authIssueTokenCmd.Flags().String("user-email", "", "Target user's email (required; user must already be a workspace member)")
+	authIssueTokenCmd.Flags().String("name", "", "PAT label (required; e.g. 'autopilot-bot-2026-q2')")
+	authIssueTokenCmd.Flags().Int("expires-in-days", 0, "Token TTL in days (0 = no expiry)")
+	authIssueTokenCmd.Flags().String("output", "json", "Output format: json (full PAT row + raw token) or token (raw token only)")
+	_ = authIssueTokenCmd.MarkFlagRequired("user-email")
+	_ = authIssueTokenCmd.MarkFlagRequired("name")
+}
+
+func runAuthIssueToken(cmd *cobra.Command, _ []string) error {
+	c, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+	if _, err := requireWorkspaceID(cmd); err != nil {
+		return err
+	}
+
+	email, _ := cmd.Flags().GetString("user-email")
+	name, _ := cmd.Flags().GetString("name")
+	expires, _ := cmd.Flags().GetInt("expires-in-days")
+
+	body := map[string]any{"user_email": email, "name": name}
+	if expires > 0 {
+		body["expires_in_days"] = expires
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var resp map[string]any
+	if err := c.PostJSON(ctx, "/api/admin/tokens", body, &resp); err != nil {
+		return fmt.Errorf("issue token: %w", err)
+	}
+
+	output, _ := cmd.Flags().GetString("output")
+	if output == "token" {
+		fmt.Fprint(os.Stdout, strVal(resp, "token"))
+		return nil
+	}
+	return cli.PrintJSON(os.Stdout, resp)
 }
 
 func resolveToken(cmd *cobra.Command) string {

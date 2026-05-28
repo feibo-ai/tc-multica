@@ -266,6 +266,7 @@ func init() {
 	issueListCmd.Flags().String("labels-mode", "any", "Combine multiple --label flags: any (OR) or all (AND)")
 	issueListCmd.Flags().Int("limit", 50, "Maximum number of issues to return")
 	issueListCmd.Flags().Int("offset", 0, "Number of issues to skip (for pagination)")
+	issueListCmd.Flags().String("updated-after", "", "Only issues updated after this timestamp. Accepts YYYY-MM-DD (UTC midnight) or RFC3339.")
 
 	// issue get
 	issueGetCmd.Flags().String("output", "json", "Output format: table or json")
@@ -421,6 +422,9 @@ func runIssueList(cmd *cobra.Command, _ []string) error {
 		if mode != "any" {
 			params.Set("labels_mode", mode)
 		}
+	}
+	if ua, _ := cmd.Flags().GetString("updated-after"); ua != "" {
+		params.Set("updated_after", ua)
 	}
 
 	path := "/api/issues"

@@ -232,6 +232,20 @@ func newAPIClient(cmd *cobra.Command) (*cli.APIClient, error) {
 	}
 
 	client := cli.NewAPIClient(serverURL, workspaceID, token)
+	// `--workspace <slug>` (or MULTICA_WORKSPACE env) is a sibling of
+	// `--workspace-id`. When provided as a slug, ship it as
+	// X-Workspace-Slug header so the server resolves it.
+	if slug := resolveWorkspaceSlug(cmd); slug != "" {
+		client.WorkspaceSlug = slug
+		// If only slug is known (workspaceID empty), set WorkspaceID to
+		// slug too. URL builders that interpolate `?workspace_id=<id>`
+		// will then carry the slug, and the server middleware prefers
+		// the slug header anyway. This keeps the 48 callsite URL
+		// templates working without a refactor.
+		if client.WorkspaceID == "" {
+			client.WorkspaceID = slug
+		}
+	}
 	// When running inside a daemon task, attribute actions to the agent.
 	if agentID := os.Getenv("MULTICA_AGENT_ID"); agentID != "" {
 		client.AgentID = agentID
@@ -291,11 +305,34 @@ func resolveWorkspaceID(cmd *cobra.Command) string {
 	return cfg.WorkspaceID
 }
 
+// resolveWorkspaceSlug returns the `--workspace` (or MULTICA_WORKSPACE)
+// value when it is not a UUID — i.e. when it looks like a slug. Returns
+// empty string when nothing usable is provided. Slug → UUID translation
+// happens server-side in RequireWorkspaceMember.
+func resolveWorkspaceSlug(cmd *cobra.Command) string {
+	v := cli.FlagOrEnv(cmd, "workspace", "MULTICA_WORKSPACE", "")
+	if v == "" {
+		return ""
+	}
+	// 36-char canonical UUID — treat as ID, not slug.
+	if len(v) == 36 && strings.Count(v, "-") == 4 {
+		return ""
+	}
+	return v
+}
+
 // requireWorkspaceID resolves the workspace ID and returns an error with
 // actionable instructions if it is empty (e.g. user has multiple workspaces
 // but no default configured).
 func requireWorkspaceID(cmd *cobra.Command) (string, error) {
 	id := resolveWorkspaceID(cmd)
+	if id == "" {
+		// Fall back: if --workspace was given as a slug, use it as the
+		// identifier. The slug header takes precedence server-side.
+		if slug := resolveWorkspaceSlug(cmd); slug != "" {
+			return slug, nil
+		}
+	}
 	if id == "" {
 		if inAgentExecutionContext() {
 			return "", fmt.Errorf("workspace_id is required: MULTICA_WORKSPACE_ID must be set by the daemon in agent execution context (no fallback to user config)")

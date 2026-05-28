@@ -45,12 +45,17 @@ func normalizeGOOS(goos string) string {
 // Used by ctrl subcommands (agent, runtime, status, etc.). Requests
 // automatically include auth and execution context headers when configured.
 type APIClient struct {
-	BaseURL     string
-	WorkspaceID string
-	Token       string
-	AgentID     string // When set, requests are attributed to this agent instead of the user.
-	TaskID      string // When set, sent as X-Task-ID for agent-task validation.
-	HTTPClient  *http.Client
+	BaseURL string
+	// Exactly one of WorkspaceID / WorkspaceSlug is typically set by
+	// `newAPIClient` in cmd/multica. The server's RequireWorkspaceMember
+	// resolves Slug → UUID lazily, so callers don't need to do an extra
+	// lookup round trip just to translate `--workspace team-context`.
+	WorkspaceID   string
+	WorkspaceSlug string
+	Token         string
+	AgentID       string // When set, requests are attributed to this agent instead of the user.
+	TaskID        string // When set, sent as X-Task-ID for agent-task validation.
+	HTTPClient    *http.Client
 
 	// Identity overrides. Empty values fall back to the package-level
 	// ClientPlatform / ClientVersion / ClientOS.
@@ -86,6 +91,12 @@ func (c *APIClient) setHeaders(req *http.Request) {
 	}
 	if c.WorkspaceID != "" {
 		req.Header.Set("X-Workspace-ID", c.WorkspaceID)
+	}
+	if c.WorkspaceSlug != "" {
+		// Server's ResolveWorkspaceIDFromRequest prefers slug over UUID
+		// when both are present, so this lets `--workspace team-context`
+		// work end-to-end without an extra resolve round trip.
+		req.Header.Set("X-Workspace-Slug", c.WorkspaceSlug)
 	}
 	if c.AgentID != "" {
 		req.Header.Set("X-Agent-ID", c.AgentID)

@@ -594,6 +594,21 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// the appropriate capability — owner/admin get everything,
 			// member can read integration config (no secret values).
 			if opts.ControlPlaneEnabled {
+				// /api/admin/* — workspace-admin-only endpoints used by self-host
+				// operators to onboard service users (e.g. autopilot-bot) and
+				// issue PATs without going through the email-verification flow.
+				r.Route("/api/admin", func(r chi.Router) {
+					r.Use(middleware.RequireCapability(middleware.CapIntegrationsWrite))
+					r.Post("/users", h.AdminCreateUser)
+					r.Post("/tokens", h.AdminIssueToken)
+				})
+
+				// /api/audit-logs — generic audit list. Gated by IntegrationsRead
+				// because the audit-log table is currently fed only by control-plane
+				// writes; widen the gate when other features start writing rows.
+				r.With(middleware.RequireCapability(middleware.CapIntegrationsRead)).
+					Get("/api/audit-logs", h.ListAuditLogs)
+
 				r.Route("/api/integrations", func(r chi.Router) {
 					r.Use(middleware.RequireCapability(middleware.CapIntegrationsRead))
 					r.Get("/", h.ListIntegrations)

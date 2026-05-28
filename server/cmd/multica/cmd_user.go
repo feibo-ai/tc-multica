@@ -38,6 +38,15 @@ var userProfileGetCmd = &cobra.Command{
 	RunE:  runUserProfileGet,
 }
 
+var userCreateCmd = &cobra.Command{
+	Use:   "create",
+	Short: "Create a new user and add to the current workspace (admin-only)",
+	Long: "Self-host operators use this to onboard service users (e.g. autopilot-bot) " +
+		"without going through the email-verification flow. If the user already " +
+		"exists with the same email, only the workspace membership is added.",
+	RunE: runUserCreate,
+}
+
 var userProfileUpdateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Update your user profile (currently: profile description)",
@@ -52,8 +61,15 @@ var userProfileUpdateCmd = &cobra.Command{
 
 func init() {
 	userCmd.AddCommand(userProfileCmd)
+	userCmd.AddCommand(userCreateCmd)
 	userProfileCmd.AddCommand(userProfileGetCmd)
 	userProfileCmd.AddCommand(userProfileUpdateCmd)
+
+	userCreateCmd.Flags().String("email", "", "Service-user email address (required)")
+	userCreateCmd.Flags().String("name", "", "Display name (defaults to local-part of email)")
+	userCreateCmd.Flags().String("role", "member", "Workspace role: owner | admin | member")
+	userCreateCmd.Flags().String("output", "json", "Output format: table or json")
+	_ = userCreateCmd.MarkFlagRequired("email")
 
 	userProfileGetCmd.Flags().String("output", "table", "Output format: table or json")
 
@@ -145,4 +161,37 @@ func printUserProfileTable(out *os.File, me map[string]any) {
 		desc = "(not set)"
 	}
 	fmt.Fprintf(w, "PROFILE DESCRIPTION\t%s\n", desc)
+}
+
+func runUserCreate(cmd *cobra.Command, _ []string) error {
+	c, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+	if _, err := requireWorkspaceID(cmd); err != nil {
+		return err
+	}
+
+	email, _ := cmd.Flags().GetString("email")
+	name, _ := cmd.Flags().GetString("name")
+	role, _ := cmd.Flags().GetString("role")
+	body := map[string]any{"email": email, "name": name, "role": role}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var resp map[string]any
+	if err := c.PostJSON(ctx, "/api/admin/users", body, &resp); err != nil {
+		return fmt.Errorf("create user: %w", err)
+	}
+	output, _ := cmd.Flags().GetString("output")
+	if output == "table" {
+		headers := []string{"USER_ID", "EMAIL", "NAME", "ROLE", "MEMBER_ID"}
+		cli.PrintTable(os.Stdout, headers, [][]string{{
+			strVal(resp, "user_id"), strVal(resp, "email"),
+			strVal(resp, "name"), strVal(resp, "role"),
+			strVal(resp, "member_id"),
+		}})
+		return nil
+	}
+	return cli.PrintJSON(os.Stdout, resp)
 }
