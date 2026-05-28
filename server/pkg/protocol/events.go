@@ -122,4 +122,9 @@ const (
 	EventPullRequestLinked         = "pull_request:linked"
 	EventPullRequestUpdated        = "pull_request:updated"
 	EventPullRequestUnlinked       = "pull_request:unlinked"
+
+	// Control-plane events (PR D, Plan 4). Subscribers re-pull integration
+	// config / secrets when these fire. Audit logger writes a row for each.
+	EventIntegrationConfigChanged = "integration:config-changed"
+	EventIntegrationStatusChanged = "integration:status-changed"
 )

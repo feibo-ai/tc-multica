@@ -18,6 +18,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/logger"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
 	"github.com/multica-ai/multica/server/internal/realtime"
+	"github.com/multica-ai/multica/server/internal/secrets"
 	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/redis/go-redis/v9"
@@ -139,6 +140,21 @@ func main() {
 		port = "8080"
 	}
 
+	// Control plane (Plan 4 / PR D). Off by default — existing deployments
+	// are unaffected on upgrade. When enabled, the master key MUST be set;
+	// the server refuses to start if it is missing or invalid.
+	controlPlaneEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("MULTICA_CONTROL_PLANE_ENABLED")), "true")
+	var controlPlaneCipher *secrets.Cipher
+	if controlPlaneEnabled {
+		var cipherErr error
+		controlPlaneCipher, cipherErr = secrets.NewCipherFromEnv()
+		if cipherErr != nil {
+			slog.Error("MULTICA_CONTROL_PLANE_ENABLED=true but cipher init failed; refusing to start", "error", cipherErr)
+			os.Exit(1)
+		}
+		slog.Info("control plane enabled")
+	}
+
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		dbURL = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
@@ -243,6 +259,9 @@ func main() {
 		slog.Info("realtime: REDIS_URL not set — using in-memory hub (single-node mode)")
 	}
 	registerListeners(bus, broadcaster)
+	if controlPlaneEnabled {
+		registerIntegrationListeners(bus, broadcaster)
+	}
 
 	analyticsClient := analytics.NewFromEnv()
 	defer analyticsClient.Close()
@@ -284,10 +303,12 @@ func main() {
 	heartbeatScheduler := handler.NewBatchedHeartbeatScheduler(queries, handler.DefaultHeartbeatBatchInterval)
 
 	r := NewRouterWithOptions(pool, hub, bus, analyticsClient, storeRedis, RouterOptions{
-		HTTPMetrics:        httpMetrics,
-		DaemonHub:          daemonHub,
-		DaemonWakeup:       daemonWakeup,
-		HeartbeatScheduler: heartbeatScheduler,
+		HTTPMetrics:         httpMetrics,
+		DaemonHub:           daemonHub,
+		DaemonWakeup:        daemonWakeup,
+		HeartbeatScheduler:  heartbeatScheduler,
+		ControlPlaneEnabled: controlPlaneEnabled,
+		ControlPlaneCipher:  controlPlaneCipher,
 	})
 
 	srv := &http.Server{

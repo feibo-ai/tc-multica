@@ -17,6 +17,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/multica-ai/multica/server/internal/analytics"
+	"github.com/multica-ai/multica/server/internal/audit"
 	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/daemonws"
 	"github.com/multica-ai/multica/server/internal/events"
@@ -24,6 +25,7 @@ import (
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
 	"github.com/multica-ai/multica/server/internal/middleware"
 	"github.com/multica-ai/multica/server/internal/realtime"
+	"github.com/multica-ai/multica/server/internal/secrets"
 	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/storage"
 	"github.com/multica-ai/multica/server/internal/util"
@@ -106,6 +108,15 @@ type RouterOptions struct {
 	// BatchedHeartbeatScheduler here so the caller can also drive Run/Stop;
 	// tests leave this nil and get the legacy synchronous behavior.
 	HeartbeatScheduler handler.HeartbeatScheduler
+	// ControlPlaneEnabled gates the /api/integrations + /api/deployments
+	// route groups (Plan 4 / PR D). When false the routes are not mounted
+	// at all — clients see 404. main.go sets this from
+	// MULTICA_CONTROL_PLANE_ENABLED.
+	ControlPlaneEnabled bool
+	// ControlPlaneCipher is the master-key-backed cipher used to seal /
+	// open secret values. Required when ControlPlaneEnabled is true; nil
+	// otherwise. main.go builds this from secrets.NewCipherFromEnv().
+	ControlPlaneCipher *secrets.Cipher
 }
 
 func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus, analyticsClient analytics.Client, rdb *redis.Client, opts RouterOptions) chi.Router {
@@ -155,6 +166,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	if opts.HeartbeatScheduler != nil {
 		h.HeartbeatScheduler = opts.HeartbeatScheduler
 	}
+	// Control plane (PR D). Cipher is only present when the flag is on; the
+	// audit recorder is always wired (cheap, and other features may use it
+	// later — but it currently no-ops when h.Audit is nil at call sites).
+	if opts.ControlPlaneEnabled {
+		h.Cipher = opts.ControlPlaneCipher
+	}
+	h.Audit = audit.NewRecorder(queries)
 	// Auth caches: PAT cache is shared between the regular Auth middleware,
 	// the DaemonAuth fallback (mul_) path, and the revoke handler
 	// (invalidate). DaemonTokenCache backs the DaemonAuth mdt_ path. Both
@@ -570,6 +588,47 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Delete("/files/{fileId}", h.DeleteSkillFile)
 				})
 			})
+
+			// Control plane (Plan 4 / PR D). Mounted only when the feature
+			// flag is on; clients get 404 otherwise. All routes gated by
+			// the appropriate capability — owner/admin get everything,
+			// member can read integration config (no secret values).
+			if opts.ControlPlaneEnabled {
+				r.Route("/api/integrations", func(r chi.Router) {
+					r.Use(middleware.RequireCapability(middleware.CapIntegrationsRead))
+					r.Get("/", h.ListIntegrations)
+					r.With(middleware.RequireCapability(middleware.CapIntegrationsWrite)).
+						Post("/", h.CreateIntegration)
+					r.Route("/{id}", func(r chi.Router) {
+						r.Get("/", h.GetIntegration)
+						r.Get("/status", h.GetIntegrationStatus)
+						r.Get("/active-deployment", h.GetActiveDeployment)
+						r.With(middleware.RequireCapability(middleware.CapIntegrationsWrite)).
+							Patch("/config", h.UpdateIntegrationConfig)
+						r.With(middleware.RequireCapability(middleware.CapIntegrationsWrite)).
+							Post("/restart", h.RestartIntegration)
+						r.With(middleware.RequireCapability(middleware.CapIntegrationsWrite)).
+							Post("/redeploy", h.RedeployIntegration)
+						r.With(middleware.RequireCapability(middleware.CapIntegrationsWrite)).
+							Delete("/", h.DeleteIntegration)
+						// Secrets sub-resource
+						r.Route("/secrets", func(r chi.Router) {
+							r.Get("/", h.ListIntegrationSecretKeys)
+							r.With(middleware.RequireCapability(middleware.CapSecretsRead)).
+								Get("/{key}", h.GetIntegrationSecret)
+							r.With(middleware.RequireCapability(middleware.CapSecretsWrite)).
+								Put("/{key}", h.UpsertIntegrationSecret)
+							r.With(middleware.RequireCapability(middleware.CapSecretsWrite)).
+								Delete("/{key}", h.DeleteIntegrationSecret)
+						})
+					})
+				})
+				r.Route("/api/deployments", func(r chi.Router) {
+					r.Use(middleware.RequireCapability(middleware.CapIntegrationsWrite))
+					r.Post("/", h.RegisterDeployment)
+					r.Post("/{id}/heartbeat", h.HeartbeatDeployment)
+				})
+			}
 
 			// Dashboard — workspace-wide token + run-time rollups for the
 			// "/{slug}/dashboard" page. Optional ?project_id filter scopes
