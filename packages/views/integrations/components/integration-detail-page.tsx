@@ -10,6 +10,7 @@ import { Button } from "@multica/ui/components/ui/button";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { useNavigation } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
+import { useT } from "../../i18n";
 import { KindConfigForm, hasFormForKind } from "./config-forms";
 import { SecretManagerSection } from "./secret-manager-section";
 import { IntegrationActions } from "./integration-actions";
@@ -22,6 +23,7 @@ export function IntegrationDetailPage({ id }: { id: string }) {
   const workspaceId = useWorkspaceId();
   const navigation = useNavigation();
   const paths = useWorkspacePaths();
+  const { t } = useT("integrations");
 
   const integrationQuery = useQuery({
     queryKey: [workspaceId, "integrations", id],
@@ -46,9 +48,9 @@ export function IntegrationDetailPage({ id }: { id: string }) {
   if (integrationQuery.isError || !integrationQuery.data) {
     return (
       <div className="p-6">
-        <p className="text-sm text-destructive">Failed to load integration.</p>
+        <p className="text-sm text-destructive">{t(($) => $.detail.load_failed)}</p>
         <Button variant="link" onClick={() => navigation.push(paths.integrations())}>
-          Back to integrations
+          {t(($) => $.detail.back)}
         </Button>
       </div>
     );
@@ -71,20 +73,27 @@ export function IntegrationDetailPage({ id }: { id: string }) {
 
       <div className="space-y-8 p-6">
         <section>
-          <h3 className="mb-2 text-sm font-semibold uppercase text-muted-foreground">Status</h3>
+          <h3 className="mb-2 text-sm font-semibold uppercase text-muted-foreground">
+            {t(($) => $.detail.status_heading)}
+          </h3>
           <div className="rounded-md border bg-card p-3 text-sm">
             <p>
-              Integration status: <code>{status?.integration_status ?? integration.status}</code>
+              {t(($) => $.detail.status_label)}:{" "}
+              <code>{status?.integration_status ?? integration.status}</code>
             </p>
-            <p>Config version: v{status?.config_version ?? integration.version}</p>
+            <p>
+              {t(($) => $.detail.config_version_label)}: v
+              {status?.config_version ?? integration.version}
+            </p>
             {status?.active_deployment ? (
               <p>
-                Active deployment: <code>{status.active_deployment.image_or_commit}</code> ·{" "}
-                {status.active_deployment.status} · last heartbeat{" "}
+                {t(($) => $.detail.active_deployment_label)}:{" "}
+                <code>{status.active_deployment.image_or_commit}</code> ·{" "}
+                {status.active_deployment.status} · {t(($) => $.detail.last_heartbeat)}{" "}
                 {status.active_deployment.last_heartbeat ?? "—"}
               </p>
             ) : (
-              <p className="text-muted-foreground">No active deployment.</p>
+              <p className="text-muted-foreground">{t(($) => $.detail.no_active_deployment)}</p>
             )}
           </div>
         </section>
@@ -99,7 +108,7 @@ export function IntegrationDetailPage({ id }: { id: string }) {
 
         <section>
           <h3 className="mb-2 text-sm font-semibold uppercase text-muted-foreground">
-            Deployment history
+            {t(($) => $.detail.deployment_history)}
           </h3>
           <DeploymentTimeline integrationId={id} />
         </section>
@@ -128,6 +137,7 @@ function ConfigEditor({
 }) {
   const qc = useQueryClient();
   const workspaceId = useWorkspaceId();
+  const { t } = useT("integrations");
   const hasForm = hasFormForKind(kind);
 
   // Single source of truth = the parsed JS object.
@@ -165,14 +175,14 @@ function ConfigEditor({
       try {
         const parsed = JSON.parse(text);
         if (typeof parsed !== "object" || parsed === null) {
-          setError("Cannot switch to form: top-level value must be a JSON object.");
+          setError(t(($) => $.config.switch_form_needs_object));
           return;
         }
         setConfig(parsed as Record<string, unknown>);
         setError(null);
         setMode("form");
       } catch (e) {
-        setError(`Cannot switch to form — fix JSON first: ${(e as Error).message}`);
+        setError(t(($) => $.config.switch_form_invalid_json, { message: (e as Error).message }));
       }
     } else {
       setText(JSON.stringify(config, null, 2));
@@ -184,7 +194,9 @@ function ConfigEditor({
   return (
     <section>
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold uppercase text-muted-foreground">Config</h3>
+        <h3 className="text-sm font-semibold uppercase text-muted-foreground">
+          {t(($) => $.config.heading)}
+        </h3>
         {hasForm && (
           <div className="flex gap-1 rounded-md border bg-card p-0.5">
             <Button
@@ -193,7 +205,7 @@ function ConfigEditor({
               className="h-7 px-3 text-xs"
               onClick={() => switchTo("form")}
             >
-              Form
+              {t(($) => $.config.mode_form)}
             </Button>
             <Button
               size="sm"
@@ -201,7 +213,7 @@ function ConfigEditor({
               className="h-7 px-3 text-xs"
               onClick={() => switchTo("json")}
             >
-              Raw JSON
+              {t(($) => $.config.mode_json)}
             </Button>
           </div>
         )}
@@ -232,7 +244,7 @@ function ConfigEditor({
             setError(null);
           }}
         >
-          Reset
+          {t(($) => $.config.reset)}
         </Button>
         <Button
           size="sm"
@@ -241,12 +253,12 @@ function ConfigEditor({
               try {
                 const parsed = JSON.parse(text);
                 if (typeof parsed !== "object" || parsed === null) {
-                  setError("Config must be a JSON object");
+                  setError(t(($) => $.config.must_be_object));
                   return;
                 }
                 save.mutate(parsed as Record<string, unknown>);
               } catch (e) {
-                setError(`Invalid JSON: ${(e as Error).message}`);
+                setError(t(($) => $.config.invalid_json, { message: (e as Error).message }));
               }
             } else {
               save.mutate(config);
@@ -254,7 +266,7 @@ function ConfigEditor({
           }}
           disabled={save.isPending}
         >
-          {save.isPending ? "Saving…" : "Save config"}
+          {save.isPending ? t(($) => $.config.saving) : t(($) => $.config.save)}
         </Button>
       </div>
     </section>

@@ -7,6 +7,7 @@ import { useWorkspaceId } from "@multica/core/hooks";
 import { useWorkspacePaths } from "@multica/core/paths";
 import { Button } from "@multica/ui/components/ui/button";
 import { useNavigation } from "../../navigation";
+import { useT } from "../../i18n";
 
 // Restart / Redeploy / Delete actions for one integration, surfaced as a
 // header-level row on the detail page. Extracted from integration-detail-page
@@ -21,6 +22,7 @@ export function IntegrationActions({ integrationId }: Props) {
   const workspaceId = useWorkspaceId();
   const navigation = useNavigation();
   const paths = useWorkspacePaths();
+  const { t } = useT("integrations");
 
   const restart = useMutation({
     mutationFn: () => api.restartIntegration(integrationId),
@@ -50,7 +52,7 @@ export function IntegrationActions({ integrationId }: Props) {
         data-testid="action-restart"
       >
         <RefreshCw className="mr-1 size-4" />
-        Restart
+        {t(($) => $.actions.restart)}
       </Button>
       <Button
         variant="outline"
@@ -59,14 +61,14 @@ export function IntegrationActions({ integrationId }: Props) {
         disabled={redeploy.isPending}
         data-testid="action-redeploy"
       >
-        Redeploy
+        {t(($) => $.actions.redeploy)}
       </Button>
       <Button
         variant="ghost"
         size="sm"
         data-testid="action-delete"
         onClick={() => {
-          if (window.confirm("Delete this integration and all its secrets?")) {
+          if (window.confirm(t(($) => $.actions.delete_confirm))) {
             del.mutate();
           }
         }}

@@ -3,6 +3,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { I18nProvider } from "@multica/core/i18n/react";
+import enCommon from "../../../locales/en/common.json";
+import enIntegrations from "../../../locales/en/integrations.json";
+
+const TEST_RESOURCES = { en: { common: enCommon, integrations: enIntegrations } };
 
 const listIntegrations = vi.fn();
 const createIntegration = vi.fn();
@@ -41,9 +46,11 @@ function renderPage() {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
-    <QueryClientProvider client={qc}>
-      <IntegrationsPage />
-    </QueryClientProvider>,
+    <I18nProvider locale="en" resources={TEST_RESOURCES}>
+      <QueryClientProvider client={qc}>
+        <IntegrationsPage />
+      </QueryClientProvider>
+    </I18nProvider>,
   );
 }
 

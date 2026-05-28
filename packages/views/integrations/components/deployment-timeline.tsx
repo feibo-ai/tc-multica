@@ -6,6 +6,7 @@ import { api } from "@multica/core/api";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import type { DeploymentStatus } from "@multica/core/types";
+import { useT } from "../../i18n";
 
 // Vertical timeline of the most recent deployments for one integration.
 // Active deployment (the topmost row whose status is not stopped) is
@@ -18,6 +19,7 @@ interface Props {
 
 export function DeploymentTimeline({ integrationId, limit = 20 }: Props) {
   const workspaceId = useWorkspaceId();
+  const { t } = useT("integrations");
   const { data, isLoading, isError } = useQuery({
     queryKey: [workspaceId, "integrations", integrationId, "deployments", limit],
     queryFn: () => api.listIntegrationDeployments(integrationId, limit),
@@ -34,12 +36,12 @@ export function DeploymentTimeline({ integrationId, limit = 20 }: Props) {
     );
   }
   if (isError) {
-    return <p className="text-sm text-destructive">Failed to load deployment history.</p>;
+    return <p className="text-sm text-destructive">{t(($) => $.timeline.load_failed)}</p>;
   }
   if (!data || data.length === 0) {
     return (
       <p className="text-sm text-muted-foreground" data-testid="deployment-timeline-empty">
-        No deployments registered yet.
+        {t(($) => $.timeline.empty)}
       </p>
     );
   }
@@ -57,14 +59,16 @@ export function DeploymentTimeline({ integrationId, limit = 20 }: Props) {
             <StatusPill status={d.status} />
             {idx === 0 && d.status !== "stopped" && (
               <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs text-emerald-700 dark:text-emerald-400">
-                active
+                {t(($) => $.timeline.active)}
               </span>
             )}
           </div>
           <div className="mt-0.5 text-xs text-muted-foreground">
-            started {d.started_at}
-            {d.last_heartbeat ? ` · last heartbeat ${d.last_heartbeat}` : ""}
-            {d.stopped_at ? ` · stopped ${d.stopped_at}` : ""}
+            {t(($) => $.timeline.started)} {d.started_at}
+            {d.last_heartbeat
+              ? ` · ${t(($) => $.timeline.last_heartbeat)} ${d.last_heartbeat}`
+              : ""}
+            {d.stopped_at ? ` · ${t(($) => $.timeline.stopped)} ${d.stopped_at}` : ""}
           </div>
         </li>
       ))}

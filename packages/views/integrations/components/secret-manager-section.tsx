@@ -9,6 +9,7 @@ import { useWorkspaceId } from "@multica/core/hooks";
 import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
+import { useT } from "../../i18n";
 
 // Secret manager UI for one integration. Lists keys (no values), supports
 // click-to-reveal with 30s auto-hide, add, and delete.
@@ -26,6 +27,7 @@ interface Props {
 export function SecretManagerSection({ integrationId }: Props) {
   const qc = useQueryClient();
   const workspaceId = useWorkspaceId();
+  const { t } = useT("integrations");
   const [adding, setAdding] = useState(false);
   const [revealing, setRevealing] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<SecretValue | null>(null);
@@ -58,16 +60,18 @@ export function SecretManagerSection({ integrationId }: Props) {
   return (
     <section data-testid="secret-manager-section">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold uppercase text-muted-foreground">Secrets</h3>
+        <h3 className="text-sm font-semibold uppercase text-muted-foreground">
+          {t(($) => $.secrets.heading)}
+        </h3>
         <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
-          + Add secret
+          {t(($) => $.secrets.add_button)}
         </Button>
       </div>
       {keysQuery.isLoading ? (
         <Skeleton className="h-12" />
       ) : keysQuery.data && keysQuery.data.length === 0 ? (
         <p className="text-sm text-muted-foreground" data-testid="secrets-empty">
-          No secrets yet.
+          {t(($) => $.secrets.empty)}
         </p>
       ) : (
         <ul className="divide-y rounded-md border bg-card text-sm">
@@ -100,7 +104,7 @@ export function SecretManagerSection({ integrationId }: Props) {
                       reveal.mutate(k.key);
                     }
                   }}
-                  title="Reveal (auto-hides after 30s)"
+                  title={t(($) => $.secrets.reveal_tooltip)}
                 >
                   {revealing === k.key ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </Button>
@@ -109,9 +113,11 @@ export function SecretManagerSection({ integrationId }: Props) {
                   size="icon"
                   data-testid={`delete-${k.key}`}
                   onClick={() => {
-                    if (window.confirm(`Delete secret ${k.key}?`)) remove.mutate(k.key);
+                    if (window.confirm(t(($) => $.secrets.delete_confirm, { key: k.key }))) {
+                      remove.mutate(k.key);
+                    }
                   }}
-                  title="Delete"
+                  title={t(($) => $.secrets.delete_tooltip)}
                 >
                   <Trash2 className="size-4 text-destructive" />
                 </Button>
@@ -137,6 +143,7 @@ function AddSecretForm({
 }) {
   const qc = useQueryClient();
   const workspaceId = useWorkspaceId();
+  const { t } = useT("integrations");
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -158,15 +165,19 @@ function AddSecretForm({
       data-testid="add-secret-dialog"
     >
       <div className="w-96 rounded-md bg-background p-6 shadow-lg">
-        <h3 className="mb-3 text-lg font-semibold">Add secret</h3>
-        <label className="block text-xs text-muted-foreground">Key (UPPER_SNAKE_CASE)</label>
+        <h3 className="mb-3 text-lg font-semibold">{t(($) => $.secrets.add_title)}</h3>
+        <label className="block text-xs text-muted-foreground">
+          {t(($) => $.secrets.key_label)}
+        </label>
         <Input
           className="mb-3 font-mono"
           value={key}
-          placeholder="FEISHU_APP_SECRET"
+          placeholder={t(($) => $.secrets.key_placeholder)}
           onChange={(e) => setKey(e.target.value.toUpperCase())}
         />
-        <label className="block text-xs text-muted-foreground">Value</label>
+        <label className="block text-xs text-muted-foreground">
+          {t(($) => $.secrets.value_label)}
+        </label>
         <textarea
           className="mb-3 h-24 w-full rounded border bg-background p-2 font-mono text-xs"
           value={value}
@@ -179,25 +190,25 @@ function AddSecretForm({
         )}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancel
+            {t(($) => $.secrets.cancel)}
           </Button>
           <Button
             size="sm"
             data-testid="add-secret-submit"
             onClick={() => {
               if (!/^[A-Z][A-Z0-9_]{0,127}$/.test(key)) {
-                setError("Key must match ^[A-Z][A-Z0-9_]+$");
+                setError(t(($) => $.secrets.key_pattern_error));
                 return;
               }
               if (!value) {
-                setError("Value is required");
+                setError(t(($) => $.secrets.value_required));
                 return;
               }
               mut.mutate();
             }}
             disabled={mut.isPending}
           >
-            {mut.isPending ? "Saving…" : "Save"}
+            {mut.isPending ? t(($) => $.secrets.saving) : t(($) => $.secrets.save)}
           </Button>
         </div>
       </div>

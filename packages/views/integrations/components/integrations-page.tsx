@@ -12,6 +12,7 @@ import { Input } from "@multica/ui/components/ui/input";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { useNavigation } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
+import { useT } from "../../i18n";
 
 // Compact list view for the control plane (Plan 4 / PR D, Task D-12).
 // Workspace-scoped — every row links into the detail page.
@@ -27,6 +28,7 @@ export function IntegrationsPage() {
   const workspaceId = useWorkspaceId();
   const navigation = useNavigation();
   const paths = useWorkspacePaths();
+  const { t } = useT("integrations");
   const [filter, setFilter] = useState<"all" | IntegrationKind>("all");
   const [creating, setCreating] = useState(false);
 
@@ -45,14 +47,12 @@ export function IntegrationsPage() {
     <div className="flex h-full flex-col">
       <PageHeader className="justify-between px-5">
         <div>
-          <h2 className="text-base font-semibold">Integrations</h2>
-          <p className="text-xs text-muted-foreground">
-            Manage MCP servers, feishu credentials, and autopilot-bot deployments.
-          </p>
+          <h2 className="text-base font-semibold">{t(($) => $.page.title)}</h2>
+          <p className="text-xs text-muted-foreground">{t(($) => $.page.description)}</p>
         </div>
         <Button onClick={() => setCreating(true)} size="sm">
           <Plus className="mr-1 size-4" />
-          New integration
+          {t(($) => $.page.new_button)}
         </Button>
       </PageHeader>
 
@@ -64,7 +64,7 @@ export function IntegrationsPage() {
             size="sm"
             onClick={() => setFilter(k)}
           >
-            {k === "all" ? "All" : k}
+            {k === "all" ? t(($) => $.page.filter_all) : k}
           </Button>
         ))}
       </div>
@@ -76,20 +76,22 @@ export function IntegrationsPage() {
           <Skeleton className="h-12" />
         </div>
       ) : isError ? (
-        <p className="px-6 text-sm text-destructive">Failed to load integrations.</p>
+        <p className="px-6 text-sm text-destructive">{t(($) => $.page.load_failed)}</p>
       ) : filtered.length === 0 ? (
-        <p className="px-6 py-12 text-center text-sm text-muted-foreground">
-          No integrations yet. Click <em>New integration</em> to add one.
-        </p>
+        <p
+          className="px-6 py-12 text-center text-sm text-muted-foreground"
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{ __html: t(($) => $.page.empty) }}
+        />
       ) : (
         <div className="flex-1 overflow-auto px-6">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-xs uppercase text-muted-foreground">
-                <th className="py-2 pr-4">Name</th>
-                <th className="py-2 pr-4">Kind</th>
-                <th className="py-2 pr-4">Status</th>
-                <th className="py-2 pr-4">Version</th>
+                <th className="py-2 pr-4">{t(($) => $.table.name)}</th>
+                <th className="py-2 pr-4">{t(($) => $.table.kind)}</th>
+                <th className="py-2 pr-4">{t(($) => $.table.status)}</th>
+                <th className="py-2 pr-4">{t(($) => $.table.version)}</th>
               </tr>
             </thead>
             <tbody>
@@ -136,6 +138,7 @@ function StatusDot({ status }: { status: Integration["status"] }) {
 function CreateInlineForm({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const workspaceId = useWorkspaceId();
+  const { t } = useT("integrations");
   const [kind, setKind] = useState<IntegrationKind>("mcp-server");
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -152,8 +155,10 @@ function CreateInlineForm({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="w-96 rounded-md bg-background p-6 shadow-lg">
-        <h3 className="mb-3 text-lg font-semibold">New integration</h3>
-        <label className="block text-xs text-muted-foreground">Kind</label>
+        <h3 className="mb-3 text-lg font-semibold">{t(($) => $.create_dialog.title)}</h3>
+        <label className="block text-xs text-muted-foreground">
+          {t(($) => $.create_dialog.kind_label)}
+        </label>
         <select
           className="mb-3 w-full rounded border bg-background p-2 text-sm"
           value={kind}
@@ -163,30 +168,34 @@ function CreateInlineForm({ onClose }: { onClose: () => void }) {
           <option value="feishu">feishu</option>
           <option value="autopilot-bot">autopilot-bot</option>
         </select>
-        <label className="block text-xs text-muted-foreground">Name</label>
+        <label className="block text-xs text-muted-foreground">
+          {t(($) => $.create_dialog.name_label)}
+        </label>
         <Input
           className="mb-3"
           value={name}
-          placeholder="e.g. tcmcp"
+          placeholder={t(($) => $.create_dialog.name_placeholder)}
           onChange={(e) => setName(e.target.value)}
         />
         {error && <p className="mb-3 text-xs text-destructive">{error}</p>}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancel
+            {t(($) => $.create_dialog.cancel)}
           </Button>
           <Button
             size="sm"
             onClick={() => {
               if (!name.trim()) {
-                setError("name is required");
+                setError(t(($) => $.create_dialog.name_required));
                 return;
               }
               mut.mutate();
             }}
             disabled={mut.isPending}
           >
-            {mut.isPending ? "Creating…" : "Create"}
+            {mut.isPending
+              ? t(($) => $.create_dialog.creating)
+              : t(($) => $.create_dialog.create)}
           </Button>
         </div>
       </div>

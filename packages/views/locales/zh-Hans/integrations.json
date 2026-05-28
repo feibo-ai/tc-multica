@@ -1,0 +1,79 @@
+{
+  "page": {
+    "title": "集成",
+    "description": "管理 MCP 服务器、飞书凭证、Autopilot 机器人部署。",
+    "new_button": "新建集成",
+    "load_failed": "加载集成列表失败。",
+    "empty": "还没有集成。点击 <em>新建集成</em> 添加。",
+    "filter_all": "全部"
+  },
+  "table": {
+    "name": "名称",
+    "kind": "类型",
+    "status": "状态",
+    "version": "版本"
+  },
+  "create_dialog": {
+    "title": "新建集成",
+    "kind_label": "类型",
+    "name_label": "名称",
+    "name_placeholder": "例如 tcmcp",
+    "cancel": "取消",
+    "create": "创建",
+    "creating": "创建中…",
+    "name_required": "名称是必填项"
+  },
+  "detail": {
+    "load_failed": "加载集成失败。",
+    "back": "返回集成列表",
+    "status_heading": "状态",
+    "status_label": "集成状态",
+    "config_version_label": "配置版本",
+    "active_deployment_label": "当前部署",
+    "last_heartbeat": "最近心跳",
+    "no_active_deployment": "暂无运行中的部署。",
+    "deployment_history": "部署历史"
+  },
+  "config": {
+    "heading": "配置",
+    "mode_form": "表单",
+    "mode_json": "JSON",
+    "reset": "重置",
+    "save": "保存配置",
+    "saving": "保存中…",
+    "must_be_object": "配置必须是 JSON 对象",
+    "invalid_json": "JSON 无效：{{message}}",
+    "switch_form_needs_object": "无法切换到表单：顶层必须是 JSON 对象。",
+    "switch_form_invalid_json": "无法切换到表单 — 先修正 JSON：{{message}}"
+  },
+  "actions": {
+    "restart": "重启",
+    "redeploy": "重新部署",
+    "delete_confirm": "确定删除该集成及其所有密钥？"
+  },
+  "secrets": {
+    "heading": "密钥",
+    "add_button": "+ 添加密钥",
+    "empty": "还没有密钥。",
+    "reveal_tooltip": "显示明文（30 秒后自动隐藏）",
+    "delete_tooltip": "删除",
+    "delete_confirm": "确定删除密钥 {{key}} ?",
+    "add_title": "添加密钥",
+    "key_label": "Key（大写下划线）",
+    "key_placeholder": "FEISHU_APP_SECRET",
+    "value_label": "Value",
+    "cancel": "取消",
+    "save": "保存",
+    "saving": "保存中…",
+    "key_pattern_error": "Key 必须符合 ^[A-Z][A-Z0-9_]+$",
+    "value_required": "Value 是必填项"
+  },
+  "timeline": {
+    "load_failed": "加载部署历史失败。",
+    "empty": "尚未注册任何部署。",
+    "active": "运行中",
+    "started": "启动于",
+    "last_heartbeat": "最近心跳",
+    "stopped": "停止于"
+  }
+}

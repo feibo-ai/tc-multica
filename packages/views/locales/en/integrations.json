@@ -1,0 +1,79 @@
+{
+  "page": {
+    "title": "Integrations",
+    "description": "Manage MCP servers, feishu credentials, and autopilot-bot deployments.",
+    "new_button": "New integration",
+    "load_failed": "Failed to load integrations.",
+    "empty": "No integrations yet. Click <em>New integration</em> to add one.",
+    "filter_all": "All"
+  },
+  "table": {
+    "name": "Name",
+    "kind": "Kind",
+    "status": "Status",
+    "version": "Version"
+  },
+  "create_dialog": {
+    "title": "New integration",
+    "kind_label": "Kind",
+    "name_label": "Name",
+    "name_placeholder": "e.g. tcmcp",
+    "cancel": "Cancel",
+    "create": "Create",
+    "creating": "Creating…",
+    "name_required": "name is required"
+  },
+  "detail": {
+    "load_failed": "Failed to load integration.",
+    "back": "Back to integrations",
+    "status_heading": "Status",
+    "status_label": "Integration status",
+    "config_version_label": "Config version",
+    "active_deployment_label": "Active deployment",
+    "last_heartbeat": "last heartbeat",
+    "no_active_deployment": "No active deployment.",
+    "deployment_history": "Deployment history"
+  },
+  "config": {
+    "heading": "Config",
+    "mode_form": "Form",
+    "mode_json": "Raw JSON",
+    "reset": "Reset",
+    "save": "Save config",
+    "saving": "Saving…",
+    "must_be_object": "Config must be a JSON object",
+    "invalid_json": "Invalid JSON: {{message}}",
+    "switch_form_needs_object": "Cannot switch to form: top-level value must be a JSON object.",
+    "switch_form_invalid_json": "Cannot switch to form — fix JSON first: {{message}}"
+  },
+  "actions": {
+    "restart": "Restart",
+    "redeploy": "Redeploy",
+    "delete_confirm": "Delete this integration and all its secrets?"
+  },
+  "secrets": {
+    "heading": "Secrets",
+    "add_button": "+ Add secret",
+    "empty": "No secrets yet.",
+    "reveal_tooltip": "Reveal (auto-hides after 30s)",
+    "delete_tooltip": "Delete",
+    "delete_confirm": "Delete secret {{key}}?",
+    "add_title": "Add secret",
+    "key_label": "Key (UPPER_SNAKE_CASE)",
+    "key_placeholder": "FEISHU_APP_SECRET",
+    "value_label": "Value",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…",
+    "key_pattern_error": "Key must match ^[A-Z][A-Z0-9_]+$",
+    "value_required": "Value is required"
+  },
+  "timeline": {
+    "load_failed": "Failed to load deployment history.",
+    "empty": "No deployments registered yet.",
+    "active": "active",
+    "started": "started",
+    "last_heartbeat": "last heartbeat",
+    "stopped": "stopped"
+  }
+}
