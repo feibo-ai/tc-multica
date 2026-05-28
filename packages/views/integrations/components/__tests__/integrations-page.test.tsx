@@ -19,6 +19,13 @@ vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
+vi.mock("@multica/core/paths", () => ({
+  useWorkspacePaths: () => ({
+    integrations: () => "/acme/integrations",
+    integrationDetail: (id: string) => `/acme/integrations/${id}`,
+  }),
+}));
+
 vi.mock("../../../navigation", () => ({
   useNavigation: () => ({ push: navPush, replace: vi.fn(), back: vi.fn() }),
 }));
@@ -103,7 +110,7 @@ describe("IntegrationsPage", () => {
     await waitFor(() => expect(screen.queryByText("alpha-mcp")).toBeTruthy());
 
     fireEvent.click(screen.getByText("alpha-mcp"));
-    expect(navPush).toHaveBeenCalledWith("/integrations/i-1");
+    expect(navPush).toHaveBeenCalledWith("/acme/integrations/i-1");
   });
 
   it("shows empty state when no integrations exist", async () => {

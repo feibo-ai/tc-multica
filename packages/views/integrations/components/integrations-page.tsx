@@ -6,6 +6,7 @@ import { Plus } from "lucide-react";
 import type { Integration, IntegrationKind } from "@multica/core/types";
 import { api } from "@multica/core/api";
 import { useWorkspaceId } from "@multica/core/hooks";
+import { useWorkspacePaths } from "@multica/core/paths";
 import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
@@ -25,6 +26,7 @@ const KIND_FILTERS: ReadonlyArray<"all" | IntegrationKind> = [
 export function IntegrationsPage() {
   const workspaceId = useWorkspaceId();
   const navigation = useNavigation();
+  const paths = useWorkspacePaths();
   const [filter, setFilter] = useState<"all" | IntegrationKind>("all");
   const [creating, setCreating] = useState(false);
 
@@ -95,7 +97,7 @@ export function IntegrationsPage() {
                 <tr
                   key={i.id}
                   className="cursor-pointer border-b hover:bg-muted/50"
-                  onClick={() => navigation.push(`/integrations/${i.id}`)}
+                  onClick={() => navigation.push(paths.integrationDetail(i.id))}
                 >
                   <td className="py-2 pr-4 font-medium">{i.name}</td>
                   <td className="py-2 pr-4 text-muted-foreground">{i.kind}</td>

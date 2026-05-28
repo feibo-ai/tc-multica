@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Trash2 } from "lucide-react";
 import { api } from "@multica/core/api";
 import { useWorkspaceId } from "@multica/core/hooks";
+import { useWorkspacePaths } from "@multica/core/paths";
 import { Button } from "@multica/ui/components/ui/button";
 import { useNavigation } from "../../navigation";
 
@@ -19,6 +20,7 @@ export function IntegrationActions({ integrationId }: Props) {
   const qc = useQueryClient();
   const workspaceId = useWorkspaceId();
   const navigation = useNavigation();
+  const paths = useWorkspacePaths();
 
   const restart = useMutation({
     mutationFn: () => api.restartIntegration(integrationId),
@@ -34,7 +36,7 @@ export function IntegrationActions({ integrationId }: Props) {
     mutationFn: () => api.deleteIntegration(integrationId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [workspaceId, "integrations"] });
-      navigation.push("/integrations");
+      navigation.push(paths.integrations());
     },
   });
 

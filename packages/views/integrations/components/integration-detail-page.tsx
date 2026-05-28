@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { IntegrationKind } from "@multica/core/types";
 import { api } from "@multica/core/api";
 import { useWorkspaceId } from "@multica/core/hooks";
+import { useWorkspacePaths } from "@multica/core/paths";
 import { Button } from "@multica/ui/components/ui/button";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { useNavigation } from "../../navigation";
@@ -20,6 +21,7 @@ import { DeploymentTimeline } from "./deployment-timeline";
 export function IntegrationDetailPage({ id }: { id: string }) {
   const workspaceId = useWorkspaceId();
   const navigation = useNavigation();
+  const paths = useWorkspacePaths();
 
   const integrationQuery = useQuery({
     queryKey: [workspaceId, "integrations", id],
@@ -45,7 +47,7 @@ export function IntegrationDetailPage({ id }: { id: string }) {
     return (
       <div className="p-6">
         <p className="text-sm text-destructive">Failed to load integration.</p>
-        <Button variant="link" onClick={() => navigation.push("/integrations")}>
+        <Button variant="link" onClick={() => navigation.push(paths.integrations())}>
           Back to integrations
         </Button>
       </div>
