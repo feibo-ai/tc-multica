@@ -1,6 +1,7 @@
 "use client";
 
 import { Input } from "@multica/ui/components/ui/input";
+import { useT } from "../../../i18n";
 
 // Autopilot bot config: the metadata a multica autopilot needs to find its
 // own running instance, the schedule, and the target workspace. Webhook
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export function AutopilotBotForm({ value, onChange }: Props) {
+  const { t } = useT("integrations");
   const cfg = value as AutopilotBotConfig;
   const setField = <K extends keyof AutopilotBotConfig>(key: K, next: AutopilotBotConfig[K]) => {
     const merged: AutopilotBotConfig = { ...cfg, [key]: next };
@@ -46,8 +48,8 @@ export function AutopilotBotForm({ value, onChange }: Props) {
           onChange={(e) => setField("enabled", e.target.value === "true")}
           className="w-full rounded border bg-background p-2 text-sm"
         >
-          <option value="true">enabled</option>
-          <option value="false">disabled (paused)</option>
+          <option value="true">{t(($) => $.forms.autopilot.enabled)}</option>
+          <option value="false">{t(($) => $.forms.autopilot.disabled)}</option>
         </select>
       </Field>
 
@@ -95,9 +97,7 @@ export function AutopilotBotForm({ value, onChange }: Props) {
       </Field>
 
       <div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
-        <strong className="text-foreground">Secrets:</strong> any signing secrets
-        (e.g. <code className="mx-1 rounded bg-background px-1 py-0.5">WEBHOOK_SIGNING_SECRET</code>)
-        or API tokens the bot needs go in the <em>Secrets</em> section below.
+        {t(($) => $.forms.autopilot.secrets_hint)}
       </div>
     </div>
   );

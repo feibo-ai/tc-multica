@@ -65,7 +65,7 @@ export function IntegrationDetailPage({ id }: { id: string }) {
         <div>
           <h2 className="text-base font-semibold">{integration.name}</h2>
           <p className="text-xs text-muted-foreground">
-            {integration.kind} · v{integration.version}
+            {integration.kind} · {t(($) => $.version_tag, { version: integration.version })}
           </p>
         </div>
         <IntegrationActions integrationId={id} />
@@ -82,8 +82,10 @@ export function IntegrationDetailPage({ id }: { id: string }) {
               <code>{status?.integration_status ?? integration.status}</code>
             </p>
             <p>
-              {t(($) => $.detail.config_version_label)}: v
-              {status?.config_version ?? integration.version}
+              {t(($) => $.detail.config_version_label)}:{" "}
+              {t(($) => $.version_tag, {
+                version: status?.config_version ?? integration.version,
+              })}
             </p>
             {status?.active_deployment ? (
               <p>

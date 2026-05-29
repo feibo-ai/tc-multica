@@ -75,5 +75,30 @@
     "started": "启动于",
     "last_heartbeat": "最近心跳",
     "stopped": "停止于"
+  },
+  "forms": {
+    "mcp": {
+      "transport_stdio": "stdio（本地进程）",
+      "transport_sse": "sse（HTTP SSE）",
+      "transport_http": "http（流式）",
+      "add_argument": "+ 添加参数",
+      "add_variable": "+ 添加变量"
+    },
+    "feishu": {
+      "domain_feishu": "feishu.cn（中国大陆）",
+      "domain_lark": "larksuite.com（国际版）",
+      "secrets_hint": "密钥：请将 FEISHU_APP_SECRET、FEISHU_VERIFICATION_TOKEN，以及（若应用启用了加密事件）FEISHU_ENCRYPT_KEY 添加到下方的密钥区，切勿写进配置。"
+    },
+    "autopilot": {
+      "enabled": "启用",
+      "disabled": "停用（已暂停）",
+      "secrets_hint": "密钥：机器人所需的签名密钥（如 WEBHOOK_SIGNING_SECRET）或 API token 请放到下方的密钥区。"
+    }
+  },
+  "version_tag": "v{{version}}",
+  "kinds": {
+    "mcp_server": "mcp-server",
+    "feishu": "feishu",
+    "autopilot_bot": "autopilot-bot"
   }
 }

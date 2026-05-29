@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Input } from "@multica/ui/components/ui/input";
 import { Button } from "@multica/ui/components/ui/button";
 import { Trash2 } from "lucide-react";
+import { useT } from "../../../i18n";
 
 // MCP-server config shape (Anthropic Model Context Protocol).
 // All fields land at the top level of the integration's `config` JSON. Secrets
@@ -24,6 +25,7 @@ interface Props {
 }
 
 export function McpServerForm({ value, onChange }: Props) {
+  const { t } = useT("integrations");
   const cfg = value as McpServerConfig;
   const transport = (cfg.transport ?? "stdio") as "stdio" | "sse" | "http";
   const isStdio = transport === "stdio";
@@ -47,9 +49,9 @@ export function McpServerForm({ value, onChange }: Props) {
           onChange={(e) => setField("transport", e.target.value as McpServerConfig["transport"])}
           className="w-full rounded border bg-background p-2 text-sm"
         >
-          <option value="stdio">stdio (local process)</option>
-          <option value="sse">sse (HTTP SSE)</option>
-          <option value="http">http (streaming)</option>
+          <option value="stdio">{t(($) => $.forms.mcp.transport_stdio)}</option>
+          <option value="sse">{t(($) => $.forms.mcp.transport_sse)}</option>
+          <option value="http">{t(($) => $.forms.mcp.transport_http)}</option>
         </select>
       </Field>
 
@@ -96,6 +98,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 }
 
 function ArgsEditor({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
+  const { t } = useT("integrations");
   return (
     <Field
       label="Arguments"
@@ -124,7 +127,7 @@ function ArgsEditor({ value, onChange }: { value: string[]; onChange: (next: str
           </div>
         ))}
         <Button variant="outline" size="sm" onClick={() => onChange([...value, ""])}>
-          + Add argument
+          {t(($) => $.forms.mcp.add_argument)}
         </Button>
       </div>
     </Field>
@@ -138,6 +141,7 @@ function EnvEditor({
   value: Record<string, string>;
   onChange: (next: Record<string, string>) => void;
 }) {
+  const { t } = useT("integrations");
   // Local mirror so KEY rename doesn't lose focus mid-keystroke.
   const [rows, setRows] = useState<Array<[string, string]>>(() => Object.entries(value));
   useEffect(() => {
@@ -193,7 +197,7 @@ function EnvEditor({
           </div>
         ))}
         <Button variant="outline" size="sm" onClick={() => setRows([...rows, ["", ""]])}>
-          + Add variable
+          {t(($) => $.forms.mcp.add_variable)}
         </Button>
       </div>
     </Field>
