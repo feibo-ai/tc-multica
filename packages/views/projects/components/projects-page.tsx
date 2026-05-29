@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Plus, FolderKanban, Rows3, LayoutGrid, Search } from "lucide-react";
+import { Plus, FolderKanban, Rows3, LayoutGrid, Search, ListTodo } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { projectListOptions } from "@multica/core/projects/queries";
 import { useUpdateProject } from "@multica/core/projects/mutations";
@@ -9,6 +9,7 @@ import { useWorkspaceId } from "@multica/core/hooks";
 import { useWorkspacePaths } from "@multica/core/paths";
 import { useModalStore } from "@multica/core/modals";
 import { AppLink } from "../../navigation";
+import { IssuesSurface } from "../../issues/components";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Button } from "@multica/ui/components/ui/button";
@@ -188,6 +189,12 @@ function ProjectCardCompact({ project }: { project: Project }) {
 export function ProjectsPage() {
   const { t } = useT("projects");
   const wsId = useWorkspaceId();
+  // The unified tab's top-level sub-view. Defaults to the project grid
+  // (completion criterion #2); the "All Issues" toggle swaps in the
+  // cross-project flat issue surface. Ephemeral UI state — entering the tab
+  // always lands on Projects. The grid/compact preference below is a separate,
+  // persisted choice that only applies within the Projects sub-view.
+  const [mainView, setMainView] = useState<"projects" | "allIssues">("projects");
   const viewMode = useProjectViewStore((s) => s.viewMode);
   const setViewMode = useProjectViewStore((s) => s.setViewMode);
   const isCompact = viewMode === "compact";
@@ -214,19 +221,41 @@ export function ProjectsPage() {
   return (
     <div className="flex flex-1 min-h-0 flex-col">
       <PageHeader className="justify-between px-5">
-        <div className="flex items-center gap-2">
-          <FolderKanban className="h-4 w-4 text-muted-foreground" />
-          <h1 className="text-sm font-medium">{t(($) => $.page.title)}</h1>
-          {!isLoading && projects.length > 0 && (
-            <span className="text-xs text-muted-foreground tabular-nums">{projects.length}</span>
-          )}
+        <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5">
+          <button
+            type="button"
+            onClick={() => setMainView("projects")}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors",
+              mainView === "projects" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <FolderKanban className="size-3.5" />
+            {t(($) => $.page.view_projects)}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMainView("allIssues")}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors",
+              mainView === "allIssues" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <ListTodo className="size-3.5" />
+            {t(($) => $.page.view_all_issues)}
+          </button>
         </div>
-        <Button size="sm" variant="outline" onClick={openCreateProject}>
-          <Plus className="h-3.5 w-3.5 mr-1" />
-          {t(($) => $.page.new_project)}
-        </Button>
+        {mainView === "projects" && (
+          <Button size="sm" variant="outline" onClick={openCreateProject}>
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            {t(($) => $.page.new_project)}
+          </Button>
+        )}
       </PageHeader>
 
+      {mainView === "allIssues" ? (
+        <IssuesSurface />
+      ) : (
       <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
         {(projects.length > 0 || isLoading || withoutDri) && (
           <div className="flex h-12 shrink-0 items-center justify-between border-b px-4 gap-2 sm:gap-3">
@@ -386,6 +415,7 @@ export function ProjectsPage() {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
