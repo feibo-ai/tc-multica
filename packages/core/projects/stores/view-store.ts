@@ -15,7 +15,10 @@ export interface ProjectViewState {
 export const useProjectViewStore = create<ProjectViewState>()(
   persist(
     (set) => ({
-      viewMode: "compact",
+      // The merged project tab opens on the enriched card grid by default
+      // (unified-project-tab completion criterion #2). Users who prefer the
+      // compact table still have their choice persisted per workspace.
+      viewMode: "comfortable",
       setViewMode: (mode) => set({ viewMode: mode }),
     }),
     {
@@ -23,7 +26,7 @@ export const useProjectViewStore = create<ProjectViewState>()(
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
       partialize: (state) => ({ viewMode: state.viewMode }),
       merge: (persisted, current) => {
-        if (!persisted) return { ...current, viewMode: "compact" };
+        if (!persisted) return { ...current, viewMode: "comfortable" };
         return { ...current, ...(persisted as Partial<ProjectViewState>) };
       },
     }

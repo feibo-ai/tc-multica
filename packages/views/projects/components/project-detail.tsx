@@ -39,6 +39,7 @@ import { TitleEditor, ContentEditor, type ContentEditorRef } from "../../editor"
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { ProjectResourcesSection } from "./project-resources-section";
 import { ProjectDriSection } from "./project-dri-section";
+import { ProjectListRail } from "./project-list-rail";
 import { IssuesHeader } from "../../issues/components/issues-header";
 import { BoardView } from "../../issues/components/board-view";
 import { ListView } from "../../issues/components/list-view";
@@ -407,16 +408,24 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const [progressOpen, setProgressOpen] = useState(true);
   const [descriptionOpen, setDescriptionOpen] = useState(true);
 
-  // Sidebar panel
+  // Sidebar panel. The drill-down is a THREE-panel layout (project list rail |
+  // issues | properties), so it persists under its own key — reusing the old
+  // two-panel `multica_project_detail_layout` key would mis-apply stale
+  // content/sidebar proportions to the new structure and leak the
+  // collapsed-by-default state.
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: "multica_project_detail_layout",
+    id: "multica_project_drilldown_layout",
   });
   const sidebarRef = usePanelRef();
   // Desktop and mobile sidebar state must be separate. A single state defaulting
   // to `true` made the mobile <Sheet> mount in the open position on first render
   // (after `useIsMobile()` flipped from false→true), briefly covering the page
   // with its modal backdrop and locking scroll — leaving the page unresponsive.
-  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  //
+  // The properties sidebar defaults to COLLAPSED so the drill-down's default
+  // reading is the intended three columns (project list | issues | —);
+  // properties stays one click away via the PanelRight toggle.
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const sidebarOpen = isMobile ? mobileSidebarOpen : desktopSidebarOpen;
 
@@ -694,7 +703,19 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   return (
     <>
     <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0" defaultLayout={defaultLayout} onLayoutChanged={onLayoutChanged}>
-      <ResizablePanel id="content" minSize="50%">
+      {!isMobile && (
+        <ResizablePanel
+          id="list"
+          defaultSize={280}
+          minSize={240}
+          maxSize={360}
+          groupResizeBehavior="preserve-pixel-size"
+        >
+          <ProjectListRail currentProjectId={projectId} />
+        </ResizablePanel>
+      )}
+      {!isMobile && <ResizableHandle />}
+      <ResizablePanel id="content" minSize="40%">
         <div className="flex h-full flex-col">
           <PageHeader className="gap-2 bg-background text-sm">
             <div className="flex flex-1 items-center gap-1.5 min-w-0">
