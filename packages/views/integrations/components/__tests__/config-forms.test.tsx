@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi } from "vitest";
+import { useState } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { hasFormForKind, KindConfigForm } from "../config-forms";
 
@@ -52,9 +53,10 @@ describe("MCP server form behavior", () => {
 
   it("hides command/args/env when transport switches to non-stdio", () => {
     const Wrapper = () => {
-      const [val, setVal] = (require("react") as typeof import("react")).useState<
-        Record<string, unknown>
-      >({ transport: "stdio", command: "node" });
+      const [val, setVal] = useState<Record<string, unknown>>({
+        transport: "stdio",
+        command: "node",
+      });
       return <KindConfigForm kind="mcp-server" value={val} onChange={setVal} />;
     };
     render(<Wrapper />);

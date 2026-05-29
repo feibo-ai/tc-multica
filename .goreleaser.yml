@@ -60,6 +60,11 @@ brews:
   - name: multica
     ids:
       - versioned
+    # Only publish the formula from the canonical upstream. Forks (e.g. the
+    # deploy fork) still build the CLI binaries + GitHub Release, but can't
+    # push to multica-ai/homebrew-tap — PUBLISH_HOMEBREW is set to "true" only
+    # on the upstream release job.
+    skip_upload: '{{ if eq .Env.PUBLISH_HOMEBREW "true" }}false{{ else }}true{{ end }}'
     repository:
       owner: multica-ai
       name: homebrew-tap

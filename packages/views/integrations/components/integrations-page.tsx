@@ -107,7 +107,9 @@ export function IntegrationsPage() {
                     <StatusDot status={i.status} />
                     <span className="ml-2 capitalize">{i.status}</span>
                   </td>
-                  <td className="py-2 pr-4 text-muted-foreground">v{i.version}</td>
+                  <td className="py-2 pr-4 text-muted-foreground">
+                    {t(($) => $.version_tag, { version: i.version })}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -164,9 +166,9 @@ function CreateInlineForm({ onClose }: { onClose: () => void }) {
           value={kind}
           onChange={(e) => setKind(e.target.value as IntegrationKind)}
         >
-          <option value="mcp-server">mcp-server</option>
-          <option value="feishu">feishu</option>
-          <option value="autopilot-bot">autopilot-bot</option>
+          <option value="mcp-server">{t(($) => $.kinds.mcp_server)}</option>
+          <option value="feishu">{t(($) => $.kinds.feishu)}</option>
+          <option value="autopilot-bot">{t(($) => $.kinds.autopilot_bot)}</option>
         </select>
         <label className="block text-xs text-muted-foreground">
           {t(($) => $.create_dialog.name_label)}

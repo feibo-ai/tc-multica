@@ -56,12 +56,11 @@ jobs:
 
   release:
     needs: verify
-    # Only run on the canonical upstream repo. Forks don't have the
-    # HOMEBREW_TAP_GITHUB_TOKEN secret and should not be publishing to
-    # `multica-ai/homebrew-tap` anyway. Without this guard, every fork's
-    # tag push fails this job (401 against the upstream tap), which makes
-    # downstream CI go red without affecting the actual artifact pipeline.
-    if: github.repository_owner == 'multica-ai'
+    # Builds the multica CLI binaries and attaches them to the GitHub Release
+    # for the tag. Runs on every repo (including the feibo-ai deploy fork) so
+    # each fork hosts its own CLI artifacts. The Homebrew-tap publish is gated
+    # to the canonical upstream via PUBLISH_HOMEBREW (forks lack the tap token;
+    # see .goreleaser.yml `brews.skip_upload`), so a fork release no longer 401s.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -83,6 +82,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          # Publish the Homebrew formula only from the canonical upstream;
+          # forks build the CLI + GitHub Release but skip the tap upload.
+          PUBLISH_HOMEBREW: ${{ github.repository_owner == 'multica-ai' }}
 
   # Multi-arch images are built natively per platform on dedicated runners
   # (amd64 on ubuntu-latest, arm64 on ubuntu-24.04-arm) and merged into a
@@ -322,6 +324,31 @@ jobs:
           docker buildx imagetools inspect \
             ghcr.io/${{ github.repository_owner }}/multica-web:${{ steps.meta.outputs.version }}
 
+  # Lockstep deploy: once BOTH images are pushed, point the two Zeabur prebuilt
+  # services at the new tag in one step so frontend + backend always move
+  # together. Runs only where the deploy vars are configured (the deploy repo);
+  # upstream / forks without ZEABUR_ENV_ID skip it. See deploy/zeabur/README.md.
+  deploy-zeabur:
+    needs: [verify, docker-backend-merge, docker-web-merge]
+    if: ${{ vars.ZEABUR_ENV_ID != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Zeabur CLI
+        run: |
+          curl -fsSL -o zeabur \
+            https://github.com/zeabur/cli/releases/download/v0.18.0/zeabur_0.18.0_linux_amd64
+          chmod +x zeabur
+          sudo mv zeabur /usr/local/bin/zeabur
+      - name: Bump multica-backend + multica-web to ${{ needs.verify.outputs.tag_name }}
+        env:
+          ZEABUR_TOKEN: ${{ secrets.ZEABUR_TOKEN }}
+          ENV_ID: ${{ vars.ZEABUR_ENV_ID }}
+          TAG: ${{ needs.verify.outputs.tag_name }}
+        run: |
+          zeabur auth login --token "$ZEABUR_TOKEN" --interactive=false
+          zeabur service update tag --env-id "$ENV_ID" --name multica-backend --tag "$TAG" -y --interactive=false
+          zeabur service update tag --env-id "$ENV_ID" --name multica-web     --tag "$TAG" -y --interactive=false
+
   # Build the Desktop installers for Linux and Windows and upload them to
   # the GitHub Release that the `release` job above just published. macOS
   # Desktop continues to ship via the manual `release-desktop` skill so it
@@ -329,6 +356,9 @@ jobs:
   # not (yet) wired into CI.
   desktop:
     needs: release
+    # Desktop installers ship from the canonical upstream only; the deploy fork
+    # hosts just the CLI binaries from the `release` job above.
+    if: github.repository_owner == 'multica-ai'
     strategy:
       fail-fast: false
       matrix:

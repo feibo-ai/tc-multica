@@ -83,7 +83,9 @@ export function SecretManagerSection({ integrationId }: Props) {
             >
               <div className="flex flex-1 items-center gap-3 font-mono text-xs">
                 <span>{k.key}</span>
-                <span className="text-muted-foreground">v{k.version}</span>
+                <span className="text-muted-foreground">
+                  {t(($) => $.version_tag, { version: k.version })}
+                </span>
                 {revealing === k.key && revealed?.key === k.key && (
                   <span className="text-emerald-600" data-testid="revealed-value">
                     {revealed.value}

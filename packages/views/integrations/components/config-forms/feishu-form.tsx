@@ -1,6 +1,7 @@
 "use client";
 
 import { Input } from "@multica/ui/components/ui/input";
+import { useT } from "../../../i18n";
 
 // Feishu / Lark config shape (feishu open platform).
 // Secret credentials (FEISHU_APP_SECRET / FEISHU_VERIFICATION_TOKEN /
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export function FeishuForm({ value, onChange }: Props) {
+  const { t } = useT("integrations");
   const cfg = value as FeishuConfig;
   const setField = <K extends keyof FeishuConfig>(key: K, next: FeishuConfig[K]) => {
     const merged: FeishuConfig = { ...cfg, [key]: next };
@@ -50,8 +52,8 @@ export function FeishuForm({ value, onChange }: Props) {
           onChange={(e) => setField("domain", e.target.value as FeishuConfig["domain"])}
           className="w-full rounded border bg-background p-2 text-sm"
         >
-          <option value="feishu">feishu.cn (mainland China)</option>
-          <option value="lark">larksuite.com (international)</option>
+          <option value="feishu">{t(($) => $.forms.feishu.domain_feishu)}</option>
+          <option value="lark">{t(($) => $.forms.feishu.domain_lark)}</option>
         </select>
       </Field>
 
@@ -99,12 +101,7 @@ export function FeishuForm({ value, onChange }: Props) {
       </Field>
 
       <div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
-        <strong className="text-foreground">Secrets:</strong> add{" "}
-        <code className="mx-1 rounded bg-background px-1 py-0.5">FEISHU_APP_SECRET</code>,{" "}
-        <code className="mx-1 rounded bg-background px-1 py-0.5">FEISHU_VERIFICATION_TOKEN</code>,
-        and (if your app uses encrypted events){" "}
-        <code className="mx-1 rounded bg-background px-1 py-0.5">FEISHU_ENCRYPT_KEY</code> in the{" "}
-        <em>Secrets</em> section below. Never paste these into config.
+        {t(($) => $.forms.feishu.secrets_hint)}
       </div>
     </div>
   );

@@ -143,14 +143,14 @@ pnpm --filter @multica/desktop package    # Package into .app/.dmg/.exe (current
 pnpm ui:add badge                # Adds component to packages/ui/components/ui/
 
 # Infrastructure
-make db-up            # Start shared PostgreSQL (pgvector/pg17 image)
+make db-up            # Start shared PostgreSQL (pgvector/pg18 image)
 make db-down          # Stop shared PostgreSQL
 make db-reset         # Drop + recreate current env's DB, then re-run migrations (local only; stop backend first)
 ```
 
 ### CI Requirements
 
-CI runs on Node 22 and Go 1.26.1 with a `pgvector/pgvector:pg17` PostgreSQL service. See `.github/workflows/ci.yml`.
+CI runs on Node 22 and Go 1.26.1 with a `pgvector/pgvector:pg18` PostgreSQL service. See `.github/workflows/ci.yml`.
 
 ### Worktree Support
 

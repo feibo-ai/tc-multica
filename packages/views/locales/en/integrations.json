@@ -75,5 +75,30 @@
     "started": "started",
     "last_heartbeat": "last heartbeat",
     "stopped": "stopped"
+  },
+  "forms": {
+    "mcp": {
+      "transport_stdio": "stdio (local process)",
+      "transport_sse": "sse (HTTP SSE)",
+      "transport_http": "http (streaming)",
+      "add_argument": "+ Add argument",
+      "add_variable": "+ Add variable"
+    },
+    "feishu": {
+      "domain_feishu": "feishu.cn (mainland China)",
+      "domain_lark": "larksuite.com (international)",
+      "secrets_hint": "Secrets: add FEISHU_APP_SECRET, FEISHU_VERIFICATION_TOKEN, and (if your app uses encrypted events) FEISHU_ENCRYPT_KEY in the Secrets section below. Never paste these into config."
+    },
+    "autopilot": {
+      "enabled": "enabled",
+      "disabled": "disabled (paused)",
+      "secrets_hint": "Secrets: any signing secrets (e.g. WEBHOOK_SIGNING_SECRET) or API tokens the bot needs go in the Secrets section below."
+    }
+  },
+  "version_tag": "v{{version}}",
+  "kinds": {
+    "mcp_server": "mcp-server",
+    "feishu": "feishu",
+    "autopilot_bot": "autopilot-bot"
   }
 }
