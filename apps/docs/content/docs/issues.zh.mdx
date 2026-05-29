@@ -57,10 +57,10 @@ Issue 可以按标签筛选，并明确选择 AND / OR 语义。在工作区的 
 CLI 行为一致。每个标签传一次 `--label`，再加 `--labels-mode any|all`：
 
 ```bash
-multica issue list --label plan-approved --label urgent --labels-mode all
+multica issue list --label 待审批 --label 紧急 --labels-mode all
 ```
 
-对应的 API 接口是 `GET /api/issues?labels=plan-approved,urgent&labels_mode=all`——基于标签名、忽略大小写。如果想用 UUID，可以继续使用现有的 `?label_ids=` 形式。当前阶段标签筛选请单独使用；在服务端将它与 `status` / `priority` / `assignee_id` 组合使用是后续规划。
+对应的 API 接口是 `GET /api/issues?labels=待审批,紧急&labels_mode=all`——基于标签名、忽略大小写。如果想用 UUID，可以继续使用现有的 `?label_ids=` 形式。当前阶段标签筛选请单独使用；在服务端将它与 `status` / `priority` / `assignee_id` 组合使用是后续规划。
 
 ## Issue 编号
 

@@ -57,10 +57,10 @@ Issues can be filtered by label with explicit AND/OR semantics. In the workspace
 The CLI mirrors this. Pass `--label` once per label, then `--labels-mode any|all`:
 
 ```bash
-multica issue list --label plan-approved --label urgent --labels-mode all
+multica issue list --label 待审批 --label 紧急 --labels-mode all
 ```
 
-The API endpoint is `GET /api/issues?labels=plan-approved,urgent&labels_mode=all` — name-based and case-insensitive. If you prefer UUIDs, use the existing `?label_ids=` shape. Use the labels filter on its own for now; composing it with `status`, `priority`, or `assignee_id` server-side is a planned follow-up.
+The API endpoint is `GET /api/issues?labels=待审批,紧急&labels_mode=all` — name-based and case-insensitive. If you prefer UUIDs, use the existing `?label_ids=` shape. Use the labels filter on its own for now; composing it with `status`, `priority`, or `assignee_id` server-side is a planned follow-up.
 
 ## Issue numbers
 
