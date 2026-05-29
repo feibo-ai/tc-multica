@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { createTestApi, loginAsDefault } from "./helpers";
+import { createTestApi, loginAsDefault, openAllIssues } from "./helpers";
 import type { TestApiClient } from "./fixtures";
 
 test.describe("Comments", () => {
@@ -9,6 +9,8 @@ test.describe("Comments", () => {
     api = await createTestApi();
     await api.createIssue("E2E Comment Test " + Date.now());
     await loginAsDefault(page);
+    // Issues live behind the unified tab's "All Issues" toggle.
+    await openAllIssues(page);
   });
 
   test.afterEach(async () => {

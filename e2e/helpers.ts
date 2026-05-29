@@ -32,6 +32,17 @@ export async function loginAsDefault(page: Page): Promise<string> {
 }
 
 /**
+ * Reveal the cross-project "All Issues" view inside the unified project tab.
+ * The merged tab defaults to the project card grid; the issue board/list/
+ * swimlane lives behind this in-tab toggle (no separate route), so specs that
+ * exercise issues must open it after landing — and again after any reload,
+ * since the toggle is ephemeral (entering the tab always defaults to the grid).
+ */
+export async function openAllIssues(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "All Issues" }).click();
+}
+
+/**
  * Create a TestApiClient logged in as the default E2E user.
  * Call api.cleanup() in afterEach to remove test data created during the test.
  */
