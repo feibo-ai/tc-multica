@@ -17,7 +17,11 @@ const encode = (id: string) => encodeURIComponent(id);
 function workspaceScoped(slug: string) {
   const ws = `/${encode(slug)}`;
   return {
-    root: () => `${ws}/issues`,
+    // Workspace home = the unified project tab (was `/issues`). The Issues and
+    // Projects top-level tabs merged into `/projects`; `issues()` /
+    // `issueDetail()` stay as the legacy list route (now redirected on web)
+    // and the still-live individual issue pages respectively.
+    root: () => `${ws}/projects`,
     usage: () => `${ws}/usage`,
     issues: () => `${ws}/issues`,
     issueDetail: (id: string) => `${ws}/issues/${encode(id)}`,

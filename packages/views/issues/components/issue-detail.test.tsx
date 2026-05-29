@@ -539,9 +539,9 @@ describe("IssueDetail (shared)", () => {
     });
 
     const wsLink = screen.getByText("Test WS");
-    // After the URL-driven workspace refactor, issue paths are scoped under
-    // /<workspaceSlug>/issues.
-    expect(wsLink.closest("a")).toHaveAttribute("href", "/test/issues");
+    // The workspace-name breadcrumb links to workspace home, which after the
+    // Issues+Projects tab merge is the unified project tab.
+    expect(wsLink.closest("a")).toHaveAttribute("href", "/test/projects");
   });
 
   it("omits the project breadcrumb segment when the issue has no project_id", async () => {

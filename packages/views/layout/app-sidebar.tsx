@@ -17,7 +17,6 @@ import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } 
 import { CSS } from "@dnd-kit/utilities";
 import {
   Inbox,
-  ListTodo,
   Bot,
   Monitor,
   ChevronDown,
@@ -138,7 +137,9 @@ const personalNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] 
 ];
 
 const workspaceNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] = [
-  { key: "issues", labelKey: "issues", icon: ListTodo },
+  // The Issues and Projects tabs merged into one unified entry at /projects.
+  // Its in-tab toggle exposes the cross-project "All issues" flat view, so a
+  // separate Issues nav entry would be a duplicate destination.
   { key: "projects", labelKey: "projects", icon: FolderKanban },
   { key: "autopilots", labelKey: "autopilots", icon: Zap },
   { key: "agents", labelKey: "agents", icon: Bot },
@@ -424,7 +425,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
         ? list.find((w) => w.id === invitation.workspace_id)
         : null;
       if (joined) {
-        push(paths.workspace(joined.slug).issues());
+        push(paths.workspace(joined.slug).projects());
       }
     },
   });
@@ -518,7 +519,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                       <DropdownMenuItem
                         key={ws.id}
                         render={
-                          <AppLink href={paths.workspace(ws.slug).issues()} />
+                          <AppLink href={paths.workspace(ws.slug).projects()} />
                         }
                       >
                         <WorkspaceAvatar name={ws.name} size="sm" />

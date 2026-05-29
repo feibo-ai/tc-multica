@@ -74,12 +74,12 @@ export default function OnboardingPage() {
         onComplete={(ws, issueId) => {
           // Runtime-connected onboarding now creates one focused
           // onboarding issue. Skip/runtime-less exits still land on the
-          // workspace issues list.
+          // workspace home (the unified project tab).
           completingRef.current = true;
           if (ws && issueId) {
             router.push(paths.workspace(ws.slug).issueDetail(issueId));
           } else if (ws) {
-            router.push(paths.workspace(ws.slug).issues());
+            router.push(paths.workspace(ws.slug).projects());
           } else {
             router.push(paths.root());
           }

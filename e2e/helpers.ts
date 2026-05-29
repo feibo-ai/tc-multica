@@ -25,8 +25,9 @@ export async function loginAsDefault(page: Page): Promise<string> {
   await page.evaluate((t) => {
     localStorage.setItem("multica_token", t);
   }, token);
-  await page.goto(`/${workspace.slug}/issues`);
-  await page.waitForURL("**/issues", { timeout: 10000 });
+  // Workspace home merged onto the unified project tab (Issues + Projects).
+  await page.goto(`/${workspace.slug}/projects`);
+  await page.waitForURL("**/projects", { timeout: 10000 });
   return workspace.slug;
 }
 

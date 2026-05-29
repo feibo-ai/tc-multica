@@ -1274,7 +1274,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
         <p>{t(($) => $.detail.not_found)}</p>
         {!onDelete && (
-          <Button variant="outline" size="sm" onClick={() => router.push(paths.issues())}>
+          <Button variant="outline" size="sm" onClick={() => router.push(paths.projects())}>
             <ChevronLeft className="mr-1 h-3.5 w-3.5" />
             {t(($) => $.detail.back_to_issues)}
           </Button>
@@ -1605,7 +1605,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             {workspace && (
               <>
                 <AppLink
-                  href={paths.issues()}
+                  href={paths.projects()}
                   className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
                 >
                   {workspace.name}
@@ -1706,7 +1706,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               align="end"
               // When a parent passes `onDelete`, we detect deletion via effect
               // above and skip navigation. Otherwise the modal navigates for us.
-              onDeletedNavigateTo={onDelete ? undefined : paths.issues()}
+              onDeletedNavigateTo={onDelete ? undefined : paths.projects()}
               trigger={
                 <Button variant="ghost" size="icon-sm" className="text-muted-foreground">
                   <MoreHorizontal />

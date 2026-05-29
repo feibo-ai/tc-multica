@@ -14,7 +14,6 @@ import { AgentDetailPage } from "./pages/agent-detail-page";
 import { MemberDetailPage } from "./pages/member-detail-page";
 import { RuntimeDetailPage } from "./pages/runtime-detail-page";
 import { AttachmentPreviewRoute } from "./pages/attachment-preview-page";
-import { IssuesPage } from "@multica/views/issues/components";
 import { ProjectsPage } from "@multica/views/projects/components";
 import { DashboardPage } from "@multica/views/dashboard";
 import { AutopilotsPage } from "@multica/views/autopilots/components";
@@ -115,16 +114,13 @@ export const appRoutes: RouteObject[] = [
         path: ":workspaceSlug",
         element: <WorkspaceRouteLayout />,
         children: [
-          { index: true, element: <Navigate to="issues" replace /> },
-          {
-            path: "issues",
-            element: (
-              <ErrorBoundary>
-                <IssuesPage />
-              </ErrorBoundary>
-            ),
-            handle: { title: "Issues" },
-          },
+          // Workspace home = the unified project tab. The Issues list tab
+          // merged into /projects (its "All issues" sub-view); only the
+          // individual issue-detail route survives. Persisted /issues tabs
+          // are rewritten by the tab-store v3→v4 migration, so no in-app or
+          // persisted path lands here; an escaped one auto-heals via
+          // WorkspaceRouteLayout (desktop has no URL bar, so no deep links).
+          { index: true, element: <Navigate to="projects" replace /> },
           {
             path: "issues/:id",
             element: <IssueDetailPage />,
@@ -132,7 +128,11 @@ export const appRoutes: RouteObject[] = [
           },
           {
             path: "projects",
-            element: <ProjectsPage />,
+            element: (
+              <ErrorBoundary>
+                <ProjectsPage />
+              </ErrorBoundary>
+            ),
             handle: { title: "Projects" },
           },
           {
