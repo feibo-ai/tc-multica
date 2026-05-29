@@ -322,6 +322,31 @@ jobs:
           docker buildx imagetools inspect \
             ghcr.io/${{ github.repository_owner }}/multica-web:${{ steps.meta.outputs.version }}
 
+  # Lockstep deploy: once BOTH images are pushed, point the two Zeabur prebuilt
+  # services at the new tag in one step so frontend + backend always move
+  # together. Runs only where the deploy vars are configured (the deploy repo);
+  # upstream / forks without ZEABUR_ENV_ID skip it. See deploy/zeabur/README.md.
+  deploy-zeabur:
+    needs: [verify, docker-backend-merge, docker-web-merge]
+    if: ${{ vars.ZEABUR_ENV_ID != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Zeabur CLI
+        run: |
+          curl -fsSL -o zeabur \
+            https://github.com/zeabur/cli/releases/download/v0.18.0/zeabur_0.18.0_linux_amd64
+          chmod +x zeabur
+          sudo mv zeabur /usr/local/bin/zeabur
+      - name: Bump multica-backend + multica-web to ${{ needs.verify.outputs.tag_name }}
+        env:
+          ZEABUR_TOKEN: ${{ secrets.ZEABUR_TOKEN }}
+          ENV_ID: ${{ vars.ZEABUR_ENV_ID }}
+          TAG: ${{ needs.verify.outputs.tag_name }}
+        run: |
+          zeabur auth login --token "$ZEABUR_TOKEN" --interactive=false
+          zeabur service update tag --env-id "$ENV_ID" --name multica-backend --tag "$TAG" -y --interactive=false
+          zeabur service update tag --env-id "$ENV_ID" --name multica-web     --tag "$TAG" -y --interactive=false
+
   # Build the Desktop installers for Linux and Windows and upload them to
   # the GitHub Release that the `release` job above just published. macOS
   # Desktop continues to ship via the manual `release-desktop` skill so it
