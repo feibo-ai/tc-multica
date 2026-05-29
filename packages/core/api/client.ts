@@ -138,6 +138,9 @@ import {
   EMPTY_CREATE_AGENT_FROM_TEMPLATE_RESPONSE,
   EMPTY_GROUPED_ISSUES_RESPONSE,
   EMPTY_LIST_ISSUES_RESPONSE,
+  EMPTY_LIST_PROJECTS_RESPONSE,
+  EMPTY_PROJECT,
+  EMPTY_PROJECT_LIST,
   EMPTY_SQUAD,
   EMPTY_SQUAD_LIST,
   EMPTY_SQUAD_MEMBER_STATUS_LIST,
@@ -147,7 +150,10 @@ import {
   EMPTY_WEBHOOK_DELIVERY,
   GroupedIssuesResponseSchema,
   ListIssuesResponseSchema,
+  ListProjectsResponseSchema,
   ListWebhookDeliveriesResponseSchema,
+  ProjectListSchema,
+  ProjectSchema,
   RuntimeHourlyActivityListSchema,
   RuntimeUsageByAgentListSchema,
   RuntimeUsageByHourListSchema,
@@ -1532,7 +1538,10 @@ export class ApiClient {
   async listProjects(params?: { status?: string }): Promise<ListProjectsResponse> {
     const search = new URLSearchParams();
     if (params?.status) search.set("status", params.status);
-    return this.fetch(`/api/projects?${search}`);
+    const raw = await this.fetch<unknown>(`/api/projects?${search}`);
+    return parseWithFallback(raw, ListProjectsResponseSchema, EMPTY_LIST_PROJECTS_RESPONSE, {
+      endpoint: "GET /api/projects",
+    });
   }
 
   // Triage list: projects with no DRI assigned (SOP v0.4 P-5 risk). Returns
@@ -1540,11 +1549,17 @@ export class ApiClient {
   // backend route is a fixed-purpose triage feed rather than a paginated
   // list. Mirrors the `multica project list --without-dri` CLI shape.
   async listProjectsWithoutDRI(): Promise<Project[]> {
-    return this.fetch(`/api/projects?without_dri=true`);
+    const raw = await this.fetch<unknown>(`/api/projects?without_dri=true`);
+    return parseWithFallback(raw, ProjectListSchema, EMPTY_PROJECT_LIST, {
+      endpoint: "GET /api/projects?without_dri=true",
+    }) as Project[];
   }
 
   async getProject(id: string): Promise<Project> {
-    return this.fetch(`/api/projects/${id}`);
+    const raw = await this.fetch<unknown>(`/api/projects/${id}`);
+    return parseWithFallback(raw, ProjectSchema, EMPTY_PROJECT, {
+      endpoint: "GET /api/projects/:id",
+    }) as Project;
   }
 
   async createProject(data: CreateProjectRequest): Promise<Project> {
