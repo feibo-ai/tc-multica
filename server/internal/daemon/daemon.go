@@ -1576,21 +1576,12 @@ func (d *Daemon) handleUpdate(ctx context.Context, runtimeID string, update *Pen
 	d.triggerRestart()
 }
 
-// runUpdate executes the brew-or-download upgrade against targetVersion and
-// returns the human-readable output (always populated, even on failure when
-// brew gives us a useful diagnostic). The caller is responsible for the
-// `updating` CAS guard and for reporting status back to the server / triggering
-// the restart — extracted so the server-triggered path (handleUpdate) and the
-// auto-update poller (autoUpdateLoop) share the exact same execution body.
+// runUpdate downloads and installs the target CLI version and returns the
+// human-readable output. The caller is responsible for the `updating` CAS
+// guard and for reporting status back to the server / triggering the restart —
+// extracted so the server-triggered path (handleUpdate) and the auto-update
+// poller (autoUpdateLoop) share the exact same execution body.
 func (d *Daemon) runUpdate(targetVersion string) (string, error) {
-	if cli.IsBrewInstall() {
-		d.logger.Info("updating CLI via Homebrew...")
-		out, err := cli.UpdateViaBrew()
-		if err != nil {
-			return out, fmt.Errorf("brew upgrade failed: %w", err)
-		}
-		return out, nil
-	}
 	d.logger.Info("updating CLI via direct download...", "target_version", targetVersion)
 	out, err := cli.UpdateViaDownload(targetVersion)
 	if err != nil {

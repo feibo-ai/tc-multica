@@ -3,9 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Build a self-contained sandbox with stub `curl` and a tarball that the
-# release-binary fallback path will download. Each test supplies its own
-# `brew` stub to model a specific Homebrew failure mode.
+# Build a self-contained sandbox with a stub `curl` and a tarball that the
+# release-binary install path downloads. The installer is binary-only (no
+# Homebrew), so the test exercises the GitHub Releases download path end to end.
 _setup_sandbox() {
   local tmp="$1"
   local stub_bin="$tmp/stub-bin"
@@ -23,7 +23,7 @@ STUB
   cat >"$stub_bin/curl" <<'STUB'
 #!/usr/bin/env bash
 if [[ "$*" == *"-sI"* ]]; then
-  printf 'HTTP/2 302\r\nlocation: https://github.com/multica-ai/multica/releases/tag/v0.3.2\r\n'
+  printf 'HTTP/2 302\r\nlocation: https://github.com/feibo-ai/tc-multica/releases/tag/v0.3.2\r\n'
   exit 0
 fi
 
@@ -64,72 +64,21 @@ _run_installer() {
   fi
 
   if [[ ! -x "$tmp/install-bin/multica" ]]; then
-    echo "expected fallback binary at $tmp/install-bin/multica" >&2
+    echo "expected installed binary at $tmp/install-bin/multica" >&2
     cat "$out" >&2 || true
     cat "$err" >&2 || true
     return 1
   fi
-
-  if ! grep -q "Homebrew output (last 80 lines):" "$err"; then
-    echo "expected diagnostic tail in stderr" >&2
-    cat "$err" >&2 || true
-    return 1
-  fi
 }
 
-test_brew_install_failure_falls_back_to_release_binary() {
+test_installs_release_binary() {
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
 
   _setup_sandbox "$tmp"
-  cat >"$tmp/stub-bin/brew" <<'STUB'
-#!/usr/bin/env bash
-case "${1:-}" in
-  tap)
-    exit 0
-    ;;
-  install)
-    echo "simulated brew install failure" >&2
-    exit 42
-    ;;
-  list)
-    exit 1
-    ;;
-  *)
-    exit 0
-    ;;
-esac
-STUB
-  chmod +x "$tmp/stub-bin/brew"
-
   _run_installer "$tmp"
 }
 
-test_brew_tap_failure_falls_back_to_release_binary() {
-  local tmp
-  tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' RETURN
-
-  _setup_sandbox "$tmp"
-  cat >"$tmp/stub-bin/brew" <<'STUB'
-#!/usr/bin/env bash
-case "${1:-}" in
-  tap)
-    echo "simulated brew tap failure" >&2
-    exit 17
-    ;;
-  *)
-    echo "brew $* should not be reached after tap failure" >&2
-    exit 99
-    ;;
-esac
-STUB
-  chmod +x "$tmp/stub-bin/brew"
-
-  _run_installer "$tmp"
-}
-
-test_brew_install_failure_falls_back_to_release_binary
-test_brew_tap_failure_falls_back_to_release_binary
+test_installs_release_binary
 echo "install.sh tests passed"
