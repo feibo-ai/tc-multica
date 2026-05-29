@@ -37,7 +37,10 @@ export function FeishuForm({ value, onChange }: Props) {
 
   return (
     <div className="space-y-4">
-      <Field label="App ID" hint="From feishu.cn / lark.com developer console. e.g. cli_xxxxxxxxxxxxxxx">
+      <Field
+        label={t(($) => $.forms.feishu.app_id_label)}
+        hint={t(($) => $.forms.feishu.app_id_hint)}
+      >
         <Input
           value={cfg.app_id ?? ""}
           placeholder="cli_xxxxxxxxxxxxxxx"
@@ -46,7 +49,7 @@ export function FeishuForm({ value, onChange }: Props) {
         />
       </Field>
 
-      <Field label="Domain">
+      <Field label={t(($) => $.forms.feishu.domain_label)}>
         <select
           value={domain}
           onChange={(e) => setField("domain", e.target.value as FeishuConfig["domain"])}
@@ -58,8 +61,8 @@ export function FeishuForm({ value, onChange }: Props) {
       </Field>
 
       <Field
-        label="Base URL"
-        hint="Override the API host. Leave empty to use the default for the selected domain."
+        label={t(($) => $.forms.feishu.base_url_label)}
+        hint={t(($) => $.forms.feishu.base_url_hint)}
       >
         <Input
           value={cfg.base_url ?? ""}
@@ -69,8 +72,8 @@ export function FeishuForm({ value, onChange }: Props) {
       </Field>
 
       <Field
-        label="Team chat ID"
-        hint="The OAuth-resolved chat the bot belongs to. e.g. oc_xxxxxxxxxxxxxx"
+        label={t(($) => $.forms.feishu.team_chat_id_label)}
+        hint={t(($) => $.forms.feishu.team_chat_id_hint)}
       >
         <Input
           value={cfg.team_chat_id ?? ""}
@@ -80,7 +83,10 @@ export function FeishuForm({ value, onChange }: Props) {
         />
       </Field>
 
-      <Field label="Tenant key" hint="Optional. Set when integrating a multi-tenant store app.">
+      <Field
+        label={t(($) => $.forms.feishu.tenant_key_label)}
+        hint={t(($) => $.forms.feishu.tenant_key_hint)}
+      >
         <Input
           value={cfg.tenant_key ?? ""}
           placeholder="t_xxxxxxxxxxxxxx"
@@ -90,8 +96,8 @@ export function FeishuForm({ value, onChange }: Props) {
       </Field>
 
       <Field
-        label="Webhook URL"
-        hint="Incoming webhook URL for posting messages from automation. (Custom Bot URL.)"
+        label={t(($) => $.forms.feishu.webhook_url_label)}
+        hint={t(($) => $.forms.feishu.webhook_url_hint)}
       >
         <Input
           value={cfg.webhook_url ?? ""}
