@@ -12,6 +12,11 @@
     "search_placeholder": "搜索项目...",
     "no_search_results": "未找到匹配的项目"
   },
+  "health": {
+    "on_track": "正常",
+    "at_risk": "有风险",
+    "off_track": "已偏离"
+  },
   "filters": {
     "without_dri": "无 DRI",
     "without_dri_description": "没有指定 DRI 的项目（SOP P-5 风险）"

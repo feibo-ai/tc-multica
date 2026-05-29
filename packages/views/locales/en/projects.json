@@ -12,6 +12,11 @@
     "search_placeholder": "Search projects...",
     "no_search_results": "No results match your search"
   },
+  "health": {
+    "on_track": "On track",
+    "at_risk": "At risk",
+    "off_track": "Off track"
+  },
   "filters": {
     "without_dri": "Without DRI",
     "without_dri_description": "Projects with no DRI assigned (SOP P-5 risk)"

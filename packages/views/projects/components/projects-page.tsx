@@ -27,7 +27,7 @@ import { useT } from "../../i18n";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 import { useFormatRelativeDate } from "./labels";
 import { useProjectViewStore } from "@multica/core/projects";
-import { ProjectStatusBadge, ProjectPriorityBadge } from "./project-badge";
+import { ProjectStatusBadge, ProjectPriorityBadge, ProjectHealthBadge } from "./project-badge";
 import { ProjectLeadPicker } from "./project-lead-picker";
 
 const COMPACT_GRID = "grid w-full min-w-[740px] grid-cols-[24px_minmax(200px,1fr)_96px_96px_80px_80px_80px]";
@@ -61,39 +61,42 @@ function ProjectCard({ project }: { project: Project }) {
           <ProjectStatusBadge project={project} handleUpdate={handleUpdate} triggerClassName="shrink-0" />
         </div>
 
-        {project.issue_count > 0 ? (
-          <div className="flex justify-end items-center gap-1.5 pt-2">
-            <div className="relative h-4 w-4">
-              <svg className="h-4 w-4 -rotate-90" viewBox="0 0 16 16">
-                <circle
-                  className="text-muted"
-                  strokeWidth="2"
-                  stroke="currentColor"
-                  fill="none"
-                  r="6"
-                  cx="8"
-                  cy="8"
-                />
-                <circle
-                  className="text-emerald-500"
-                  strokeWidth="2"
-                  stroke="currentColor"
-                  fill="none"
-                  r="6"
-                  cx="8"
-                  cy="8"
-                  strokeDasharray={`${progressPercent * 0.377} 37.7`}
-                  strokeLinecap="round"
-                />
-              </svg>
+        <div className="flex items-center justify-between gap-2 pt-2">
+          <ProjectHealthBadge project={project} />
+          {project.issue_count > 0 ? (
+            <div className="flex items-center gap-1.5">
+              <div className="relative h-4 w-4">
+                <svg className="h-4 w-4 -rotate-90" viewBox="0 0 16 16">
+                  <circle
+                    className="text-muted"
+                    strokeWidth="2"
+                    stroke="currentColor"
+                    fill="none"
+                    r="6"
+                    cx="8"
+                    cy="8"
+                  />
+                  <circle
+                    className="text-emerald-500"
+                    strokeWidth="2"
+                    stroke="currentColor"
+                    fill="none"
+                    r="6"
+                    cx="8"
+                    cy="8"
+                    strokeDasharray={`${progressPercent * 0.377} 37.7`}
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </div>
+              <span className="text-[10px] text-muted-foreground tabular-nums">
+                {project.done_count}/{project.issue_count}
+              </span>
             </div>
-            <span className="text-[10px] text-muted-foreground tabular-nums">
-              {project.done_count}/{project.issue_count}
-            </span>
-          </div>
-        ) : (
-          <span className="text-[10px] text-muted-foreground pt-2 flex justify-end">{t(($) => $.detail.no_issues_yet)}</span>
-        )}
+          ) : (
+            <span className="text-[10px] text-muted-foreground">{t(($) => $.detail.no_issues_yet)}</span>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center justify-between px-3 pb-3 border-t mt-0 pt-2">

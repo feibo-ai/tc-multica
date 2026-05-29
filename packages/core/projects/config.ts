@@ -1,4 +1,4 @@
-import type { ProjectStatus, ProjectPriority } from "../types";
+import type { Project, ProjectStatus, ProjectPriority } from "../types";
 
 export const PROJECT_STATUS_ORDER: ProjectStatus[] = [
   "planned",
@@ -37,3 +37,28 @@ export const PROJECT_PRIORITY_CONFIG: Record<
   low: { label: "Low", bars: 1, color: "text-info", badgeBg: "bg-info/10", badgeText: "text-info" },
   none: { label: "No priority", bars: 0, color: "text-muted-foreground", badgeBg: "bg-muted", badgeText: "text-muted-foreground" },
 };
+
+// Project health for the unified-tab card grid (Phase D2). There is NO health
+// column — it's DERIVED from signals already on the Project, so it needs no
+// migration. v1 surfaces the documented SOP v0.4 P-5 risk: an active project
+// with no DRI is "at risk" (the same signal the backend without-dri triage
+// list is built around). When a `target_date` column lands (D3 fast-follow),
+// overdue/stalled can promote to "off_track" here without touching callers.
+export type ProjectHealth = "on_track" | "at_risk" | "off_track";
+
+export const PROJECT_HEALTH_CONFIG: Record<
+  ProjectHealth,
+  { dotColor: string; textColor: string }
+> = {
+  on_track: { dotColor: "bg-success", textColor: "text-success" },
+  at_risk: { dotColor: "bg-warning", textColor: "text-warning" },
+  off_track: { dotColor: "bg-destructive", textColor: "text-destructive" },
+};
+
+export function deriveProjectHealth(project: Project): ProjectHealth | null {
+  // Terminal states have no ongoing "health" — the work is shipped or
+  // abandoned. Returning null renders no badge (graceful absence).
+  if (project.status === "completed" || project.status === "cancelled") return null;
+  if (!project.dri_user_id) return "at_risk";
+  return "on_track";
+}
