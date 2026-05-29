@@ -56,12 +56,11 @@ jobs:
 
   release:
     needs: verify
-    # Only run on the canonical upstream repo. Forks don't have the
-    # HOMEBREW_TAP_GITHUB_TOKEN secret and should not be publishing to
-    # `multica-ai/homebrew-tap` anyway. Without this guard, every fork's
-    # tag push fails this job (401 against the upstream tap), which makes
-    # downstream CI go red without affecting the actual artifact pipeline.
-    if: github.repository_owner == 'multica-ai'
+    # Builds the multica CLI binaries and attaches them to the GitHub Release
+    # for the tag. Runs on every repo (including the feibo-ai deploy fork) so
+    # each fork hosts its own CLI artifacts. The Homebrew-tap publish is gated
+    # to the canonical upstream via PUBLISH_HOMEBREW (forks lack the tap token;
+    # see .goreleaser.yml `brews.skip_upload`), so a fork release no longer 401s.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -83,6 +82,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          # Publish the Homebrew formula only from the canonical upstream;
+          # forks build the CLI + GitHub Release but skip the tap upload.
+          PUBLISH_HOMEBREW: ${{ github.repository_owner == 'multica-ai' }}
 
   # Multi-arch images are built natively per platform on dedicated runners
   # (amd64 on ubuntu-latest, arm64 on ubuntu-24.04-arm) and merged into a
@@ -354,6 +356,9 @@ jobs:
   # not (yet) wired into CI.
   desktop:
     needs: release
+    # Desktop installers ship from the canonical upstream only; the deploy fork
+    # hosts just the CLI binaries from the `release` job above.
+    if: github.repository_owner == 'multica-ai'
     strategy:
       fail-fast: false
       matrix:
