@@ -34,7 +34,10 @@ export function AutopilotBotForm({ value, onChange }: Props) {
 
   return (
     <div className="space-y-4">
-      <Field label="Bot name" hint="Display name shown in autopilot dashboards.">
+      <Field
+        label={t(($) => $.forms.autopilot.bot_name_label)}
+        hint={t(($) => $.forms.autopilot.bot_name_hint)}
+      >
         <Input
           value={cfg.bot_name ?? ""}
           placeholder="weekly-debrief-bot"
@@ -42,7 +45,7 @@ export function AutopilotBotForm({ value, onChange }: Props) {
         />
       </Field>
 
-      <Field label="Enabled">
+      <Field label={t(($) => $.forms.autopilot.enabled_label)}>
         <select
           value={cfg.enabled === false ? "false" : "true"}
           onChange={(e) => setField("enabled", e.target.value === "true")}
@@ -54,8 +57,8 @@ export function AutopilotBotForm({ value, onChange }: Props) {
       </Field>
 
       <Field
-        label="Schedule"
-        hint='Cron expression in 5-field form (e.g. "0 9 * * 1" — every Monday 09:00) or "manual" for trigger-only.'
+        label={t(($) => $.forms.autopilot.schedule_label)}
+        hint={t(($) => $.forms.autopilot.schedule_hint)}
       >
         <Input
           value={cfg.schedule ?? ""}
@@ -66,8 +69,8 @@ export function AutopilotBotForm({ value, onChange }: Props) {
       </Field>
 
       <Field
-        label="Target workspace slug"
-        hint="Workspace the bot acts on. Leave empty to default to the workspace owning this integration."
+        label={t(($) => $.forms.autopilot.target_workspace_label)}
+        hint={t(($) => $.forms.autopilot.target_workspace_hint)}
       >
         <Input
           value={cfg.target_workspace_slug ?? ""}
@@ -77,7 +80,10 @@ export function AutopilotBotForm({ value, onChange }: Props) {
         />
       </Field>
 
-      <Field label="Description" hint="One-line summary for the bot list.">
+      <Field
+        label={t(($) => $.forms.autopilot.description_label)}
+        hint={t(($) => $.forms.autopilot.description_hint)}
+      >
         <Input
           value={cfg.description ?? ""}
           placeholder="Posts Friday demo summary to feishu team chat."
@@ -86,8 +92,8 @@ export function AutopilotBotForm({ value, onChange }: Props) {
       </Field>
 
       <Field
-        label="Health check URL"
-        hint="Optional. multica pings this URL to confirm the bot's runtime is alive."
+        label={t(($) => $.forms.autopilot.health_check_label)}
+        hint={t(($) => $.forms.autopilot.health_check_hint)}
       >
         <Input
           value={cfg.health_check_url ?? ""}

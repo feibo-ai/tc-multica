@@ -43,7 +43,7 @@ export function McpServerForm({ value, onChange }: Props) {
 
   return (
     <div className="space-y-4">
-      <Field label="Transport">
+      <Field label={t(($) => $.forms.mcp.transport_label)}>
         <select
           value={transport}
           onChange={(e) => setField("transport", e.target.value as McpServerConfig["transport"])}
@@ -57,7 +57,10 @@ export function McpServerForm({ value, onChange }: Props) {
 
       {isStdio ? (
         <>
-          <Field label="Command" hint="The binary to spawn, e.g. node / python / path to executable">
+          <Field
+            label={t(($) => $.forms.mcp.command_label)}
+            hint={t(($) => $.forms.mcp.command_hint)}
+          >
             <Input
               value={cfg.command ?? ""}
               placeholder="node"
@@ -66,7 +69,10 @@ export function McpServerForm({ value, onChange }: Props) {
           </Field>
           <ArgsEditor value={cfg.args ?? []} onChange={(args) => setField("args", args)} />
           <EnvEditor value={cfg.env ?? {}} onChange={(env) => setField("env", env)} />
-          <Field label="Working directory" hint="Optional. Defaults to the runtime process cwd.">
+          <Field
+            label={t(($) => $.forms.mcp.working_dir_label)}
+            hint={t(($) => $.forms.mcp.working_dir_hint)}
+          >
             <Input
               value={cfg.working_dir ?? ""}
               placeholder="/path/to/dir"
@@ -75,7 +81,10 @@ export function McpServerForm({ value, onChange }: Props) {
           </Field>
         </>
       ) : (
-        <Field label="URL" hint={`${transport.toUpperCase()} endpoint`}>
+        <Field
+          label={t(($) => $.forms.mcp.url_label)}
+          hint={t(($) => $.forms.mcp.url_hint, { transport: transport.toUpperCase() })}
+        >
           <Input
             value={cfg.url ?? ""}
             placeholder="https://example.com/mcp"
@@ -101,8 +110,8 @@ function ArgsEditor({ value, onChange }: { value: string[]; onChange: (next: str
   const { t } = useT("integrations");
   return (
     <Field
-      label="Arguments"
-      hint="One CLI argument per row. e.g. ./mcp-server.js · --port · 9000"
+      label={t(($) => $.forms.mcp.arguments_label)}
+      hint={t(($) => $.forms.mcp.arguments_hint)}
     >
       <div className="space-y-1">
         {value.map((arg, idx) => (
@@ -120,7 +129,7 @@ function ArgsEditor({ value, onChange }: { value: string[]; onChange: (next: str
               variant="ghost"
               size="icon"
               onClick={() => onChange(value.filter((_, i) => i !== idx))}
-              title="Remove"
+              title={t(($) => $.forms.mcp.remove)}
             >
               <Trash2 className="size-3" />
             </Button>
@@ -158,8 +167,8 @@ function EnvEditor({
 
   return (
     <Field
-      label="Environment variables"
-      hint="Non-secret env. Secret API tokens go to the Secrets section below."
+      label={t(($) => $.forms.mcp.env_label)}
+      hint={t(($) => $.forms.mcp.env_hint)}
     >
       <div className="space-y-1">
         {rows.map(([k, v], idx) => (
@@ -190,7 +199,7 @@ function EnvEditor({
               variant="ghost"
               size="icon"
               onClick={() => flush(rows.filter((_, i) => i !== idx))}
-              title="Remove"
+              title={t(($) => $.forms.mcp.remove)}
             >
               <Trash2 className="size-3" />
             </Button>

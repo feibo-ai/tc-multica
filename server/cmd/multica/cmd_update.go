@@ -44,21 +44,9 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 		fmt.Fprintf(os.Stderr, "Latest version:  %s\n\n", latest.TagName)
 	}
 
-	// Detect installation method and update accordingly.
-	if cli.IsBrewInstall() {
-		fmt.Fprintln(os.Stderr, "Updating via Homebrew...")
-		output, err := cli.UpdateViaBrew()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", output)
-			return fmt.Errorf("brew upgrade failed: %w\nYou can try manually: brew upgrade multica-ai/tap/multica", err)
-		}
-		fmt.Fprintln(os.Stderr, "Update complete.")
-		return nil
-	}
-
-	// Not installed via brew — download binary directly from GitHub Releases.
+	// Download the binary directly from GitHub Releases.
 	if latest == nil {
-		return fmt.Errorf("could not determine latest version; check https://github.com/multica-ai/multica/releases/latest")
+		return fmt.Errorf("could not determine latest version; check https://github.com/feibo-ai/tc-multica/releases/latest")
 	}
 	targetVersion := latest.TagName
 	fmt.Fprintf(os.Stderr, "Downloading %s from GitHub Releases...\n", targetVersion)

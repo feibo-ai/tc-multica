@@ -148,6 +148,8 @@ make db-down          # Stop shared PostgreSQL
 make db-reset         # Drop + recreate current env's DB, then re-run migrations (local only; stop backend first)
 ```
 
+> **Upgrading to pg18:** the shared Postgres image is now `pgvector/pgvector:pg18`. An existing local **pg17** data volume will not start under pg18 — run `make db-reset` (or delete the old `pgdata` volume) once after pulling this change.
+
 ### CI Requirements
 
 CI runs on Node 22 and Go 1.26.1 with a `pgvector/pgvector:pg18` PostgreSQL service. See `.github/workflows/ci.yml`.

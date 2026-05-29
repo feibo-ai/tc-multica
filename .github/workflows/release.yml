@@ -330,7 +330,7 @@ jobs:
   # upstream / forks without ZEABUR_ENV_ID skip it. See deploy/zeabur/README.md.
   deploy-zeabur:
     needs: [verify, docker-backend-merge, docker-web-merge]
-    if: ${{ vars.ZEABUR_ENV_ID != '' }}
+    if: ${{ vars.ZEABUR_ENV_ID != '' && needs.verify.outputs.is_stable == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Install Zeabur CLI

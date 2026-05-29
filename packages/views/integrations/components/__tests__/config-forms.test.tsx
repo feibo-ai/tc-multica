@@ -2,7 +2,8 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { useState } from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
+import { renderWithI18n as render } from "../../../test/i18n";
 import { hasFormForKind, KindConfigForm } from "../config-forms";
 
 describe("hasFormForKind type guard", () => {
