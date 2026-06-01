@@ -51,6 +51,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
@@ -691,6 +692,16 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                         <item.icon />
                         <span>{t(($) => $.nav[item.labelKey])}</span>
                       </SidebarMenuButton>
+                      {item.key === "projects" && (
+                        <SidebarMenuAction
+                          aria-label={t(($) => $.sidebar.new_project)}
+                          title={t(($) => $.sidebar.new_project)}
+                          onClick={() => useModalStore.getState().open("create-project")}
+                          className="text-muted-foreground hover:text-sidebar-accent-foreground"
+                        >
+                          <Plus />
+                        </SidebarMenuAction>
+                      )}
                     </SidebarMenuItem>
                   );
                 })}
