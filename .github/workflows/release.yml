@@ -330,7 +330,7 @@ jobs:
   # upstream / forks without ZEABUR_ENV_ID skip it. See deploy/zeabur/README.md.
   deploy-zeabur:
     needs: [verify, docker-backend-merge, docker-web-merge]
-    if: ${{ vars.ZEABUR_ENV_ID != '' && needs.verify.outputs.is_stable == 'true' }}
+    if: ${{ vars.ZEABUR_ENV_ID != '' && vars.ZEABUR_PROJECT_ID != '' && needs.verify.outputs.is_stable == 'true' }}
     runs-on: ubuntu-latest
     steps:
       # Needed so the deploy script (deploy/zeabur/deploy.sh) is on disk.
@@ -350,6 +350,7 @@ jobs:
       - name: Lockstep deploy multica-backend + multica-web to ${{ needs.verify.outputs.tag_name }}
         env:
           ZEABUR_TOKEN: ${{ secrets.ZEABUR_TOKEN }}
+          PROJECT_ID: ${{ vars.ZEABUR_PROJECT_ID }}
           ENV_ID: ${{ vars.ZEABUR_ENV_ID }}
           TAG: ${{ needs.verify.outputs.tag_name }}
         run: bash deploy/zeabur/deploy.sh multica-backend multica-web

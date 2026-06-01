@@ -7,8 +7,15 @@
 #   non-interactively. The resolver calls util.GetServiceByName(), which needs
 #   owner+project context that --env-id does not supply, so it fails with
 #   "either id or ownerName, projectName, and name must be specified".
-#   `zeabur service list --env-id Y` uses a different, env-scoped query that
-#   works from the env id alone, so we list → map name→id → update by --id.
+#   `zeabur service list --project-id P --env-id Y` lists the services, so we
+#   map name→id and update by --id. (`service list --env-id` ALONE returns an
+#   empty list non-interactively — it needs --project-id as well.)
+#
+# Why we redeploy after updating the tag:
+#   `service update tag` only records the desired image tag; it does NOT ship a
+#   deployment. Without an explicit `service redeploy` the container keeps
+#   running its previous image (the maiden cutover left both services on their
+#   old git-source build). So: list → update tag → redeploy.
 #
 # Why we don't trust exit codes:
 #   the zeabur CLI prints "ERROR ..." but still exits 0 on the resolution
@@ -16,14 +23,15 @@
 #   deploy. We capture output and fail on any ERROR marker or an unresolved id.
 #
 # Usage:
-#   ENV_ID=<env> TAG=<vX.Y.Z> [ZEABUR_TOKEN=<token>] deploy.sh <svc> [svc...]
+#   PROJECT_ID=<proj> ENV_ID=<env> TAG=<vX.Y.Z> [ZEABUR_TOKEN=<token>] deploy.sh <svc> [svc...]
 #   - ZEABUR_TOKEN: set in CI to authenticate; omit when already logged in
 #     locally (a prior `zeabur auth login`).
 #   - service names default to "multica-backend multica-web" if none are passed.
 set -euo pipefail
 
+: "${PROJECT_ID:?PROJECT_ID (Zeabur project id) is required}"
 : "${ENV_ID:?ENV_ID (Zeabur environment id) is required}"
-: "${TAG:?TAG (release tag, e.g. v0.4.5) is required}"
+: "${TAG:?TAG (release tag, e.g. v0.4.6) is required}"
 
 services=("$@")
 if [ "${#services[@]}" -eq 0 ]; then
@@ -48,7 +56,7 @@ assert_no_cli_error() {
 }
 
 echo "Listing services in environment ${ENV_ID} ..."
-services_json=$(zeabur service list --env-id "$ENV_ID" --json --interactive=false 2>&1) || {
+services_json=$(zeabur service list --project-id "$PROJECT_ID" --env-id "$ENV_ID" --json --interactive=false 2>&1) || {
   echo "::error::failed to list services for env ${ENV_ID}:"
   echo "$services_json"
   exit 1
@@ -74,6 +82,16 @@ for name in "${services[@]}"; do
   }
   echo "$out"
   assert_no_cli_error "update tag ${name}" "$out"
+
+  # update tag only records the desired tag; redeploy actually ships it.
+  echo "Redeploying ${name} (${id}) ..."
+  rout=$(zeabur service redeploy --env-id "$ENV_ID" --id "$id" -y --interactive=false 2>&1) || {
+    echo "::error::zeabur service redeploy failed for ${name} (${id}):"
+    echo "$rout"
+    exit 1
+  }
+  echo "$rout"
+  assert_no_cli_error "redeploy ${name}" "$rout"
 done
 
 echo "Lockstep deploy of [${services[*]}] to ${TAG} complete."

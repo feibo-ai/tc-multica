@@ -42,6 +42,14 @@ case "$sub" in
         fi
         echo "Service updated."
         exit 0 ;;
+      redeploy)
+        echo "service redeploy $*" >> "$FAKE_UPDATE_LOG"
+        if [ "${FAKE_MODE:-ok}" = "redeployerror" ]; then
+          echo "ERROR redeploy failed (exit 0)"   # Bug C trap: ERROR but exit 0
+          exit 0
+        fi
+        echo "Service redeployed."
+        exit 0 ;;
     esac ;;
 esac
 exit 0
@@ -54,17 +62,18 @@ bad() { echo "  FAIL: $1"; fails=$((fails+1)); }
 
 run() { # $1=mode ; runs deploy.sh, writes exit code to $RC, output to $OUT, update log to $LOG
   LOG="$TMPROOT/update_$1.log"; OUT="$TMPROOT/out_$1.log"; : > "$LOG"
-  FAKE_MODE="$1" FAKE_UPDATE_LOG="$LOG" ENV_ID="env_test" TAG="v9.9.9" \
+  FAKE_MODE="$1" FAKE_UPDATE_LOG="$LOG" PROJECT_ID="proj_test" ENV_ID="env_test" TAG="v9.9.9" \
     PATH="$BIN:$PATH" bash "$DEPLOY" multica-backend multica-web >"$OUT" 2>&1
   RC=$?
 }
 
-echo "Test 1: happy path resolves ids and updates both services by --id"
+echo "Test 1: happy path resolves ids, then updates AND redeploys both by --id"
 run ok
 if [ "$RC" -eq 0 ] \
-   && grep -q -- '--id svc_back' "$LOG" && grep -q -- '--id svc_web' "$LOG" \
-   && grep -q -- '--tag v9.9.9' "$LOG"; then
-  ok "updated multica-backend (svc_back) and multica-web (svc_web) at v9.9.9 by --id"
+   && grep -q -- 'service update.*--id svc_back' "$LOG" && grep -q -- 'service update.*--id svc_web' "$LOG" \
+   && grep -q -- '--tag v9.9.9' "$LOG" \
+   && grep -q -- 'service redeploy.*--id svc_back' "$LOG" && grep -q -- 'service redeploy.*--id svc_web' "$LOG"; then
+  ok "updated + redeployed multica-backend (svc_back) and multica-web (svc_web) at v9.9.9 by --id"
 else
   bad "rc=$RC; update log:\n$(cat "$LOG")\noutput:\n$(cat "$OUT")"
 fi
@@ -91,6 +100,14 @@ if [ "$RC" -ne 0 ]; then
   ok "deploy.sh failed loudly on a list-time error"
 else
   bad "deploy.sh ignored an ERROR from 'service list' (rc=0)"
+fi
+
+echo "Test 5 (Bug C): redeploy prints ERROR but exits 0 -> deploy must FAIL"
+run redeployerror
+if [ "$RC" -ne 0 ]; then
+  ok "deploy.sh failed loudly when redeploy errored (not just update)"
+else
+  bad "deploy.sh ignored an ERROR from 'service redeploy' (rc=0)"
 fi
 
 echo
