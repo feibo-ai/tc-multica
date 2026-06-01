@@ -221,14 +221,14 @@ function pinnedBoundary(tabs: Tab[]): number {
   return i;
 }
 
-/** Default entry point for a workspace — its issues list. */
+/** Default entry point for a workspace — the unified project tab. */
 function defaultPathFor(slug: string): string {
-  return `/${slug}/issues`;
+  return `/${slug}/projects`;
 }
 
 function defaultTabFor(slug: string): Tab {
   const path = defaultPathFor(slug);
-  return makeTab(path, "Issues", resolveRouteIcon(path));
+  return makeTab(path, "Projects", resolveRouteIcon(path));
 }
 
 // ---------------------------------------------------------------------------
@@ -571,7 +571,7 @@ export const useTabStore = create<TabStore>()(
     }),
     {
       name: "multica_tabs",
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => createPersistStorage(defaultStorage)),
       migrate: (persistedState, version) => {
         // v1 → v2: flat `tabs` array → per-workspace grouping.
@@ -587,7 +587,15 @@ export const useTabStore = create<TabStore>()(
         if (version < 3 && state && typeof state === "object") {
           state = migrateV2ToV3(state as V2Persisted);
         }
-        return state as V3Persisted;
+        // v3 → v4: the Issues and Projects tabs merged into one unified tab
+        // at `/{slug}/projects`. Rewrite persisted `/{slug}/issues` LIST tabs
+        // to the merged path (and refresh their stale "Issues"/ListTodo
+        // title+icon) so no tab is dropped or stale-titled. Issue-detail tabs
+        // (`/{slug}/issues/:id`) and `/{slug}/projects` tabs are left as-is.
+        if (version < 4 && state && typeof state === "object") {
+          state = migrateV3ToV4(state as V3Persisted);
+        }
+        return state as V4Persisted;
       },
       partialize: (state) => ({
         activeWorkspaceSlug: state.activeWorkspaceSlug,
@@ -609,7 +617,7 @@ export const useTabStore = create<TabStore>()(
         ),
       }),
       merge: (persistedState, currentState) => {
-        const persisted = persistedState as Partial<V3Persisted> | undefined;
+        const persisted = persistedState as Partial<V4Persisted> | undefined;
         if (!persisted?.byWorkspace) return currentState;
 
         const byWorkspace: Record<string, WorkspaceTabGroup> = {};
@@ -722,6 +730,51 @@ export function migrateV2ToV3(v2: V2Persisted): V3Persisted {
   }
   return {
     activeWorkspaceSlug: v2.activeWorkspaceSlug ?? null,
+    byWorkspace,
+  };
+}
+
+// v4 carries the SAME persisted shape as v3 — the bump only rewrites tab
+// path VALUES (and their title/icon), not the structure.
+type V4PersistedTab = V3PersistedTab;
+type V4PersistedGroup = V3PersistedGroup;
+type V4Persisted = V3Persisted;
+
+/**
+ * Rewrite a single persisted tab for the Issues→Projects tab merge.
+ *
+ * Only the bare issues LIST route (`/{slug}/issues`, exactly two segments)
+ * merged into the unified project tab. Rewriting also refreshes the tab's
+ * title/icon, which `merge` copies verbatim from the persisted record — so
+ * without this the rehydrated tab would render as a stale "Issues"/ListTodo
+ * chip pointing at a route that no longer renders a list.
+ *
+ * Untouched: issue-detail tabs (`/{slug}/issues/:id` — three segments, still
+ * a live route) and `/{slug}/projects` tabs (route name unchanged).
+ */
+function migrateTabV3ToV4(tab: V4PersistedTab): V4PersistedTab {
+  const segments = tab.path.split("/").filter(Boolean);
+  if (segments.length === 2 && segments[1] === "issues") {
+    return {
+      ...tab,
+      path: `/${segments[0]}/projects`,
+      title: "Projects",
+      icon: "FolderKanban",
+    };
+  }
+  return tab;
+}
+
+export function migrateV3ToV4(v3: V3Persisted): V4Persisted {
+  const byWorkspace: Record<string, V4PersistedGroup> = {};
+  for (const [slug, group] of Object.entries(v3.byWorkspace ?? {})) {
+    byWorkspace[slug] = {
+      activeTabId: group.activeTabId,
+      tabs: group.tabs.map(migrateTabV3ToV4),
+    };
+  }
+  return {
+    activeWorkspaceSlug: v3.activeWorkspaceSlug ?? null,
     byWorkspace,
   };
 }

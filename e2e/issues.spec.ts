@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { loginAsDefault, createTestApi } from "./helpers";
+import { loginAsDefault, createTestApi, openAllIssues } from "./helpers";
 import type { TestApiClient } from "./fixtures";
 
 test.describe("Issues", () => {
@@ -8,6 +8,8 @@ test.describe("Issues", () => {
   test.beforeEach(async ({ page }) => {
     api = await createTestApi();
     await loginAsDefault(page);
+    // The issue board lives behind the unified tab's "All Issues" toggle.
+    await openAllIssues(page);
   });
 
   test.afterEach(async () => {
@@ -19,6 +21,7 @@ test.describe("Issues", () => {
   test("issues page loads with board view", async ({ page }) => {
     await api.createIssue("E2E Board View " + Date.now());
     await page.reload();
+    await openAllIssues(page);
 
     // Board columns should be visible
     await expect(page.locator("text=Backlog")).toBeVisible();
@@ -30,6 +33,7 @@ test.describe("Issues", () => {
     const title = "E2E List Switch " + Date.now();
     await api.createIssue(title);
     await page.reload();
+    await openAllIssues(page);
     await expect(page.locator("text=Backlog")).toBeVisible();
 
     // Switch to list view
@@ -64,6 +68,7 @@ test.describe("Issues", () => {
 
     // Reload to see the new issue
     await page.reload();
+    await openAllIssues(page);
 
     // Navigate to the issue detail. Use a suffix match so the selector works
     // whether the href is legacy `/issues/{id}` or URL-refactored

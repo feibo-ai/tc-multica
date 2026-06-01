@@ -13,11 +13,12 @@ test.describe("Authentication", () => {
     );
   });
 
-  test("login and redirect to /issues", async ({ page }) => {
+  test("login and redirect to the unified project tab", async ({ page }) => {
     await loginAsDefault(page);
 
-    await expect(page).toHaveURL(/\/issues/);
-    await expect(page.locator("text=All Issues")).toBeVisible();
+    await expect(page).toHaveURL(/\/projects/);
+    // Landed in the dashboard: the merged Projects nav entry is present.
+    await expect(page.locator("nav a", { hasText: "Projects" })).toBeVisible();
   });
 
   test("unauthenticated user is redirected to /login", async ({ page }) => {
@@ -29,7 +30,7 @@ test.describe("Authentication", () => {
     // Visit a workspace-scoped route; DashboardGuard should redirect to /login.
     // The slug here need not exist — the guard runs before workspace resolution
     // for unauthenticated users.
-    await page.goto("/e2e-workspace/issues");
+    await page.goto("/e2e-workspace/projects");
     await page.waitForURL("**/login", { timeout: 10000 });
   });
 

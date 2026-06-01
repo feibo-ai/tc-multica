@@ -7,8 +7,15 @@
     "create_first": "创建第一个项目",
     "view_compact": "紧凑视图",
     "view_comfortable": "舒适视图",
+    "view_projects": "项目",
+    "view_all_issues": "全部 Issues",
     "search_placeholder": "搜索项目...",
     "no_search_results": "未找到匹配的项目"
+  },
+  "health": {
+    "on_track": "正常",
+    "at_risk": "有风险",
+    "off_track": "已偏离"
   },
   "filters": {
     "without_dri": "无 DRI",

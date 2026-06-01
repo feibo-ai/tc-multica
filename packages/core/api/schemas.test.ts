@@ -4,8 +4,12 @@ import {
   DashboardUsageByAgentListSchema,
   DashboardUsageDailyListSchema,
   DuplicateIssueErrorBodySchema,
+  EMPTY_LIST_PROJECTS_RESPONSE,
+  EMPTY_PROJECT,
   EMPTY_USER,
   ListIssuesResponseSchema,
+  ListProjectsResponseSchema,
+  ProjectSchema,
   RuntimeHourlyActivityListSchema,
   RuntimeUsageByAgentListSchema,
   RuntimeUsageByHourListSchema,
@@ -208,6 +212,95 @@ describe("SquadListSchema member preview drift", () => {
     expect(parsed[0]?.member_count).toBe(2);
     expect(parsed[0]?.member_preview).toHaveLength(2);
     expect(parsed[0]?.member_preview?.[0]?.role).toBe("leader");
+  });
+});
+
+// The unified project tab makes `/api/projects` the workspace landing
+// surface, so a drift here would white-screen the whole tab. The contract:
+// additive / missing fields degrade gracefully (the card still renders), but
+// a structurally broken body fails CLOSED to the explicit fallback rather
+// than throwing into the grid. Backs completion criterion #6.
+describe("ProjectSchema (unified project tab)", () => {
+  const baseProject = {
+    id: "33333333-3333-3333-3333-333333333333",
+    workspace_id: "ws-1",
+    title: "Unify project tab",
+    description: null,
+    icon: null,
+    status: "in_progress",
+    priority: "high",
+    lead_type: "member",
+    lead_id: "user-1",
+    dri_user_id: "user-1",
+    created_at: "2026-05-29T00:00:00Z",
+    updated_at: "2026-05-29T00:00:00Z",
+    issue_count: 5,
+    done_count: 2,
+    resource_count: 1,
+  };
+
+  it("accepts a well-formed list envelope", () => {
+    const parsed = ListProjectsResponseSchema.parse({ projects: [baseProject], total: 1 });
+    expect(parsed.projects).toHaveLength(1);
+    expect(parsed.projects[0]?.title).toBe("Unify project tab");
+  });
+
+  it("defaults counts and nullable fields when an older backend omits them", () => {
+    const parsed = ProjectSchema.parse({ id: "p-1", workspace_id: "ws-1" });
+    expect(parsed.title).toBe("");
+    expect(parsed.description).toBe(null);
+    expect(parsed.icon).toBe(null);
+    expect(parsed.issue_count).toBe(0);
+    expect(parsed.done_count).toBe(0);
+    expect(parsed.resource_count).toBe(0);
+    expect(parsed.status).toBe("planned");
+    expect(parsed.priority).toBe("none");
+  });
+
+  it("passes an unknown status enum through unchanged (drift downgrades, never crashes)", () => {
+    const parsed = ProjectSchema.parse({ ...baseProject, status: "archived" });
+    expect(parsed.status).toBe("archived");
+  });
+
+  it("catches a wrong-typed status to the default instead of throwing", () => {
+    const parsed = ProjectSchema.parse({ ...baseProject, status: 42 });
+    expect(parsed.status).toBe("planned");
+  });
+
+  it("keeps unknown server-side fields via .loose() (e.g. a future target_date)", () => {
+    const parsed = ProjectSchema.parse({ ...baseProject, target_date: "2026-12-31" });
+    expect((parsed as Record<string, unknown>).target_date).toBe("2026-12-31");
+  });
+
+  it("fails closed to EMPTY_LIST_PROJECTS_RESPONSE on a null projects array", () => {
+    const parsed = parseWithFallback(
+      { projects: null, total: 0 },
+      ListProjectsResponseSchema,
+      EMPTY_LIST_PROJECTS_RESPONSE,
+      { endpoint: "GET /api/projects" },
+    );
+    expect(parsed).toBe(EMPTY_LIST_PROJECTS_RESPONSE);
+  });
+
+  it("fails closed to EMPTY_PROJECT when the identity field id is missing", () => {
+    const { id: _omit, ...withoutId } = baseProject;
+    const parsed = parseWithFallback(
+      withoutId,
+      ProjectSchema,
+      EMPTY_PROJECT,
+      { endpoint: "GET /api/projects/:id" },
+    );
+    expect(parsed).toBe(EMPTY_PROJECT);
+  });
+
+  it("fails closed when a hard-typed field is wrong (issue_count as string)", () => {
+    const parsed = parseWithFallback(
+      { ...baseProject, issue_count: "lots" },
+      ProjectSchema,
+      EMPTY_PROJECT,
+      { endpoint: "GET /api/projects/:id" },
+    );
+    expect(parsed).toBe(EMPTY_PROJECT);
   });
 });
 

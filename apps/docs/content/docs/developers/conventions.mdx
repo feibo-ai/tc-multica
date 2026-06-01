@@ -22,7 +22,7 @@ Hyphenated word groups at the root collide with user-chosen workspace slugs and 
 
 ### Workspace-scoped routes
 
-Always live under `/{slug}/{section}` — `/{slug}/issues`, `/{slug}/agents`, `/{slug}/settings`. Never duplicate workspace routing logic; use `useNavigation().push()` from shared code, never framework-specific link APIs.
+Always live under `/{slug}/{section}` — `/{slug}/projects`, `/{slug}/agents`, `/{slug}/settings`. Never duplicate workspace routing logic; use `useNavigation().push()` from shared code, never framework-specific link APIs. (`/{slug}/issues` is the retired Issues-list route: still a reserved slug, it now redirects to the unified `/{slug}/projects` tab; individual issues live at `/{slug}/issues/:id`.)
 
 ### Packages and modules
 

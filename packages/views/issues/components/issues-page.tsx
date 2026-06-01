@@ -29,11 +29,17 @@ import { useT } from "../../i18n";
 
 const EMPTY_CHILD_PROGRESS = new Map<string, ChildProgress>();
 
-export function IssuesPage() {
+// The cross-project flat issue surface — IssuesHeader (scope/filters/view
+// modes) + board/list/swimlane + batch toolbar, on the GLOBAL issue view
+// store. Rendered standalone by IssuesPage (with its own breadcrumb header)
+// and as the "All issues" sub-view inside the unified project tab (which
+// supplies its own header). The project-detail drill-down deliberately uses a
+// SEPARATE view store (createIssueViewStore("project_issues_view")), so its
+// filters never leak into this global one.
+export function IssuesSurface() {
   const { t } = useT("issues");
   const wsId = useWorkspaceId();
 
-  const workspace = useCurrentWorkspace();
   const scope = useIssuesScopeStore((s) => s.scope);
   const viewMode = useIssueViewStore((s) => s.viewMode);
   const grouping = useIssueViewStore((s) => s.grouping);
@@ -196,6 +202,54 @@ export function IssuesPage() {
   );
 
   return (
+    <ViewStoreProvider store={useIssueViewStore}>
+      <IssuesHeader scopedIssues={headerIssues} />
+
+      {loading ? contentSkeleton : headerIssues.length === 0 ? (
+        <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-2 text-muted-foreground">
+          <ListTodo className="h-10 w-10 text-muted-foreground/40" />
+          <p className="text-sm">{t(($) => $.page.empty_title)}</p>
+          <p className="text-xs">{t(($) => $.page.empty_hint)}</p>
+        </div>
+      ) : (
+        <div className="flex flex-col flex-1 min-h-0">
+          {viewMode === "board" ? (
+            <BoardView
+              issues={usesAssigneeBoard ? assigneeIssues : issues}
+              assigneeGroups={usesAssigneeBoard ? assigneeGroupsQuery.data?.groups : undefined}
+              assigneeGroupQueryKey={usesAssigneeBoard ? assigneeGroupsOptions.queryKey : undefined}
+              assigneeGroupFilter={usesAssigneeBoard ? assigneeGroupFilter : undefined}
+              visibleStatuses={visibleStatuses}
+              hiddenStatuses={hiddenStatuses}
+              onMoveIssue={handleMoveIssue}
+              childProgressMap={childProgressMap}
+              sort={sort}
+            />
+          ) : viewMode === "swimlane" ? (
+            <SwimLaneView
+              issues={issues}
+              unfilteredIssues={swimlaneIssues}
+              visibleStatuses={visibleStatuses}
+              hiddenStatuses={hiddenStatuses}
+              onMoveIssue={handleMoveIssue}
+              childProgressMap={childProgressMap}
+              sort={sort}
+            />
+          ) : (
+            <ListView issues={issues} visibleStatuses={visibleStatuses} childProgressMap={childProgressMap} sort={sort} onMoveIssue={handleMoveIssue} />
+          )}
+        </div>
+      )}
+      {viewMode === "list" && <BatchActionToolbar />}
+    </ViewStoreProvider>
+  );
+}
+
+export function IssuesPage() {
+  const { t } = useT("issues");
+  const workspace = useCurrentWorkspace();
+
+  return (
     <div className="flex flex-1 min-h-0 flex-col">
       <PageHeader className="gap-1.5">
         <WorkspaceAvatar name={workspace?.name ?? "W"} size="sm" />
@@ -206,46 +260,7 @@ export function IssuesPage() {
         <span className="text-sm font-medium">{t(($) => $.page.breadcrumb_title)}</span>
       </PageHeader>
 
-      <ViewStoreProvider store={useIssueViewStore}>
-        <IssuesHeader scopedIssues={headerIssues} />
-
-        {loading ? contentSkeleton : headerIssues.length === 0 ? (
-          <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-2 text-muted-foreground">
-            <ListTodo className="h-10 w-10 text-muted-foreground/40" />
-            <p className="text-sm">{t(($) => $.page.empty_title)}</p>
-            <p className="text-xs">{t(($) => $.page.empty_hint)}</p>
-          </div>
-        ) : (
-          <div className="flex flex-col flex-1 min-h-0">
-            {viewMode === "board" ? (
-              <BoardView
-                issues={usesAssigneeBoard ? assigneeIssues : issues}
-                assigneeGroups={usesAssigneeBoard ? assigneeGroupsQuery.data?.groups : undefined}
-                assigneeGroupQueryKey={usesAssigneeBoard ? assigneeGroupsOptions.queryKey : undefined}
-                assigneeGroupFilter={usesAssigneeBoard ? assigneeGroupFilter : undefined}
-                visibleStatuses={visibleStatuses}
-                hiddenStatuses={hiddenStatuses}
-                onMoveIssue={handleMoveIssue}
-                childProgressMap={childProgressMap}
-                sort={sort}
-              />
-            ) : viewMode === "swimlane" ? (
-              <SwimLaneView
-                issues={issues}
-                unfilteredIssues={swimlaneIssues}
-                visibleStatuses={visibleStatuses}
-                hiddenStatuses={hiddenStatuses}
-                onMoveIssue={handleMoveIssue}
-                childProgressMap={childProgressMap}
-                sort={sort}
-              />
-            ) : (
-              <ListView issues={issues} visibleStatuses={visibleStatuses} childProgressMap={childProgressMap} sort={sort} onMoveIssue={handleMoveIssue} />
-            )}
-          </div>
-        )}
-        {viewMode === "list" && <BatchActionToolbar />}
-      </ViewStoreProvider>
+      <IssuesSurface />
     </div>
   );
 }

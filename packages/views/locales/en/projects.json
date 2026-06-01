@@ -7,8 +7,15 @@
     "create_first": "Create your first project",
     "view_compact": "Compact",
     "view_comfortable": "Comfortable",
+    "view_projects": "Projects",
+    "view_all_issues": "All Issues",
     "search_placeholder": "Search projects...",
     "no_search_results": "No results match your search"
+  },
+  "health": {
+    "on_track": "On track",
+    "at_risk": "At risk",
+    "off_track": "Off track"
   },
   "filters": {
     "without_dri": "Without DRI",

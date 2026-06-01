@@ -18,6 +18,7 @@ import {
   sanitizeTabPath,
   migrateV1ToV2,
   migrateV2ToV3,
+  migrateV3ToV4,
   useTabStore,
 } from "./tab-store";
 
@@ -115,7 +116,7 @@ describe("useTabStore actions", () => {
     const s = useTabStore.getState();
     expect(s.activeWorkspaceSlug).toBe("acme");
     expect(s.byWorkspace.acme.tabs).toHaveLength(1);
-    expect(s.byWorkspace.acme.tabs[0].path).toBe("/acme/issues");
+    expect(s.byWorkspace.acme.tabs[0].path).toBe("/acme/projects");
   });
 
   it("switchWorkspace without openPath restores the group's last active tab", () => {
@@ -137,16 +138,16 @@ describe("useTabStore actions", () => {
 
   it("switchWorkspace with openPath dedupes into an existing tab with same path", () => {
     const store = useTabStore.getState();
-    store.switchWorkspace("acme"); // creates default /acme/issues
-    store.addTab("/acme/projects", "Projects", "FolderKanban");
+    store.switchWorkspace("acme"); // creates default /acme/projects
+    store.addTab("/acme/agents", "Agents", "Bot");
 
-    store.switchWorkspace("acme", "/acme/issues");
+    store.switchWorkspace("acme", "/acme/projects");
     const s = useTabStore.getState();
     expect(s.byWorkspace.acme.tabs).toHaveLength(2); // no duplicate created
     const activeTab = s.byWorkspace.acme.tabs.find(
       (t) => t.id === s.byWorkspace.acme.activeTabId,
     );
-    expect(activeTab?.path).toBe("/acme/issues");
+    expect(activeTab?.path).toBe("/acme/projects");
   });
 
   it("switchWorkspace with openPath not matching any tab adds a new tab", () => {
@@ -164,10 +165,10 @@ describe("useTabStore actions", () => {
   it("openTab dedupes by path within the active workspace", () => {
     const store = useTabStore.getState();
     store.switchWorkspace("acme");
-    const id1 = store.openTab("/acme/projects", "Projects", "FolderKanban");
-    const id2 = store.openTab("/acme/projects", "Projects", "FolderKanban");
+    const id1 = store.openTab("/acme/agents", "Agents", "Bot");
+    const id2 = store.openTab("/acme/agents", "Agents", "Bot");
     expect(id1).toBe(id2);
-    expect(useTabStore.getState().byWorkspace.acme.tabs).toHaveLength(2); // default + projects
+    expect(useTabStore.getState().byWorkspace.acme.tabs).toHaveLength(2); // default + agents
   });
 
   it("closeTab on the last tab in a workspace reseeds the default tab", () => {
@@ -177,7 +178,7 @@ describe("useTabStore actions", () => {
     store.closeTab(onlyTabId);
     const s = useTabStore.getState();
     expect(s.byWorkspace.acme.tabs).toHaveLength(1);
-    expect(s.byWorkspace.acme.tabs[0].path).toBe("/acme/issues");
+    expect(s.byWorkspace.acme.tabs[0].path).toBe("/acme/projects");
     expect(s.byWorkspace.acme.tabs[0].id).not.toBe(onlyTabId); // fresh tab
   });
 
@@ -391,12 +392,13 @@ describe("moveTab boundary clamp", () => {
     store.addTab("/acme/projects", "Projects", "FolderKanban");
     store.addTab("/acme/agents", "Agents", "Bot");
 
-    // All unpinned; move agents (2) to position 0.
+    // All unpinned; move agents (2) to position 0. tabs[0] is the default
+    // (now /acme/projects) and tabs[1] is the explicitly-added projects tab.
     store.moveTab(2, 0);
     const tabs = useTabStore.getState().byWorkspace.acme.tabs;
     expect(tabs.map((t) => t.path)).toEqual([
       "/acme/agents",
-      "/acme/issues",
+      "/acme/projects",
       "/acme/projects",
     ]);
   });
@@ -428,5 +430,84 @@ describe("migrateV2ToV3", () => {
     const v3 = migrateV2ToV3({ activeWorkspaceSlug: null } as Parameters<typeof migrateV2ToV3>[0]);
     expect(v3.byWorkspace).toEqual({});
     expect(v3.activeWorkspaceSlug).toBeNull();
+  });
+});
+
+// Issues + Projects tabs merged into one /{slug}/projects tab. The migration's
+// only job is path renaming: rewrite the bare /{slug}/issues LIST tab to the
+// merged path and refresh its now-stale "Issues"/ListTodo title+icon. Backs
+// completion criterion #5c — persisted tabs survive the bump with zero
+// dropped or stale-titled tabs.
+describe("migrateV3ToV4", () => {
+  it("rewrites a /{slug}/issues list tab to /{slug}/projects with fresh title+icon", () => {
+    const v3 = {
+      activeWorkspaceSlug: "acme",
+      byWorkspace: {
+        acme: {
+          activeTabId: "t1",
+          tabs: [
+            { id: "t1", path: "/acme/issues", title: "Issues", icon: "ListTodo", pinned: true },
+          ],
+        },
+      },
+    };
+    const v4 = migrateV3ToV4(v3);
+    expect(v4.byWorkspace.acme.tabs).toEqual([
+      { id: "t1", path: "/acme/projects", title: "Projects", icon: "FolderKanban", pinned: true },
+    ]);
+    // Identity preserved — not dropped, id/pinned/active untouched.
+    expect(v4.activeWorkspaceSlug).toBe("acme");
+    expect(v4.byWorkspace.acme.activeTabId).toBe("t1");
+  });
+
+  it("leaves issue-detail tabs and existing projects tabs untouched (no drops)", () => {
+    const v3 = {
+      activeWorkspaceSlug: "acme",
+      byWorkspace: {
+        acme: {
+          activeTabId: "t2",
+          tabs: [
+            { id: "t1", path: "/acme/issues", title: "Issues", icon: "ListTodo", pinned: false },
+            { id: "t2", path: "/acme/issues/MUL-123", title: "MUL-123", icon: "ListTodo", pinned: false },
+            { id: "t3", path: "/acme/projects", title: "Projects", icon: "FolderKanban", pinned: false },
+            { id: "t4", path: "/acme/settings", title: "Settings", icon: "Settings", pinned: false },
+          ],
+        },
+      },
+    };
+    const v4 = migrateV3ToV4(v3);
+    const tabs = v4.byWorkspace.acme.tabs;
+    // Zero dropped: same count, same order.
+    expect(tabs).toHaveLength(4);
+    expect(tabs[0].path).toBe("/acme/projects"); // list tab rewritten
+    expect(tabs[1].path).toBe("/acme/issues/MUL-123"); // detail tab untouched
+    expect(tabs[1].title).toBe("MUL-123");
+    expect(tabs[2].path).toBe("/acme/projects"); // existing projects tab untouched
+    expect(tabs[3].path).toBe("/acme/settings");
+  });
+
+  it("rewrites list tabs across multiple workspaces using each group's slug", () => {
+    const v3 = {
+      activeWorkspaceSlug: "beta",
+      byWorkspace: {
+        acme: {
+          activeTabId: "a1",
+          tabs: [{ id: "a1", path: "/acme/issues", title: "Issues", icon: "ListTodo", pinned: false }],
+        },
+        beta: {
+          activeTabId: "b1",
+          tabs: [{ id: "b1", path: "/beta/issues", title: "Issues", icon: "ListTodo", pinned: false }],
+        },
+      },
+    };
+    const v4 = migrateV3ToV4(v3);
+    expect(v4.byWorkspace.acme.tabs[0].path).toBe("/acme/projects");
+    expect(v4.byWorkspace.beta.tabs[0].path).toBe("/beta/projects");
+  });
+
+  it("handles missing byWorkspace gracefully", () => {
+    const v4 = migrateV3ToV4({ activeWorkspaceSlug: null } as Parameters<typeof migrateV3ToV4>[0]);
+    expect(v4.byWorkspace).toEqual({});
+    expect(v4.activeWorkspaceSlug).toBeNull();
   });
 });

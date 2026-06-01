@@ -17,10 +17,10 @@ test.describe("Navigation", () => {
     await page.waitForURL("**/agents");
     await expect(page).toHaveURL(/\/agents/);
 
-    // Click Issues
-    await page.locator("nav a", { hasText: "Issues" }).click();
-    await page.waitForURL("**/issues");
-    await expect(page).toHaveURL(/\/issues/);
+    // Click Projects (the unified Issues + Projects tab)
+    await page.locator("nav a", { hasText: "Projects" }).click();
+    await page.waitForURL("**/projects");
+    await expect(page).toHaveURL(/\/projects/);
   });
 
   test("settings page loads via workspace menu", async ({ page }) => {

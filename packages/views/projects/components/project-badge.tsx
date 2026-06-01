@@ -5,9 +5,12 @@ import {
   PROJECT_STATUS_CONFIG,
   PROJECT_STATUS_ORDER,
   PROJECT_PRIORITY_CONFIG,
-  PROJECT_PRIORITY_ORDER
+  PROJECT_PRIORITY_ORDER,
+  PROJECT_HEALTH_CONFIG,
+  deriveProjectHealth,
 } from "@multica/core/projects/config";
 import { cn } from "@multica/ui/lib/utils";
+import { useT } from "../../i18n";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,6 +48,23 @@ export function ProjectStatusBadge({ project, handleUpdate, triggerClassName, al
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+// Read-only DERIVED health indicator (Phase D2) — no picker, no mutation. A
+// terminal-state project derives to null and renders nothing (graceful
+// absence, per completion criterion #2).
+export function ProjectHealthBadge({ project, className }: { project: Project; className?: string }) {
+  const { t } = useT("projects");
+  const health = deriveProjectHealth(project);
+  if (!health) return null;
+  const cfg = PROJECT_HEALTH_CONFIG[health];
+  const label = t(($) => $.health[health]);
+  return (
+    <span className={cn("inline-flex items-center gap-1 text-[10px]", className)} title={label}>
+      <span className={cn("size-1.5 rounded-full", cfg.dotColor)} aria-hidden />
+      <span className={cfg.textColor}>{label}</span>
+    </span>
   );
 }
 

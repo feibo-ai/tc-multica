@@ -7,7 +7,9 @@ import type {
   CreateAgentFromTemplateResponse,
   GroupedIssuesResponse,
   ListIssuesResponse,
+  ListProjectsResponse,
   ListWebhookDeliveriesResponse,
+  Project,
   Squad,
   TimelineEntry,
   User,
@@ -654,6 +656,77 @@ export const EMPTY_USER: User = {
   timezone: null,
   created_at: "",
   updated_at: "",
+};
+
+
+// ---------------------------------------------------------------------------
+// Project (`/api/projects` list + `/api/projects/:id` detail). The unified
+// project tab makes this endpoint the workspace landing surface — far more
+// prominent than before — so a drift here would white-screen the whole tab
+// (#2143 / #2147 / #2192 pattern). Lenient by the same rules as IssueSchema:
+//   - `status` / `priority` stay `z.string().catch(...)`. A new server-side
+//     value (e.g. `archived`) is still a string, so it passes through and the
+//     UI's default-bearing switch renders a generic badge; a missing or
+//     wrong-typed value falls back to a sane enum member rather than failing.
+//   - Counts default to 0 — the grid card reads `issue_count` / `done_count`
+//     for ring progress and would render `NaN%` on a missing field.
+//   - Only `id` / `workspace_id` are required: a structurally identity-less
+//     project fails the parse so the list degrades to its `[]` fallback
+//     rather than rendering a card that points at nothing.
+//   - `.loose()` lets `target_date` (Phase D) and any other additive field
+//     pass through unchanged before the TS type adopts it.
+// ---------------------------------------------------------------------------
+
+export const ProjectSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  title: z.string().default(""),
+  description: z.string().nullable().default(null),
+  icon: z.string().nullable().default(null),
+  status: z.string().catch("planned"),
+  priority: z.string().catch("none"),
+  lead_type: z.string().nullable().default(null),
+  lead_id: z.string().nullable().default(null),
+  dri_user_id: z.string().nullable().default(null),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+  issue_count: z.number().default(0),
+  done_count: z.number().default(0),
+  resource_count: z.number().default(0),
+}).loose();
+
+// Bare-array variant — `GET /api/projects?without_dri=true` returns a plain
+// `Project[]` (the triage feed), not the `{ projects, total }` envelope.
+export const ProjectListSchema = z.array(ProjectSchema);
+
+export const ListProjectsResponseSchema = z.object({
+  projects: z.array(ProjectSchema).default([]),
+  total: z.number().default(0),
+}).loose();
+
+export const EMPTY_PROJECT: Project = {
+  id: "",
+  workspace_id: "",
+  title: "",
+  description: null,
+  icon: null,
+  status: "planned",
+  priority: "none",
+  lead_type: null,
+  lead_id: null,
+  dri_user_id: null,
+  created_at: "",
+  updated_at: "",
+  issue_count: 0,
+  done_count: 0,
+  resource_count: 0,
+};
+
+export const EMPTY_PROJECT_LIST: Project[] = [];
+
+export const EMPTY_LIST_PROJECTS_RESPONSE: ListProjectsResponse = {
+  projects: [],
+  total: 0,
 };
 
 
