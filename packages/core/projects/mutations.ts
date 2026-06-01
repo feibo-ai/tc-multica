@@ -2,17 +2,48 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { projectKeys } from "./queries";
 import { useWorkspaceId } from "../hooks";
-import type { Project, CreateProjectRequest, UpdateProjectRequest, ListProjectsResponse } from "../types";
+import type { Project, CreateProjectRequest, UpdateProjectRequest } from "../types";
 
-// The "all" list cache lives under [...projectKeys.list(wsId), "all"]; the
-// "without_dri" triage cache lives under the same prefix with the
-// "without_dri" suffix. Optimistic writes here only patch the default
-// envelope — the triage cache is refetched by the prefix invalidate on
-// settle, because membership in "without DRI" depends on the new
-// `dri_user_id` value and we don't want to predict the new membership
-// here.
+// The default project list cache stores an unwrapped `Project[]` — see
+// `projectListOptions` in ./queries, which unwraps the `{ projects, total }`
+// envelope so every consumer reads a bare array. The helpers below patch that
+// array shape directly; the hooks apply them via `setQueryData<Project[]>`.
+//
+// The "without_dri" triage cache lives under the same prefix with a different
+// suffix. Optimistic writes here only touch the default "all" bucket — the
+// triage cache is refetched by the prefix invalidate on settle, because
+// membership in "without DRI" depends on the new `dri_user_id` value and we
+// don't want to predict the new membership here.
 const projectListAllKey = (wsId: string) =>
   [...projectKeys.list(wsId), "all"] as const;
+
+// Pure cache transforms, kept separate so the optimistic-update logic is unit
+// testable in a Node environment (the hooks themselves require a React render).
+// All three take and return the unwrapped `Project[]` shape and no-op on an
+// absent cache (`undefined`) — never the `{ projects, total }` envelope.
+export function addProjectToList(
+  list: Project[] | undefined,
+  created: Project,
+): Project[] | undefined {
+  return list && !list.some((p) => p.id === created.id)
+    ? [...list, created]
+    : list;
+}
+
+export function updateProjectInList(
+  list: Project[] | undefined,
+  id: string,
+  data: Partial<Project>,
+): Project[] | undefined {
+  return list ? list.map((p) => (p.id === id ? { ...p, ...data } : p)) : list;
+}
+
+export function removeProjectFromList(
+  list: Project[] | undefined,
+  id: string,
+): Project[] | undefined {
+  return list ? list.filter((p) => p.id !== id) : list;
+}
 
 export function useCreateProject() {
   const qc = useQueryClient();
@@ -20,10 +51,8 @@ export function useCreateProject() {
   return useMutation({
     mutationFn: (data: CreateProjectRequest) => api.createProject(data),
     onSuccess: (newProject) => {
-      qc.setQueryData<ListProjectsResponse>(projectListAllKey(wsId), (old) =>
-        old && !old.projects.some((p) => p.id === newProject.id)
-          ? { ...old, projects: [...old.projects, newProject], total: old.total + 1 }
-          : old,
+      qc.setQueryData<Project[]>(projectListAllKey(wsId), (old) =>
+        addProjectToList(old, newProject),
       );
     },
     onSettled: () => {
@@ -40,10 +69,10 @@ export function useUpdateProject() {
       api.updateProject(id, data),
     onMutate: ({ id, ...data }) => {
       qc.cancelQueries({ queryKey: projectKeys.list(wsId) });
-      const prevList = qc.getQueryData<ListProjectsResponse>(projectListAllKey(wsId));
+      const prevList = qc.getQueryData<Project[]>(projectListAllKey(wsId));
       const prevDetail = qc.getQueryData<Project>(projectKeys.detail(wsId, id));
-      qc.setQueryData<ListProjectsResponse>(projectListAllKey(wsId), (old) =>
-        old ? { ...old, projects: old.projects.map((p) => (p.id === id ? { ...p, ...data } : p)) } : old,
+      qc.setQueryData<Project[]>(projectListAllKey(wsId), (old) =>
+        updateProjectInList(old, id, data),
       );
       qc.setQueryData<Project>(projectKeys.detail(wsId, id), (old) =>
         old ? { ...old, ...data } : old,
@@ -68,9 +97,9 @@ export function useDeleteProject() {
     mutationFn: (id: string) => api.deleteProject(id),
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: projectKeys.list(wsId) });
-      const prevList = qc.getQueryData<ListProjectsResponse>(projectListAllKey(wsId));
-      qc.setQueryData<ListProjectsResponse>(projectListAllKey(wsId), (old) =>
-        old ? { ...old, projects: old.projects.filter((p) => p.id !== id), total: old.total - 1 } : old,
+      const prevList = qc.getQueryData<Project[]>(projectListAllKey(wsId));
+      qc.setQueryData<Project[]>(projectListAllKey(wsId), (old) =>
+        removeProjectFromList(old, id),
       );
       qc.removeQueries({ queryKey: projectKeys.detail(wsId, id) });
       return { prevList };
