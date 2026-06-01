@@ -1,0 +1,138 @@
+{
+  "page": {
+    "title": "Integrations",
+    "description": "Manage MCP servers, feishu credentials, and autopilot-bot deployments.",
+    "new_button": "New integration",
+    "load_failed": "Failed to load integrations.",
+    "empty": "No integrations yet. Click <em>New integration</em> to add one.",
+    "filter_all": "All"
+  },
+  "table": {
+    "name": "Name",
+    "kind": "Kind",
+    "status": "Status",
+    "version": "Version"
+  },
+  "create_dialog": {
+    "title": "New integration",
+    "kind_label": "Kind",
+    "name_label": "Name",
+    "name_placeholder": "e.g. tcmcp",
+    "cancel": "Cancel",
+    "create": "Create",
+    "creating": "Creating…",
+    "name_required": "name is required"
+  },
+  "detail": {
+    "load_failed": "Failed to load integration.",
+    "back": "Back to integrations",
+    "status_heading": "Status",
+    "status_label": "Integration status",
+    "config_version_label": "Config version",
+    "active_deployment_label": "Active deployment",
+    "last_heartbeat": "last heartbeat",
+    "no_active_deployment": "No active deployment.",
+    "deployment_history": "Deployment history"
+  },
+  "config": {
+    "heading": "Config",
+    "mode_form": "Form",
+    "mode_json": "Raw JSON",
+    "reset": "Reset",
+    "save": "Save config",
+    "saving": "Saving…",
+    "must_be_object": "Config must be a JSON object",
+    "invalid_json": "Invalid JSON: {{message}}",
+    "switch_form_needs_object": "Cannot switch to form: top-level value must be a JSON object.",
+    "switch_form_invalid_json": "Cannot switch to form — fix JSON first: {{message}}"
+  },
+  "actions": {
+    "restart": "Restart",
+    "redeploy": "Redeploy",
+    "delete_confirm": "Delete this integration and all its secrets?"
+  },
+  "secrets": {
+    "heading": "Secrets",
+    "add_button": "+ Add secret",
+    "empty": "No secrets yet.",
+    "reveal_tooltip": "Reveal (auto-hides after 30s)",
+    "delete_tooltip": "Delete",
+    "delete_confirm": "Delete secret {{key}}?",
+    "add_title": "Add secret",
+    "key_label": "Key (UPPER_SNAKE_CASE)",
+    "key_placeholder": "FEISHU_APP_SECRET",
+    "value_label": "Value",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…",
+    "key_pattern_error": "Key must match ^[A-Z][A-Z0-9_]+$",
+    "value_required": "Value is required"
+  },
+  "timeline": {
+    "load_failed": "Failed to load deployment history.",
+    "empty": "No deployments registered yet.",
+    "active": "active",
+    "started": "started",
+    "last_heartbeat": "last heartbeat",
+    "stopped": "stopped"
+  },
+  "forms": {
+    "mcp": {
+      "transport_stdio": "stdio (local process)",
+      "transport_sse": "sse (HTTP SSE)",
+      "transport_http": "http (streaming)",
+      "add_argument": "+ Add argument",
+      "add_variable": "+ Add variable",
+      "transport_label": "Transport",
+      "command_label": "Command",
+      "command_hint": "The binary to spawn, e.g. node / python / path to executable",
+      "working_dir_label": "Working directory",
+      "working_dir_hint": "Optional. Defaults to the runtime process cwd.",
+      "url_label": "URL",
+      "url_hint": "{{transport}} endpoint",
+      "arguments_label": "Arguments",
+      "arguments_hint": "One CLI argument per row. e.g. ./mcp-server.js · --port · 9000",
+      "env_label": "Environment variables",
+      "env_hint": "Non-secret env. Secret API tokens go to the Secrets section below.",
+      "remove": "Remove"
+    },
+    "feishu": {
+      "domain_feishu": "feishu.cn (mainland China)",
+      "domain_lark": "larksuite.com (international)",
+      "app_id_label": "App ID",
+      "app_id_hint": "From feishu.cn / lark.com developer console. e.g. cli_xxxxxxxxxxxxxxx",
+      "domain_label": "Domain",
+      "base_url_label": "Base URL",
+      "base_url_hint": "Override the API host. Leave empty to use the default for the selected domain.",
+      "team_chat_id_label": "Team chat ID",
+      "team_chat_id_hint": "The OAuth-resolved chat the bot belongs to. e.g. oc_xxxxxxxxxxxxxx",
+      "tenant_key_label": "Tenant key",
+      "tenant_key_hint": "Optional. Set when integrating a multi-tenant store app.",
+      "webhook_url_label": "Webhook URL",
+      "webhook_url_hint": "Incoming webhook URL for posting messages from automation. (Custom Bot URL.)",
+      "secrets_hint": "Secrets: add FEISHU_APP_SECRET, FEISHU_VERIFICATION_TOKEN, and (if your app uses encrypted events) FEISHU_ENCRYPT_KEY in the Secrets section below. Never paste these into config."
+    },
+    "autopilot": {
+      "enabled": "enabled",
+      "disabled": "disabled (paused)",
+      "bot_name_label": "Bot name",
+      "bot_name_hint": "Display name shown in autopilot dashboards.",
+      "enabled_label": "Enabled",
+      "schedule_label": "Schedule",
+      "schedule_hint": "Cron expression in 5-field form (e.g. \"0 9 * * 1\" — every Monday 09:00) or \"manual\" for trigger-only.",
+      "target_workspace_label": "Target workspace slug",
+      "target_workspace_hint": "Workspace the bot acts on. Leave empty to default to the workspace owning this integration.",
+      "description_label": "Description",
+      "description_hint": "One-line summary for the bot list.",
+      "health_check_label": "Health check URL",
+      "health_check_hint": "Optional. multica pings this URL to confirm the bot's runtime is alive.",
+      "secrets_hint": "Secrets: any signing secrets (e.g. WEBHOOK_SIGNING_SECRET) or API tokens the bot needs go in the Secrets section below."
+    }
+  },
+  "version_tag": "v{{version}}",
+  "kinds": {
+    "mcp_server": "mcp-server",
+    "feishu": "feishu",
+    "autopilot_bot": "autopilot-bot"
+  }
+}

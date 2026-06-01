@@ -22,7 +22,7 @@ import {
   Tag,
   Users,
 } from "lucide-react";
-import { PageHeader } from "../../layout/page-header";
+import { BreadcrumbHeader, type BreadcrumbSegment } from "../../layout/breadcrumb-header";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Button } from "@multica/ui/components/ui/button";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@multica/ui/components/ui/resizable";
@@ -49,6 +49,7 @@ import { toast } from "sonner";
 import { StatusIcon, PriorityIcon, StatusPicker, PriorityPicker, StartDatePicker, DueDatePicker, AssigneePicker, LabelPicker } from ".";
 import { IssueActionsDropdown, useIssueActions } from "../actions";
 import { ProjectPicker } from "../../projects/components/project-picker";
+import { LocalDirectoryHint } from "../../projects/components/local-directory-hint";
 import { CommentCard } from "./comment-card";
 import { CommentInput } from "./comment-input";
 import { ResolvedThreadBar } from "./resolved-thread-bar";
@@ -59,7 +60,7 @@ import { PullRequestList } from "./pull-request-list";
 import { useGitHubSettings } from "@multica/core/github";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@multica/core/auth";
-import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
+import { useWorkspacePaths } from "@multica/core/paths";
 import { useActorName } from "@multica/core/workspace/hooks";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { issueListOptions, issueDetailOptions, childIssuesOptions, issueUsageOptions, issueAttachmentsOptions } from "@multica/core/issues/queries";
@@ -660,7 +661,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const id = issueId;
   const router = useNavigation();
   const user = useAuthStore((s) => s.user);
-  const workspace = useCurrentWorkspace();
   const paths = useWorkspacePaths();
 
   // Issue navigation — read from TQ list cache
@@ -1018,7 +1018,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // Project segment in the breadcrumb. The issue's project_id is the source of
   // truth — same URL renders the same breadcrumb regardless of entry path.
   const issueProjectId = issue?.project_id;
-  const { data: breadcrumbProject = null, isError: breadcrumbProjectError } = useQuery({
+  const { data: breadcrumbProject = null } = useQuery({
     ...projectDetailOptions(wsId, issueProjectId ?? ""),
     enabled: !!issueProjectId,
   });
@@ -1288,6 +1288,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       {/* Properties */}
       <div>
         <button
+          type="button"
           className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${propertiesOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
           onClick={() => setPropertiesOpen(!propertiesOpen)}
         >
@@ -1409,6 +1410,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       {parentIssue && (
         <div>
           <button
+            type="button"
             className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${parentIssueOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
             onClick={() => setParentIssueOpen(!parentIssueOpen)}
           >
@@ -1434,6 +1436,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       {githubSettings.prSidebar && (
         <div>
           <button
+            type="button"
             className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${pullRequestsOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
             onClick={() => setPullRequestsOpen(!pullRequestsOpen)}
           >
@@ -1447,6 +1450,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       {/* Details */}
       <div>
         <button
+          type="button"
           className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${detailsOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
           onClick={() => setDetailsOpen(!detailsOpen)}
         >
@@ -1476,6 +1480,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       {usage && usage.task_count > 0 && (
         <div>
           <button
+            type="button"
             className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${tokenUsageOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
             onClick={() => setTokenUsageOpen(!tokenUsageOpen)}
           >
@@ -1598,60 +1603,45 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     );
   };
 
+  // Breadcrumb shows the single most-direct container, never a fabricated chain.
+  // project_id and parent_issue_id are orthogonal (a sub-issue can live in a
+  // different project than its parent), so we never render both: parent wins,
+  // else project, else nothing. The project is still shown in the properties
+  // panel. The workspace name is intentionally absent — "all issues" is a view,
+  // not a container.
+  const breadcrumbSegments: BreadcrumbSegment[] = parentIssue
+    ? [{ href: paths.issueDetail(parentIssue.id), label: parentIssue.identifier }]
+    : breadcrumbProject
+      ? [
+          {
+            href: paths.projectDetail(breadcrumbProject.id),
+            className: "flex items-center gap-1 min-w-0 max-w-72",
+            label: (
+              <>
+                <ProjectIcon project={breadcrumbProject} size="sm" />
+                <span className="min-w-0 truncate">{breadcrumbProject.title}</span>
+              </>
+            ),
+          },
+        ]
+      : [];
+
   const detailContent = (
     <div className="flex h-full min-w-0 flex-1 flex-col">
-        <PageHeader className="gap-2 bg-background text-sm">
-          <div className="flex flex-1 items-center gap-1.5 min-w-0">
-            {workspace && (
-              <>
-                <AppLink
-                  href={paths.projects()}
-                  className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                >
-                  {workspace.name}
-                </AppLink>
-                <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-              </>
-            )}
-            {issueProjectId && (
-              <>
-                {breadcrumbProject ? (
-                  <AppLink
-                    href={paths.projectDetail(breadcrumbProject.id)}
-                    className="flex items-center gap-1 min-w-0 max-w-72 text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <ProjectIcon project={breadcrumbProject} size="sm" />
-                    <span className="min-w-0 truncate">{breadcrumbProject.title}</span>
-                  </AppLink>
-                ) : breadcrumbProjectError ? (
-                  <span className="italic text-muted-foreground/70 shrink-0">
-                    {t(($) => $.detail.breadcrumb_project_unknown)}
-                  </span>
-                ) : (
-                  <Skeleton className="h-3.5 w-20 shrink-0" />
-                )}
-                <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-              </>
-            )}
-            {parentIssue && (
-              <>
-                <AppLink
-                  href={paths.issueDetail(parentIssue.id)}
-                  className="text-muted-foreground hover:text-foreground transition-colors truncate shrink-0"
-                >
-                  {parentIssue.identifier}
-                </AppLink>
-                <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-              </>
-            )}
-            <span className="text-muted-foreground tabular-nums shrink-0">
-              {issue.identifier}
-            </span>
-            <span className="truncate font-medium text-foreground">
-              {issue.title}
-            </span>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
+        <BreadcrumbHeader
+          segments={breadcrumbSegments}
+          leaf={
+            <AppLink
+              href={paths.issueDetail(issue.id)}
+              className="flex min-w-0 transition-opacity hover:opacity-80"
+            >
+              <span className="truncate font-medium text-foreground">
+                {issue.identifier} {issue.title}
+              </span>
+            </AppLink>
+          }
+          actions={
+            <>
             {onDone && issue.status !== "done" && issue.status !== "cancelled" && (
               <Tooltip>
                 <TooltipTrigger
@@ -1728,8 +1718,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               />
               <TooltipContent side="bottom">{t(($) => $.detail.sidebar_tooltip)}</TooltipContent>
             </Tooltip>
-          </div>
-        </PageHeader>
+            </>
+          }
+        />
 
         <div
           ref={setScrollContainerEl}
@@ -1905,6 +1896,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={handleToggleSubscribe}
                   className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
@@ -1943,6 +1935,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 </Popover>
               </div>
             </div>
+
+            <LocalDirectoryHint projectId={issue?.project_id} />
 
             {/* Agent live output — sticky banner in the activity section,
                 keyed by issue id so switching issues remounts the card and

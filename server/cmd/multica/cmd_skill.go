@@ -4,7 +4,10 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -65,6 +68,13 @@ var skillTouchReviewedCmd = &cobra.Command{
 	RunE:  runSkillTouchReviewed,
 }
 
+var skillSearchCmd = &cobra.Command{
+	Use:   "search <query>",
+	Short: "Search for installable skills",
+	Args:  exactArgs(1),
+	RunE:  runSkillSearch,
+}
+
 // Skill file subcommands.
 
 var skillFilesCmd = &cobra.Command{
@@ -101,6 +111,7 @@ func init() {
 	skillCmd.AddCommand(skillDeleteCmd)
 	skillCmd.AddCommand(skillImportCmd)
 	skillCmd.AddCommand(skillTouchReviewedCmd)
+	skillCmd.AddCommand(skillSearchCmd)
 	skillCmd.AddCommand(skillFilesCmd)
 
 	skillFilesCmd.AddCommand(skillFilesListCmd)
@@ -139,6 +150,8 @@ func init() {
 
 	// skill touch-reviewed
 	skillTouchReviewedCmd.Flags().String("output", "text", "Output format: text or json")
+	// skill search
+	skillSearchCmd.Flags().String("output", "json", "Output format: table or json")
 
 	// skill files list
 	skillFilesListCmd.Flags().String("output", "table", "Output format: table or json")
@@ -373,6 +386,9 @@ func runSkillImport(cmd *cobra.Command, _ []string) error {
 
 	var result map[string]any
 	if err := client.PostJSON(ctx, "/api/skills/import", body, &result); err != nil {
+		if handleSkillImportConflict(cmd, err) {
+			return nil
+		}
 		return fmt.Errorf("import skill: %w", err)
 	}
 
@@ -404,6 +420,71 @@ func runSkillTouchReviewed(cmd *cobra.Command, args []string) error {
 		return cli.PrintJSON(os.Stdout, result)
 	}
 	fmt.Printf("Skill %s marked reviewed at %s\n", strVal(result, "id"), strVal(result, "last_reviewed_at"))
+	return nil
+}
+
+func handleSkillImportConflict(cmd *cobra.Command, err error) bool {
+	var httpErr *cli.HTTPError
+	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusConflict || strings.TrimSpace(httpErr.Body) == "" {
+		return false
+	}
+
+	var body map[string]any
+	if json.Unmarshal([]byte(httpErr.Body), &body) != nil {
+		return false
+	}
+	if _, ok := body["existing_skill"]; !ok {
+		return false
+	}
+
+	output, _ := cmd.Flags().GetString("output")
+	if output == "json" {
+		_ = cli.PrintJSON(os.Stdout, body)
+		return true
+	}
+
+	existing, _ := body["existing_skill"].(map[string]any)
+	fmt.Printf("Skill already exists: %s (%s)\n", strVal(existing, "name"), strVal(existing, "id"))
+	return true
+}
+
+func runSkillSearch(cmd *cobra.Command, args []string) error {
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+
+	query := strings.TrimSpace(args[0])
+	if query == "" {
+		return fmt.Errorf("query is required")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	var results []map[string]any
+	path := "/api/skills/search?q=" + url.QueryEscape(query)
+	if err := client.GetJSON(ctx, path, &results); err != nil {
+		return fmt.Errorf("search skills: %w", err)
+	}
+
+	output, _ := cmd.Flags().GetString("output")
+	if output == "json" {
+		return cli.PrintJSON(os.Stdout, results)
+	}
+
+	headers := []string{"NAME", "URL", "SOURCE", "INSTALLS", "DESCRIPTION"}
+	rows := make([][]string, 0, len(results))
+	for _, result := range results {
+		rows = append(rows, []string{
+			strVal(result, "name"),
+			strVal(result, "url"),
+			strVal(result, "source"),
+			strVal(result, "install_count"),
+			strVal(result, "description"),
+		})
+	}
+	cli.PrintTable(os.Stdout, headers, rows)
 	return nil
 }
 
