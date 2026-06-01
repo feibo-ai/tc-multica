@@ -106,8 +106,15 @@ The image build/push jobs already exist in `release.yml` (`docker-backend-*`,
 - Auth: `zeabur auth login --token "$ZEABUR_TOKEN" --interactive=false`
   (non-interactive). `secrets.ZEABUR_TOKEN` = Zeabur API token, `vars.ZEABUR_ENV_ID`
   = environment id. CLI pinned to a GHCR release binary (v0.18.0 linux_amd64).
-- `zeabur service update tag` is confirmed to update a prebuilt service's image
-  tag (`--name/--id`, `--tag`, `--env-id`, `-y`).
+- `zeabur service update tag` updates a prebuilt service's image tag, but **it
+  must be identified by `--id`**. The `--name` commands sketched above were never
+  validated and do **not** work: name resolution needs owner+project context
+  that `--env-id` doesn't supply, so the CLI errors (`either id or ownerName,
+  projectName, and name must be specified`) *and still exits 0*. The shipped
+  implementation lives in `deploy/zeabur/deploy.sh` — it lists the env
+  (`service list --env-id --json`) to map name→id, updates by `--id`, and fails
+  on any `ERROR` output since the exit code can't be trusted. (Caught on the
+  maiden v0.4.5 deploy: green job, no-op deploy. See `deploy/zeabur/README.md`.)
 - The GoReleaser/Homebrew `release` job stays guarded to `multica-ai`; it is
   unrelated to prod and unchanged.
 

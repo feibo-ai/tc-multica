@@ -333,21 +333,26 @@ jobs:
     if: ${{ vars.ZEABUR_ENV_ID != '' && needs.verify.outputs.is_stable == 'true' }}
     runs-on: ubuntu-latest
     steps:
+      # Needed so the deploy script (deploy/zeabur/deploy.sh) is on disk.
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Install Zeabur CLI
         run: |
           curl -fsSL -o zeabur \
             https://github.com/zeabur/cli/releases/download/v0.18.0/zeabur_0.18.0_linux_amd64
           chmod +x zeabur
           sudo mv zeabur /usr/local/bin/zeabur
-      - name: Bump multica-backend + multica-web to ${{ needs.verify.outputs.tag_name }}
+
+      # Resolve each service by --id (name lookup fails non-interactively) and
+      # fail loudly on any CLI error — the zeabur CLI exits 0 even when it
+      # prints ERROR, which silently no-op'd the v0.4.5 deploy. See deploy.sh.
+      - name: Lockstep deploy multica-backend + multica-web to ${{ needs.verify.outputs.tag_name }}
         env:
           ZEABUR_TOKEN: ${{ secrets.ZEABUR_TOKEN }}
           ENV_ID: ${{ vars.ZEABUR_ENV_ID }}
           TAG: ${{ needs.verify.outputs.tag_name }}
-        run: |
-          zeabur auth login --token "$ZEABUR_TOKEN" --interactive=false
-          zeabur service update tag --env-id "$ENV_ID" --name multica-backend --tag "$TAG" -y --interactive=false
-          zeabur service update tag --env-id "$ENV_ID" --name multica-web     --tag "$TAG" -y --interactive=false
+        run: bash deploy/zeabur/deploy.sh multica-backend multica-web
 
   # Build the Desktop installers for Linux and Windows and upload them to
   # the GitHub Release that the `release` job above just published. macOS
