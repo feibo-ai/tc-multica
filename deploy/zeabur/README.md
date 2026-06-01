@@ -60,25 +60,42 @@ their values. `.env.example` in this folder lists the names with placeholders.
 
 ## Lockstep deploy (CI)
 
-The `deploy-zeabur` job in `release.yml` runs after both image-merge jobs:
+The `deploy-zeabur` job in `release.yml` runs after both image-merge jobs and
+calls `deploy/zeabur/deploy.sh`:
 
 ```
-zeabur auth login --token "$ZEABUR_TOKEN" --interactive=false
-zeabur service update tag --env-id "$ENV_ID" --name multica-backend --tag "$TAG" -y
-zeabur service update tag --env-id "$ENV_ID" --name multica-web     --tag "$TAG" -y
+ENV_ID=<env> TAG=<vX.Y.Z> ZEABUR_TOKEN=<token> deploy/zeabur/deploy.sh multica-backend multica-web
 ```
+
+**Why the script resolves services by `--id`, not `--name`:**
+`zeabur service update tag --name X --env-id Y` does **not** work
+non-interactively — the CLI's name resolver needs owner+project context that
+`--env-id` doesn't supply, so it errors (`either id or ownerName, projectName,
+and name must be specified`) **and still exits 0**. The script instead lists the
+env (`service list --env-id --json`, an env-scoped query that *does* work from
+the env id alone), maps name→id, and updates by `--id`. It treats any `ERROR` in
+CLI output as failure because the exit code can't be trusted. (The maiden v0.4.5
+deploy hit exactly this: green job, no-op deploy.)
 
 Required GitHub config on the deploy repo (`feibo-ai/tc-multica`):
 
 - Secret `ZEABUR_TOKEN` — a Zeabur API token (Settings → Secrets and variables → Actions → Secrets).
 - Variable `ZEABUR_ENV_ID` = `6a1800dd5245baf7fc3dd7cc` (Actions → Variables). The job is skipped if this is unset.
 
-So a tag push (`git tag v0.x.y && git push origin v0.x.y`) builds both images
-and deploys them together — no manual dashboard step.
+A **stable** tag push (`git tag v0.x.y && git push origin v0.x.y`) builds both
+images and deploys them together — no manual dashboard step. The job is gated to
+stable tags (`is_stable == 'true'`, i.e. no `-suffix`), so pre-release tags
+build images without touching prod.
 
-> Note: the deploy job runs on **every** valid release tag (matching the image
-> build jobs). To restrict prod to clean semver only, add
-> `&& needs.verify.outputs.is_stable == 'true'` to the job's `if`.
+To deploy by hand (e.g. recover from a failed CI deploy without re-tagging),
+run the same script locally after `zeabur auth login`:
+
+```
+ENV_ID=6a1800dd5245baf7fc3dd7cc TAG=v0.x.y deploy/zeabur/deploy.sh
+```
+
+…or just bump both services' image tag in the Zeabur dashboard — the GHCR
+images already exist once the tag's build jobs are green.
 
 ## One-time cutover (from the old from-source setup)
 
