@@ -29,11 +29,11 @@ type ProjectResponse struct {
 	// DriUserID is the human accountable for the project (SOP v0.4 P-5).
 	// Distinct from LeadID/LeadType (which is polymorphic and may be an agent)
 	// — DRI is always a human user. Null when no DRI has been set.
-	DriUserID *string `json:"dri_user_id"`
-	CreatedAt string  `json:"created_at"`
-	UpdatedAt string  `json:"updated_at"`
-	IssueCount int64  `json:"issue_count"`
-	DoneCount  int64  `json:"done_count"`
+	DriUserID  *string `json:"dri_user_id"`
+	CreatedAt  string  `json:"created_at"`
+	UpdatedAt  string  `json:"updated_at"`
+	IssueCount int64   `json:"issue_count"`
+	DoneCount  int64   `json:"done_count"`
 	// ResourceCount is a breadcrumb pointing at the sub-collection at
 	// /api/projects/{id}/resources. Resources themselves stay out of this
 	// payload to keep parent metadata and child collections separate; clients
@@ -208,6 +208,30 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// Project status / priority enums mirror the CHECK constraints in migration
+// 034 (project_status_check / project_priority_check). Validate at the handler
+// so an invalid value returns a clean 400 instead of surfacing as a 500 plus a
+// Postgres check-constraint error in the logs — e.g. an agent created a project
+// with status="active" (valid for chat sessions, not for projects), which the
+// DB rejected and the API turned into a 500.
+var validProjectStatuses = map[string]struct{}{
+	"planned": {}, "in_progress": {}, "paused": {}, "completed": {}, "cancelled": {},
+}
+
+var validProjectPriorities = map[string]struct{}{
+	"urgent": {}, "high": {}, "medium": {}, "low": {}, "none": {},
+}
+
+func isValidProjectStatus(s string) bool {
+	_, ok := validProjectStatuses[s]
+	return ok
+}
+
+func isValidProjectPriority(s string) bool {
+	_, ok := validProjectPriorities[s]
+	return ok
+}
+
 func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	var req CreateProjectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -230,6 +254,14 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	priority := req.Priority
 	if priority == "" {
 		priority = "none"
+	}
+	if !isValidProjectStatus(status) {
+		writeError(w, http.StatusBadRequest, "invalid status: must be one of planned, in_progress, paused, completed, cancelled")
+		return
+	}
+	if !isValidProjectPriority(priority) {
+		writeError(w, http.StatusBadRequest, "invalid priority: must be one of urgent, high, medium, low, none")
+		return
 	}
 	var leadType pgtype.Text
 	var leadID pgtype.UUID
@@ -423,9 +455,17 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		params.Title = pgtype.Text{String: *req.Title, Valid: true}
 	}
 	if req.Status != nil {
+		if !isValidProjectStatus(*req.Status) {
+			writeError(w, http.StatusBadRequest, "invalid status: must be one of planned, in_progress, paused, completed, cancelled")
+			return
+		}
 		params.Status = pgtype.Text{String: *req.Status, Valid: true}
 	}
 	if req.Priority != nil {
+		if !isValidProjectPriority(*req.Priority) {
+			writeError(w, http.StatusBadRequest, "invalid priority: must be one of urgent, high, medium, low, none")
+			return
+		}
 		params.Priority = pgtype.Text{String: *req.Priority, Valid: true}
 	}
 	if _, ok := rawFields["description"]; ok {
