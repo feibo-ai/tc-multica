@@ -339,6 +339,9 @@ func main() {
 	go runAutopilotScheduler(autopilotCtx, queries, autopilotSvc)
 	go runAutopilotFailureMonitor(autopilotCtx, queries, bus, envFailureMonitorConfig())
 	go runDBStatsLogger(sweepCtx, pool)
+	// Keep task_usage_hourly fresh for the token-usage dashboard. Substitutes
+	// for the pg_cron job our Postgres image can't run. See usage_rollup.go.
+	go runTaskUsageRollup(sweepCtx, pool)
 
 	if metricsServer != nil {
 		go func() {
