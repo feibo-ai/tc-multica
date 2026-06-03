@@ -15,6 +15,13 @@ export const dashboardKeys = {
     projectId: string | null,
     tz: string,
   ) => [...dashboardKeys.all(wsId), "by-agent", days, projectId, tz] as const,
+  // No projectId in the key: the per-person view is workspace-wide (ambient
+  // usage has no project).
+  byPerson: (
+    wsId: string,
+    days: number,
+    tz: string,
+  ) => [...dashboardKeys.all(wsId), "by-person", days, tz] as const,
   agentRuntime: (
     wsId: string,
     days: number,
@@ -69,6 +76,19 @@ export function dashboardUsageByAgentOptions(
         project_id: projectId ?? undefined,
         tz,
       }),
+    enabled: !!wsId,
+    staleTime: STALE_TIME,
+  });
+}
+
+export function dashboardUsageByPersonOptions(
+  wsId: string,
+  days: number,
+  tz: string,
+) {
+  return queryOptions({
+    queryKey: dashboardKeys.byPerson(wsId, days, tz),
+    queryFn: () => api.getDashboardUsageByPerson({ days, tz }),
     enabled: !!wsId,
     staleTime: STALE_TIME,
   });

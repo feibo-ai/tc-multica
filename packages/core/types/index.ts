@@ -33,6 +33,7 @@ export type {
   RuntimeUsageByHour,
   DashboardUsageDaily,
   DashboardUsageByAgent,
+  DashboardUsageByPerson,
   DashboardAgentRunTime,
   DashboardRunTimeDaily,
   RuntimeUpdate,

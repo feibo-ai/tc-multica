@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BarChart3, FolderKanban } from "lucide-react";
+import { BarChart3, FolderKanban, HelpCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import {
@@ -12,11 +12,12 @@ import {
   SelectValue,
 } from "@multica/ui/components/ui/select";
 import { useWorkspaceId } from "@multica/core/hooks";
-import { agentListOptions } from "@multica/core/workspace/queries";
+import { agentListOptions, memberListOptions } from "@multica/core/workspace/queries";
 import { projectListOptions } from "@multica/core/projects/queries";
 import {
   dashboardUsageDailyOptions,
   dashboardUsageByAgentOptions,
+  dashboardUsageByPersonOptions,
   dashboardAgentRunTimeOptions,
   dashboardRunTimeDailyOptions,
 } from "@multica/core/dashboard";
@@ -96,6 +97,7 @@ const ALL_PROJECTS = "__all__";
 // reference-equality dep check and trips the exhaustive-deps lint rule.
 const EMPTY_DAILY: import("@multica/core/types").DashboardUsageDaily[] = [];
 const EMPTY_BY_AGENT: import("@multica/core/types").DashboardUsageByAgent[] = [];
+const EMPTY_BY_PERSON: import("@multica/core/types").DashboardUsageByPerson[] = [];
 const EMPTY_RUNTIME: import("@multica/core/types").DashboardAgentRunTime[] = [];
 const EMPTY_RUNTIME_DAILY: import("@multica/core/types").DashboardRunTimeDaily[] = [];
 
@@ -203,9 +205,16 @@ export function DashboardPage() {
   const runTimeDailyQuery = useQuery(
     dashboardRunTimeDailyOptions(wsId, chartFetchDays, projectId, viewTZ),
   );
+  // Per-person usage is workspace-wide (no project filter — ambient usage has
+  // no project). members resolve owner_id → a name + avatar.
+  const byPersonQuery = useQuery(
+    dashboardUsageByPersonOptions(wsId, days, viewTZ),
+  );
+  const { data: members = [] } = useQuery(memberListOptions(wsId));
 
   const dailyUsage = dailyQuery.data ?? EMPTY_DAILY;
   const byAgentUsage = byAgentQuery.data ?? EMPTY_BY_AGENT;
+  const byPersonUsage = byPersonQuery.data ?? EMPTY_BY_PERSON;
   const runTimeRows = runTimeQuery.data ?? EMPTY_RUNTIME;
   const runTimeDailyRows = runTimeDailyQuery.data ?? EMPTY_RUNTIME_DAILY;
 
@@ -232,6 +241,7 @@ export function DashboardPage() {
   const isLoading =
     dailyQuery.isLoading ||
     byAgentQuery.isLoading ||
+    byPersonQuery.isLoading ||
     runTimeQuery.isLoading ||
     runTimeDailyQuery.isLoading;
 
@@ -415,6 +425,11 @@ export function DashboardPage() {
                 agents={agents}
                 lessThanMinuteLabel={t(($) => $.duration.less_than_minute)}
               />
+
+              {/* Per-person totals — folds each person's mounted-task usage
+                  together with their ad-hoc local CLI sessions, the read-out
+                  that surfaces previously-invisible local Claude Code spend. */}
+              <PersonUsageList rows={byPersonUsage} members={members} />
             </>
           )}
         </div>
@@ -730,6 +745,111 @@ function Leaderboard({
                     className={`text-right text-xs tabular-nums ${sortBy === "tasks" ? "font-medium text-foreground" : "text-muted-foreground"}`}
                   >
                     {row.taskCount}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// PersonUsageList is the shock-absorber surfacing of per-person usage: a
+// compact ranked list that, unlike the agent leaderboard, includes each
+// person's ad-hoc local Claude Code sessions (the `ambient` portion) on top of
+// their agents' task usage. Owner-less rows (owner_id "") render as the
+// "Unattributed" bucket. Field-missing degrades gracefully — a stale backend
+// that omits ambient_tokens just shows "—" in the local column.
+function PersonUsageList({
+  rows,
+  members,
+}: {
+  rows: import("@multica/core/types").DashboardUsageByPerson[];
+  members: { user_id: string; name: string }[];
+}) {
+  const { t } = useT("usage");
+
+  const sortedRows = useMemo(() => {
+    return rows
+      .map((r) => ({
+        row: r,
+        total:
+          r.input_tokens + r.output_tokens + r.cache_read_tokens + r.cache_write_tokens,
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [rows]);
+
+  const maxTotal = useMemo(
+    () => sortedRows.reduce((m, r) => Math.max(m, r.total), 0),
+    [sortedRows],
+  );
+
+  return (
+    <div className="rounded-lg border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 pt-4 pb-3">
+        <h4 className="text-sm font-semibold">{t(($) => $.by_person.title)}</h4>
+        <span className="text-xs text-muted-foreground">
+          {t(($) => $.by_person.caption, { count: rows.length })}
+        </span>
+      </div>
+      {sortedRows.length === 0 ? (
+        <p className="px-4 py-8 text-center text-xs text-muted-foreground">
+          {t(($) => $.by_person.no_data)}
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_6rem_6rem] items-center gap-3 border-b px-4 py-2 text-xs font-medium text-muted-foreground">
+            <span>{t(($) => $.by_person.header_person)}</span>
+            <span />
+            <span className="text-right text-foreground">
+              {t(($) => $.by_person.header_tokens)}
+            </span>
+            <span className="text-right">{t(($) => $.by_person.header_local)}</span>
+          </div>
+          <div className="divide-y">
+            {sortedRows.map(({ row, total }) => {
+              const isUnattributed = row.owner_id === "";
+              const member = members.find((m) => m.user_id === row.owner_id);
+              const name = isUnattributed
+                ? t(($) => $.by_person.unattributed)
+                : (member?.name ?? row.owner_id);
+              const pct = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
+              return (
+                <div
+                  key={row.owner_id || "__unattributed__"}
+                  className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_6rem_6rem] items-center gap-3 px-4 py-2"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    {isUnattributed ? (
+                      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-muted">
+                        <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                      </span>
+                    ) : (
+                      <ActorAvatar
+                        actorType="member"
+                        actorId={row.owner_id}
+                        size={22}
+                        enableHoverCard
+                      />
+                    )}
+                    <span className="truncate text-sm font-medium">{name}</span>
+                  </div>
+                  <div className="relative h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-chart-2 transition-[width] duration-300 ease-out"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="text-right text-xs font-medium tabular-nums text-foreground">
+                    {formatTokens(total)}
+                  </div>
+                  <div
+                    className="text-right text-xs tabular-nums text-muted-foreground"
+                    title={t(($) => $.by_person.includes_local)}
+                  >
+                    {row.ambient_tokens > 0 ? formatTokens(row.ambient_tokens) : "—"}
                   </div>
                 </div>
               );
