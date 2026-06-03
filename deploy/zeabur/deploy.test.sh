@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 #
 # Tests for deploy.sh. Stubs the `zeabur` CLI (no token / network needed) so we
-# can lock in the two bugs the maiden v0.4.5 deploy exposed:
-#   - Bug A: services must be resolved by --id (not --name) — verify update is
-#            called with the id from `service list`.
-#   - Bug B: the CLI exits 0 even when it prints ERROR — verify deploy.sh still
-#            fails loudly instead of reporting a no-op as success.
+# lock in the failure modes the maiden v0.4.5–v0.4.7 deploys exposed:
+#   - resolve by --id: `update tag --name` fails non-interactively, so deploy.sh
+#     maps name→id from `service list` and updates by --id. Verify that.
+#   - exit-code-0-on-error: the CLI prints "ERROR ..." but still exits 0, so a
+#     naive pipeline reports a no-op deploy as success. Verify deploy.sh fails
+#     loudly instead — at both the `list` and `update tag` steps.
+#   - unresolved name: if the requested service name is not in the env's list
+#     (the real maiden-deploy bug — wrong project/env/name → empty list), the
+#     deploy must fail rather than silently skip.
+#
+# Note: prebuilt-IMAGE services ship on `update tag` alone; deploy.sh does NOT
+# call `service redeploy` (it errors with CANNOT_REDEPLOY_INPLACE on image
+# services), so there is nothing to stub for redeploy.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -31,24 +39,16 @@ case "$sub" in
         case "${FAKE_MODE:-ok}" in
           missing)   echo '[{"ID":"svc_other","Name":"something-else","Template":"PREBUILT"}]' ;;
           listerror) echo "ERROR	list environment services failed" ;; # note: still exits 0
-          *)         echo '[{"ID":"svc_back","Name":"multica-backend","Template":"PREBUILT"},{"ID":"svc_web","Name":"multica-web","Template":"PREBUILT"}]' ;;
+          *)         echo '[{"ID":"svc_back","Name":"backend","Template":"PREBUILT"},{"ID":"svc_front","Name":"frontend","Template":"PREBUILT"}]' ;;
         esac
         exit 0 ;;
       update)
         echo "service update $*" >> "$FAKE_UPDATE_LOG"
         if [ "${FAKE_MODE:-ok}" = "updateerror" ]; then
-          echo "ERROR	deploy backend failed"   # the Bug B trap: ERROR but exit 0
+          echo "ERROR	deploy backend failed"   # exit-0-on-error trap: ERROR but exit 0
           exit 0
         fi
         echo "Service updated."
-        exit 0 ;;
-      redeploy)
-        echo "service redeploy $*" >> "$FAKE_UPDATE_LOG"
-        if [ "${FAKE_MODE:-ok}" = "redeployerror" ]; then
-          echo "ERROR redeploy failed (exit 0)"   # Bug C trap: ERROR but exit 0
-          exit 0
-        fi
-        echo "Service redeployed."
         exit 0 ;;
     esac ;;
 esac
@@ -63,22 +63,21 @@ bad() { echo "  FAIL: $1"; fails=$((fails+1)); }
 run() { # $1=mode ; runs deploy.sh, writes exit code to $RC, output to $OUT, update log to $LOG
   LOG="$TMPROOT/update_$1.log"; OUT="$TMPROOT/out_$1.log"; : > "$LOG"
   FAKE_MODE="$1" FAKE_UPDATE_LOG="$LOG" PROJECT_ID="proj_test" ENV_ID="env_test" TAG="v9.9.9" \
-    PATH="$BIN:$PATH" bash "$DEPLOY" multica-backend multica-web >"$OUT" 2>&1
+    PATH="$BIN:$PATH" bash "$DEPLOY" backend frontend >"$OUT" 2>&1
   RC=$?
 }
 
-echo "Test 1: happy path resolves ids, then updates AND redeploys both by --id"
+echo "Test 1: happy path resolves ids and updates both by --id"
 run ok
 if [ "$RC" -eq 0 ] \
-   && grep -q -- 'service update.*--id svc_back' "$LOG" && grep -q -- 'service update.*--id svc_web' "$LOG" \
-   && grep -q -- '--tag v9.9.9' "$LOG" \
-   && grep -q -- 'service redeploy.*--id svc_back' "$LOG" && grep -q -- 'service redeploy.*--id svc_web' "$LOG"; then
-  ok "updated + redeployed multica-backend (svc_back) and multica-web (svc_web) at v9.9.9 by --id"
+   && grep -q -- 'service update.*--id svc_back' "$LOG" && grep -q -- 'service update.*--id svc_front' "$LOG" \
+   && grep -q -- '--tag v9.9.9' "$LOG"; then
+  ok "updated backend (svc_back) and frontend (svc_front) at v9.9.9 by --id"
 else
   bad "rc=$RC; update log:\n$(cat "$LOG")\noutput:\n$(cat "$OUT")"
 fi
 
-echo "Test 2 (Bug B): update prints ERROR but exits 0 -> deploy must FAIL"
+echo "Test 2 (exit-0-on-error): update prints ERROR but exits 0 -> deploy must FAIL"
 run updateerror
 if [ "$RC" -ne 0 ]; then
   ok "deploy.sh failed loudly (rc=$RC) instead of reporting a no-op as success"
@@ -86,7 +85,7 @@ else
   bad "deploy.sh returned success despite an ERROR from the CLI (rc=0)"
 fi
 
-echo "Test 3 (Bug A): service not in env list -> deploy must FAIL (cannot resolve id)"
+echo "Test 3 (unresolved name): service not in env list -> deploy must FAIL (cannot resolve id)"
 run missing
 if [ "$RC" -ne 0 ] && grep -qi "could not resolve" "$OUT"; then
   ok "deploy.sh failed when a service id could not be resolved"
@@ -100,14 +99,6 @@ if [ "$RC" -ne 0 ]; then
   ok "deploy.sh failed loudly on a list-time error"
 else
   bad "deploy.sh ignored an ERROR from 'service list' (rc=0)"
-fi
-
-echo "Test 5 (Bug C): redeploy prints ERROR but exits 0 -> deploy must FAIL"
-run redeployerror
-if [ "$RC" -ne 0 ]; then
-  ok "deploy.sh failed loudly when redeploy errored (not just update)"
-else
-  bad "deploy.sh ignored an ERROR from 'service redeploy' (rc=0)"
 fi
 
 echo
