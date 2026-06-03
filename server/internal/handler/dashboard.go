@@ -183,6 +183,75 @@ func (h *Handler) listDashboardUsageByAgent(
 	return resp, nil
 }
 
+// DashboardUsageByPersonResponse is one person's combined token total over the
+// window: their agents' mounted-task usage PLUS their own ad-hoc local CLI
+// sessions. AmbientTokens is the local-CLI portion of the total, so the UI can
+// label a row "includes local CLI" without a second request. OwnerID is "" for
+// the "unattributed" bucket (usage on a runtime with no resolved owner).
+type DashboardUsageByPersonResponse struct {
+	OwnerID          string `json:"owner_id"`
+	InputTokens      int64  `json:"input_tokens"`
+	OutputTokens     int64  `json:"output_tokens"`
+	CacheReadTokens  int64  `json:"cache_read_tokens"`
+	CacheWriteTokens int64  `json:"cache_write_tokens"`
+	AmbientTokens    int64  `json:"ambient_tokens"`
+}
+
+// GetDashboardUsageByPerson returns per-person token totals for the workspace,
+// combining mounted-task usage (task_usage_hourly) with ad-hoc local CLI usage
+// (ambient_usage_hourly) under the runtime owner. This is the read-out that
+// makes a teammate's previously-invisible local Claude Code usage show up.
+//
+// No project filter (ambient usage has no project). Like "by agent", there is
+// no date bucket — tz only sets the `?days=` cutoff boundary.
+func (h *Handler) GetDashboardUsageByPerson(w http.ResponseWriter, r *http.Request) {
+	workspaceID := h.resolveWorkspaceID(r)
+	if _, ok := h.workspaceMember(w, r, workspaceID); !ok {
+		return
+	}
+	tz := h.resolveViewingTZ(r)
+	since := parseSinceParamInTZ(r, 30, tz)
+
+	resp, err := h.listDashboardUsageByPerson(r.Context(), parseUUID(workspaceID), since)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list usage by person")
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) listDashboardUsageByPerson(
+	ctx context.Context,
+	workspaceID pgtype.UUID,
+	since pgtype.Timestamptz,
+) ([]DashboardUsageByPersonResponse, error) {
+	rows, err := h.Queries.ListDashboardUsageByPerson(ctx, db.ListDashboardUsageByPersonParams{
+		WorkspaceID: workspaceID,
+		Since:       since,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp := make([]DashboardUsageByPersonResponse, len(rows))
+	for i, row := range rows {
+		// NULL owner → "" so the client renders the "Unattributed" bucket
+		// instead of silently folding it into a person (plan A4b).
+		ownerID := ""
+		if row.OwnerID.Valid {
+			ownerID = uuidToString(row.OwnerID)
+		}
+		resp[i] = DashboardUsageByPersonResponse{
+			OwnerID:          ownerID,
+			InputTokens:      row.InputTokens,
+			OutputTokens:     row.OutputTokens,
+			CacheReadTokens:  row.CacheReadTokens,
+			CacheWriteTokens: row.CacheWriteTokens,
+			AmbientTokens:    row.AmbientTokens,
+		}
+	}
+	return resp, nil
+}
+
 // DashboardAgentRunTimeResponse is one agent's total terminal-task run time
 // over the window. Includes failed tasks so the dashboard can surface how
 // much execution time was spent on runs that didn't succeed.

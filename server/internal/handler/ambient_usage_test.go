@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // TestAmbientUsagePayloadHasNoContentField is the type-level enforcement of the
@@ -213,4 +215,98 @@ func hourlyInput(t *testing.T, ctx context.Context, runtimeID string) int64 {
 		t.Fatalf("read hourly input: %v", err)
 	}
 	return total
+}
+
+// TestDashboardUsageByPerson_CombinesTaskAndAmbient is the C1 read-out: one
+// person's number must fold their agents' mounted-task usage together with
+// their own ad-hoc local CLI usage, and an owner-less runtime must surface as
+// the "unattributed" bucket rather than vanishing or attaching to someone.
+func TestDashboardUsageByPerson_CombinesTaskAndAmbient(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	// Isolated workspace so the per-person aggregate sees only our rows.
+	var wsID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO workspace (name, slug, description, issue_prefix)
+		VALUES ('ByPerson Test', 'byperson-test-ws', '', 'BPT') RETURNING id`).Scan(&wsID); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(ctx, `DELETE FROM task_usage_hourly WHERE workspace_id = $1`, wsID)
+		testPool.Exec(ctx, `DELETE FROM ambient_usage_hourly WHERE workspace_id = $1`, wsID)
+		testPool.Exec(ctx, `DELETE FROM agent_runtime WHERE workspace_id = $1`, wsID)
+		testPool.Exec(ctx, `DELETE FROM workspace WHERE id = $1`, wsID)
+	})
+
+	mkRuntime := func(name string, owned bool) string {
+		var id string
+		var err error
+		if owned {
+			err = testPool.QueryRow(ctx, `
+				INSERT INTO agent_runtime (workspace_id, name, runtime_mode, provider, status, device_info, metadata, owner_id, last_seen_at)
+				VALUES ($1, $2, 'local', 'claude', 'online', '', '{}'::jsonb, $3, now()) RETURNING id`, wsID, name, testUserID).Scan(&id)
+		} else {
+			err = testPool.QueryRow(ctx, `
+				INSERT INTO agent_runtime (workspace_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at)
+				VALUES ($1, $2, 'local', 'claude', 'online', '', '{}'::jsonb, now()) RETURNING id`, wsID, name).Scan(&id)
+		}
+		if err != nil {
+			t.Fatalf("create runtime %s: %v", name, err)
+		}
+		return id
+	}
+	owned := mkRuntime("owned runtime", true)
+	orphan := mkRuntime("orphan runtime", false)
+
+	bucket := `date_trunc('hour', now() - interval '1 day')`
+	// Mounted-task usage for the owned runtime.
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO task_usage_hourly (bucket_hour, workspace_id, runtime_id, agent_id, provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, task_count, event_count)
+		VALUES (`+bucket+`, $1, $2, gen_random_uuid(), 'claude', 'opus', 1000, 100, 0, 0, 1, 1)`, wsID, owned); err != nil {
+		t.Fatalf("insert task_usage_hourly: %v", err)
+	}
+	// Ad-hoc local CLI usage for the owned runtime.
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO ambient_usage_hourly (bucket_hour, workspace_id, runtime_id, provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, event_count)
+		VALUES (`+bucket+`, $1, $2, 'claude', 'opus', 200, 20, 0, 0, 1)`, wsID, owned); err != nil {
+		t.Fatalf("insert ambient_usage_hourly (owned): %v", err)
+	}
+	// Ambient usage on the owner-less runtime → unattributed bucket.
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO ambient_usage_hourly (bucket_hour, workspace_id, runtime_id, provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, event_count)
+		VALUES (`+bucket+`, $1, $2, 'claude', 'opus', 50, 5, 0, 0, 1)`, wsID, orphan); err != nil {
+		t.Fatalf("insert ambient_usage_hourly (orphan): %v", err)
+	}
+
+	since := pgtype.Timestamptz{Time: time.Now().Add(-7 * 24 * time.Hour), Valid: true}
+	rows, err := testHandler.listDashboardUsageByPerson(ctx, parseUUID(wsID), since)
+	if err != nil {
+		t.Fatalf("listDashboardUsageByPerson: %v", err)
+	}
+	byOwner := map[string]DashboardUsageByPersonResponse{}
+	for _, r := range rows {
+		byOwner[r.OwnerID] = r
+	}
+
+	person, ok := byOwner[testUserID]
+	if !ok {
+		t.Fatalf("no row for owner %s; got %+v", testUserID, rows)
+	}
+	if person.InputTokens != 1200 || person.OutputTokens != 120 {
+		t.Errorf("combined totals wrong: in=%d out=%d (want 1200/120 = task 1000/100 + ambient 200/20)", person.InputTokens, person.OutputTokens)
+	}
+	if person.AmbientTokens != 220 {
+		t.Errorf("ambient portion wrong: %d (want 220 = 200+20, the local-CLI part of the total)", person.AmbientTokens)
+	}
+
+	un, ok := byOwner[""]
+	if !ok {
+		t.Fatalf("no unattributed bucket for the owner-less runtime; got %+v", rows)
+	}
+	if un.InputTokens != 50 || un.AmbientTokens != 55 {
+		t.Errorf("unattributed bucket wrong: in=%d ambient=%d (want 50/55)", un.InputTokens, un.AmbientTokens)
+	}
 }

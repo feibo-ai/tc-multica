@@ -87,6 +87,55 @@ WHERE workspace_id = $1
 GROUP BY agent_id, model
 ORDER BY agent_id, model;
 
+-- name: ListDashboardUsageByPerson :many
+-- Per-person token totals for the workspace. This is the read half of the
+-- runtime-token-usage feature: it UNIONs the two usage sources so one person's
+-- number includes BOTH their agents' mounted-task usage (task_usage_hourly) AND
+-- their own ad-hoc local CLI sessions never dispatched as tasks
+-- (ambient_usage_hourly). Both attribute to the runtime owner.
+--
+-- ambient_tokens carries ONLY the local-CLI portion of the total so the UI can
+-- surface "includes local CLI" without a second query.
+--
+-- owner_id is nullable: a runtime with no resolved owner aggregates into the
+-- NULL "unattributed" bucket here rather than being silently folded into a
+-- person (plan A4b — the caller renders NULL as "Unattributed"). #6 is honoured
+-- because executed-task usage still has exactly one rollup (task_usage_hourly);
+-- ambient is a different source class unioned here at read time on owner_id.
+--
+-- No date bucket, so no @tz — @since is the viewer-local cutoff computed in Go.
+-- No project filter: ambient usage has no project, so scoping the union to a
+-- project would silently drop every person's local-CLI total.
+WITH combined AS (
+    SELECT
+        rt.owner_id AS owner_id,
+        tuh.input_tokens, tuh.output_tokens, tuh.cache_read_tokens, tuh.cache_write_tokens,
+        0::bigint AS ambient_tokens
+      FROM task_usage_hourly tuh
+      JOIN agent_runtime rt ON rt.id = tuh.runtime_id
+     WHERE tuh.workspace_id = $1
+       AND tuh.bucket_hour >= @since::timestamptz
+    UNION ALL
+    SELECT
+        rt.owner_id AS owner_id,
+        auh.input_tokens, auh.output_tokens, auh.cache_read_tokens, auh.cache_write_tokens,
+        (auh.input_tokens + auh.output_tokens + auh.cache_read_tokens + auh.cache_write_tokens)::bigint AS ambient_tokens
+      FROM ambient_usage_hourly auh
+      JOIN agent_runtime rt ON rt.id = auh.runtime_id
+     WHERE auh.workspace_id = $1
+       AND auh.bucket_hour >= @since::timestamptz
+)
+SELECT
+    owner_id,
+    SUM(input_tokens)::bigint       AS input_tokens,
+    SUM(output_tokens)::bigint      AS output_tokens,
+    SUM(cache_read_tokens)::bigint  AS cache_read_tokens,
+    SUM(cache_write_tokens)::bigint AS cache_write_tokens,
+    SUM(ambient_tokens)::bigint     AS ambient_tokens
+  FROM combined
+ GROUP BY owner_id
+ ORDER BY (SUM(input_tokens) + SUM(output_tokens) + SUM(cache_read_tokens) + SUM(cache_write_tokens)) DESC;
+
 -- name: ListDashboardRunTimeDaily :many
 -- Daily per-date run time + task counts for the workspace, optionally
 -- scoped to a single project. Powers the workspace dashboard's "Time"
