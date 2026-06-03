@@ -276,6 +276,13 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// ownerID stays zero — COALESCE keeps the existing owner on upsert.
+		// Today this branch is only reachable via mdt_ daemon tokens, which are
+		// not yet minted anywhere (GenerateDaemonToken is uncalled), so in
+		// practice registration always takes the PAT branch below and owner_id
+		// is the real user. If a daemon EVER registers for the first time via
+		// mdt_, owner_id stays NULL here; ambient usage then resolves to the
+		// "unattributed" bucket at read time rather than silently to a person
+		// (plan A4b). See GenerateDaemonToken's attribution hook (A4c).
 	} else {
 		member, ok := h.requireWorkspaceMember(w, r, req.WorkspaceID, "workspace not found")
 		if !ok {
@@ -1780,6 +1787,131 @@ func (h *Handler) ReportTaskUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// AmbientUsagePayload is one deduped local-session usage event uploaded by the
+// daemon's transcript collector. It covers Claude Code sessions that ran on the
+// daemon's machine but were NEVER dispatched as a task (so they have a runtime
+// but no task / agent / issue) — the usage that GetRuntimeUsage's blind spot
+// (internal/handler/runtime.go) drops today.
+//
+// Privacy doctrine (decisions/2026-06-03-local-log-privacy.md): this struct
+// carries NUMBERS AND IDS ONLY. There is deliberately no content / prompt /
+// text field; the collector never reads message bodies. TestAmbientUsagePayloadHasNoContentField
+// fails closed if a future field would break that.
+type AmbientUsagePayload struct {
+	SessionID        string `json:"session_id"` // Claude session id; dedup + task-exclusion anchor
+	MessageID        string `json:"message_id"` // assistant message.id; per-message dedup (坑#1)
+	RequestID        string `json:"request_id"` // transcript requestId; per-request dedup (坑#1)
+	Provider         string `json:"provider"`   // e.g. "claude"
+	Model            string `json:"model"`
+	EventAt          string `json:"event_at"` // RFC3339; the message timestamp
+	InputTokens      int64  `json:"input_tokens"`
+	OutputTokens     int64  `json:"output_tokens"`
+	CacheReadTokens  int64  `json:"cache_read_tokens"`
+	CacheWriteTokens int64  `json:"cache_write_tokens"`
+	Source           string `json:"source"` // collector adapter id (pluggable Collector framework)
+}
+
+// ReportRuntimeUsage ingests a batch of ambient (task-less) usage events for a
+// runtime: POST /api/daemon/runtimes/{runtimeId}/usage.
+//
+// Auth/attribution: requireDaemonRuntimeAccess resolves the runtime, verifies
+// the daemon owns its workspace, and yields rt.WorkspaceID — so workspace_id is
+// server-derived, never client-supplied (multi-tenancy). person attribution is
+// runtime.owner_id, resolved at read time.
+//
+// Fail-soft (坑#3 / "Enum drift downgrades, not crashes"): a malformed body is
+// a 400, but a malformed *event* is skipped, not fatal — the daemon keeps
+// ticking. Idempotency lives in the SQL (ON CONFLICT DO NOTHING), so re-sending
+// a batch adds 0 rows.
+func (h *Handler) ReportRuntimeUsage(w http.ResponseWriter, r *http.Request) {
+	runtimeID := chi.URLParam(r, "runtimeId")
+
+	rt, ok := h.requireDaemonRuntimeAccess(w, r, runtimeID)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		Usage []AmbientUsagePayload `json:"usage"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	accepted, skipped := 0, 0
+	for _, u := range req.Usage {
+		params, ok := normalizeAmbientUsage(u)
+		if !ok {
+			skipped++
+			continue
+		}
+		params.WorkspaceID = rt.WorkspaceID
+		params.RuntimeID = rt.ID
+		if err := h.Queries.UpsertAmbientUsage(r.Context(), params); err != nil {
+			slog.Warn("upsert ambient usage failed", "runtime_id", runtimeID, "model", params.Model, "error", err)
+			skipped++
+			continue
+		}
+		accepted++
+	}
+
+	writeJSON(w, http.StatusOK, map[string]int{"accepted": accepted, "skipped": skipped})
+}
+
+// normalizeAmbientUsage validates and canonicalises one uploaded event into
+// upsert params, or reports ok=false so the caller skips it (fail-soft). It
+// leaves WorkspaceID / RuntimeID zero — the handler fills those from the
+// resolved runtime, never from the client.
+//
+// An event is skipped when it lacks any part of the dedup key (session/message/
+// request id) — without it the row cannot be deduped — or a usable model, or a
+// parseable timestamp (no timestamp → no hour bucket). Synthetic-model rows
+// (Claude's "<synthetic>" warm-up messages) are dropped too (N3). Negative
+// counts are clamped to zero defensively.
+func normalizeAmbientUsage(u AmbientUsagePayload) (db.UpsertAmbientUsageParams, bool) {
+	sessionID := strings.TrimSpace(u.SessionID)
+	messageID := strings.TrimSpace(u.MessageID)
+	requestID := strings.TrimSpace(u.RequestID)
+	if sessionID == "" || messageID == "" || requestID == "" {
+		return db.UpsertAmbientUsageParams{}, false
+	}
+
+	model := strings.TrimSpace(u.Model)
+	if model == "" || model == "<synthetic>" {
+		return db.UpsertAmbientUsageParams{}, false
+	}
+
+	provider := strings.TrimSpace(u.Provider)
+	if provider == "" {
+		provider = "unknown"
+	}
+
+	t, err := time.Parse(time.RFC3339, strings.TrimSpace(u.EventAt))
+	if err != nil {
+		return db.UpsertAmbientUsageParams{}, false
+	}
+
+	source := strings.TrimSpace(u.Source)
+	if source == "" {
+		source = provider
+	}
+
+	return db.UpsertAmbientUsageParams{
+		SessionID:        sessionID,
+		MessageID:        messageID,
+		RequestID:        requestID,
+		Provider:         provider,
+		Model:            model,
+		EventAt:          pgtype.Timestamptz{Time: t.UTC(), Valid: true},
+		InputTokens:      max(0, u.InputTokens),
+		OutputTokens:     max(0, u.OutputTokens),
+		CacheReadTokens:  max(0, u.CacheReadTokens),
+		CacheWriteTokens: max(0, u.CacheWriteTokens),
+		Source:           source,
+	}, true
 }
 
 // GetTaskStatus returns the current status of a task.

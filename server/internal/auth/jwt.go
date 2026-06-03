@@ -38,6 +38,16 @@ func GeneratePATToken() (string, error) {
 }
 
 // GenerateDaemonToken creates a new daemon auth token: "mdt_" + 40 random hex chars.
+//
+// ATTRIBUTION HOOK (plan runtime-token-usage A4c): this function is currently
+// uncalled — daemons authenticate with an owner PAT (mul_), so DaemonRegister
+// resolves owner_id to the real user. An mdt_ token identity carries only
+// {WorkspaceID, DaemonID}, NOT a UserID, so the moment minting is wired the
+// minting user MUST be recorded (persist it alongside the token, or require a
+// one-time PAT registration to stamp owner_id). Otherwise a daemon that
+// registers for the first time via mdt_ leaves agent_runtime.owner_id NULL and
+// every ambient (local-CLI) usage row it reports lands in the "unattributed"
+// bucket instead of a person. See ambient_usage's owner_id resolution.
 func GenerateDaemonToken() (string, error) {
 	b := make([]byte, 20) // 20 bytes = 40 hex chars
 	if _, err := rand.Read(b); err != nil {
