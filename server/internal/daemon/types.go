@@ -131,6 +131,25 @@ type TaskUsageEntry struct {
 	CacheWriteTokens int64  `json:"cache_write_tokens"`
 }
 
+// AmbientUsageEntry is one deduped local-session usage event uploaded to the
+// per-runtime ambient endpoint (POST /api/daemon/runtimes/{id}/usage). It
+// mirrors the server's AmbientUsagePayload. Privacy doctrine
+// (decisions/2026-06-03-local-log-privacy.md): numbers and ids ONLY — there is
+// deliberately no field that could carry message content.
+type AmbientUsageEntry struct {
+	SessionID        string `json:"session_id"`
+	MessageID        string `json:"message_id"`
+	RequestID        string `json:"request_id"`
+	Provider         string `json:"provider"`
+	Model            string `json:"model"`
+	EventAt          string `json:"event_at"` // RFC3339
+	InputTokens      int64  `json:"input_tokens"`
+	OutputTokens     int64  `json:"output_tokens"`
+	CacheReadTokens  int64  `json:"cache_read_tokens"`
+	CacheWriteTokens int64  `json:"cache_write_tokens"`
+	Source           string `json:"source"`
+}
+
 // TaskResult is the outcome of executing a task.
 type TaskResult struct {
 	Status        string           `json:"status"`
