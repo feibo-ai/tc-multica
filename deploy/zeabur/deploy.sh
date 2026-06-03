@@ -11,11 +11,15 @@
 #   map name→id and update by --id. (`service list --env-id` ALONE returns an
 #   empty list non-interactively — it needs --project-id as well.)
 #
-# Why we redeploy after updating the tag:
-#   `service update tag` only records the desired image tag; it does NOT ship a
-#   deployment. Without an explicit `service redeploy` the container keeps
-#   running its previous image (the maiden cutover left both services on their
-#   old git-source build). So: list → update tag → redeploy.
+# Why `update tag` alone ships it (no redeploy):
+#   These are prebuilt-IMAGE services. `service update tag` retags AND deploys
+#   the new image — Zeabur ships it on the tag change. We deliberately do NOT
+#   call `service redeploy`: that path only works for git-bound services and
+#   fails on image services with CANNOT_REDEPLOY_INPLACE ("You must bind a
+#   GitHub repository to the service to allow redeploying in-place"). So the
+#   flow is just: list → update tag. (The maiden v0.4.5/v0.4.6 deploys never
+#   shipped because PROJECT_ID/ENV_ID and the service names were wrong, so the
+#   list returned [] and nothing was ever retagged — not a missing redeploy.)
 #
 # Why we don't trust exit codes:
 #   the zeabur CLI prints "ERROR ..." but still exits 0 on the resolution
@@ -26,7 +30,8 @@
 #   PROJECT_ID=<proj> ENV_ID=<env> TAG=<vX.Y.Z> [ZEABUR_TOKEN=<token>] deploy.sh <svc> [svc...]
 #   - ZEABUR_TOKEN: set in CI to authenticate; omit when already logged in
 #     locally (a prior `zeabur auth login`).
-#   - service names default to "multica-backend multica-web" if none are passed.
+#   - service names default to "backend frontend" if none are passed (the
+#     actual Zeabur service names in the team-context project).
 set -euo pipefail
 
 : "${PROJECT_ID:?PROJECT_ID (Zeabur project id) is required}"
@@ -35,7 +40,7 @@ set -euo pipefail
 
 services=("$@")
 if [ "${#services[@]}" -eq 0 ]; then
-  services=(multica-backend multica-web)
+  services=(backend frontend)
 fi
 
 # Authenticate only when a token is provided (CI). Local runs rely on an
@@ -82,16 +87,6 @@ for name in "${services[@]}"; do
   }
   echo "$out"
   assert_no_cli_error "update tag ${name}" "$out"
-
-  # update tag only records the desired tag; redeploy actually ships it.
-  echo "Redeploying ${name} (${id}) ..."
-  rout=$(zeabur service redeploy --env-id "$ENV_ID" --id "$id" -y --interactive=false 2>&1) || {
-    echo "::error::zeabur service redeploy failed for ${name} (${id}):"
-    echo "$rout"
-    exit 1
-  }
-  echo "$rout"
-  assert_no_cli_error "redeploy ${name}" "$rout"
 done
 
 echo "Lockstep deploy of [${services[*]}] to ${TAG} complete."

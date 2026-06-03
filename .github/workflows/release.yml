@@ -347,13 +347,16 @@ jobs:
       # Resolve each service by --id (name lookup fails non-interactively) and
       # fail loudly on any CLI error — the zeabur CLI exits 0 even when it
       # prints ERROR, which silently no-op'd the v0.4.5 deploy. See deploy.sh.
-      - name: Lockstep deploy multica-backend + multica-web to ${{ needs.verify.outputs.tag_name }}
+      # NOTE: "backend"/"frontend" are the Zeabur SERVICE names (not the GHCR
+      # image names multica-backend/multica-web above); deploy.sh bumps the
+      # image tag on those services, which Zeabur then ships.
+      - name: Lockstep deploy backend + frontend to ${{ needs.verify.outputs.tag_name }}
         env:
           ZEABUR_TOKEN: ${{ secrets.ZEABUR_TOKEN }}
           PROJECT_ID: ${{ vars.ZEABUR_PROJECT_ID }}
           ENV_ID: ${{ vars.ZEABUR_ENV_ID }}
           TAG: ${{ needs.verify.outputs.tag_name }}
-        run: bash deploy/zeabur/deploy.sh multica-backend multica-web
+        run: bash deploy/zeabur/deploy.sh backend frontend
 
   # Build the Desktop installers for Linux and Windows and upload them to
   # the GitHub Release that the `release` job above just published. macOS
