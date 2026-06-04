@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>runtime-token-usage</title>
+<style>
+:root{--ink:#1A1A1A;--ink2:#2D2D2D;--paper:#F5F2EB;--paper2:#EDE8DC;--accent:#C73E1D;--gray:#8B8680;--border:#D4CFC4;--green:#4A6B3A;--gold:#B8862E}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Songti SC","Noto Serif SC",Georgia,serif;background:var(--paper);color:var(--ink);line-height:1.8;font-size:15px;padding:48px 40px;max-width:760px;margin:0 auto}
+.eyebrow{font-family:"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+h1{font-weight:900;font-size:40px;line-height:1.15;letter-spacing:-1px;margin-bottom:18px;border-bottom:3px double var(--ink);padding-bottom:20px}
+.meta{display:flex;gap:32px;flex-wrap:wrap;font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--gray);margin-bottom:36px}
+.meta b{color:var(--ink);font-weight:600}
+h2{font-weight:700;font-size:22px;margin:36px 0 14px;padding-left:14px;border-left:4px solid var(--accent)}
+h3{font-weight:700;font-size:16px;margin:20px 0 8px;color:var(--ink2)}
+.field{background:#fff;border:1px solid var(--border);padding:18px 22px;margin-bottom:14px}
+.field-label{font-family:"SF Mono",Menlo,monospace;font-size:10px;letter-spacing:1.5px;color:var(--gray);text-transform:uppercase;margin-bottom:6px}
+ul{list-style:none;margin:8px 0}
+li{padding:6px 0 6px 24px;position:relative}
+li::before{content:"▸";position:absolute;left:4px;color:var(--accent)}
+.crit li::before{content:"☐";color:var(--green)}
+.num li::before{content:counter(n)". ";counter-increment:n;color:var(--accent);font-family:"SF Mono",Menlo,monospace;font-weight:700}
+ol.num{list-style:none;counter-reset:n;margin:8px 0}
+code{font-family:"SF Mono",Menlo,monospace;background:var(--paper2);padding:1px 6px;border-radius:2px;font-size:13px}
+.callout{background:var(--paper2);border-left:4px solid var(--gold);padding:14px 18px;margin:18px 0;font-size:14px}
+.danger{border-left-color:var(--accent)}
+.ok{border-left-color:var(--green)}
+.path{font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--ink2)}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+th,td{border:1px solid var(--border);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--paper2);font-family:"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:.5px}
+footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--border);font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--gray)}
+</style></head>
+<body>
+<div class="eyebrow">RESEARCH · 研究</div>
+<h1>个人 × runtime 全量 token 用量统计</h1>
+<div class="meta"><span>Phase <b>RPI Research</b></span><span>日期 <b>2026-06-03</b></span><span>项目 <b>Multica 迭代</b></span><span>DRI <b>曾振华</b></span></div>
+
+<h2>问题</h2>
+<div class="field"><div class="field-label">Question</div>当前 Multica 的 token usage 统计逻辑是怎样的（数据来源、归集路径、<code>task_usage_hourly</code> / runtime usage 的覆盖范围）？如何新增「以 <b>个人 × runtime</b> 为粒度、覆盖本机<b>所有</b>对话（含未挂载到 Multica 的 agent）」的统计维度？重点验证用户假设：能否通过 Multica CLI / daemon 解析本地对话记录（如 Claude Code transcript JSONL）采集全部 token 用量，打通 采集 → 归属(person × runtime) → 存储 → 展示，并处理与既有统计的去重 + 隐私边界。</div>
+
+<div class="callout ok"><b>能力边界判定（SOP 强制第一问）：</b> 在 AI 能力边界内 ✓。本任务是「读懂现有代码 + 设计数据采集扩展」，纯属强项，不触边界（SOP ❌6 无风险）。</div>
+
+<h2>发现 · 一</h2>
+<div class="field"><div class="field-label">Findings — 当前统计逻辑（现状全图）</div>
+<p>用量统计 <b>100% 与「任务」耦合</b>：只有经 <code>agent_task_queue</code> 派发、由 daemon 执行的任务才会产生用量记录。整条链路只有一条，无旁路。</p>
+<h3>写入路径（唯一）</h3>
+<ul>
+<li>agent CLI（claude/codex…）在 daemon 下运行 → 累积 <code>result.Usage</code>（<span class="path">pkg/agent/claude.go:246-252,391-401</span>；结构 <span class="path">pkg/agent/agent.go:84-99</span>）</li>
+<li>任务终态（成功/失败/取消都报）→ <code>d.client.ReportTaskUsage(task.ID, result.Usage)</code>（<span class="path">internal/daemon/daemon.go:2067-2071</span>）</li>
+<li><code>POST /api/daemon/tasks/{taskId}/usage</code>（<span class="path">router.go:308</span>）→ handler <code>ReportTaskUsage</code>（<span class="path">internal/handler/daemon.go:1752-1783</span>，经 <code>requireDaemonTaskAccess</code> 校验 workspace 归属）</li>
+<li><code>UpsertTaskUsage</code> 写入 <code>task_usage</code>（<span class="path">db/queries/task_usage.sql:1-14</span>）。<b>载荷只有 <code>provider/model/*_tokens</code>，无 runtime_id/agent_id/user_id/session_id</b> —— 其它维度全靠后续 JOIN 任务行还原。</li>
+</ul>
+<h3>表结构</h3>
+<ul>
+<li><b><code>task_usage</code></b>（migration 032）：<code>UNIQUE(task_id, provider, model)</code>；列 = task_id(FK→agent_task_queue)、provider、model、input/output/cache_read/cache_write_tokens。<b>无 runtime/agent/user/workspace 列。</b></li>
+<li><b><code>task_usage_hourly</code></b>（migration 101）：rollup 表，所有用量报表的唯一真相源。键 = <code>hour(UTC) × workspace × runtime × agent × project × provider × model</code>。<b>无 user / person 维度。</b>配套 <code>task_usage_hourly_dirty</code>（失效队列）+ <code>rollup_state</code>（水位）。</li>
+</ul>
+<h3>归集（rollup）</h3>
+<ul>
+<li>SQL 函数 <code>rollup_task_usage_hourly()</code>（migration 102）：advisory-lock、读水位、<b>整桶重算（非增量）</b>，JOIN <code>task_usage → agent_task_queue → agent → issue</code> 求和，过滤 <code>atq.runtime_id IS NOT NULL</code>。</li>
+<li>近期 commit「run task_usage_hourly rollup in-process」= <span class="path">cmd/server/usage_rollup.go:36-92</span>，作为 goroutine 每 60s tick 一次。原因：Zeabur 的 pgvector Postgres <b>没有 pg_cron</b>，必须进程内跑（这条约束对新方案同样成立）。</li>
+</ul>
+<h3>读取路径</h3>
+<ul>
+<li>Dashboard（<span class="path">/api/dashboard/*</span>）：按 date×model、agent×model；Runtime 详情（<span class="path">/api/runtimes/{id}/usage,by-agent,by-hour</span>）；Issue 用量。</li>
+<li>现有可聚合维度：workspace / runtime / agent / project / model / provider / hour / date。<b>无 per-person 聚合。</b></li>
+</ul>
+<div class="callout danger"><b>覆盖边界（最关键）：</b>用量只对走 <code>agent_task_queue</code> 的工作记账。<code>task_usage.task_id</code> 是 <code>NOT NULL FK</code>，无任务行 ⇒ 无用量行。代码已自陈这个盲区 —— <span class="path">handler/runtime.go:84-87</span>：用量「scoped to Daemon-executed tasks only (i.e. <b>excludes users' local CLI usage of the same tool</b>)」。<b>未挂载到 Multica 的本地对话，今天产生 0 行，对所有报表不可见。</b></div>
+</div>
+
+<h2>发现 · 二</h2>
+<div class="field"><div class="field-label">Findings — runtime 身份 &amp; person 归属</div>
+<div class="callout ok"><b>重大利好：「person × runtime」的数据模型已经存在。</b> <code>agent_runtime.owner_id UUID REFERENCES "user"(id)</code>（migration <span class="path">032_runtime_owner.up.sql:1</span>，回填为 workspace owner）。即 <b>个人 = runtime.owner_id</b>，<b>runtime = agent_runtime.id</b>。<u>已挂载</u>的 runtime 不需要新建身份表。</div>
+<ul>
+<li><b>runtime</b> = <code>agent_runtime</code> 行（migration 004）。<code>runtime_mode ∈ {local, cloud}</code>（本地 daemon vs 云端）；<code>provider</code>（claude/codex/multica_agent/…）；<code>daemon_id</code>（哪台机器）；<code>owner_id</code>、<code>status</code>、<code>last_seen_at</code>、<code>visibility</code>。唯一键 <code>(workspace_id, daemon_id, provider)</code>。</li>
+<li>person = <code>user</code>，经 <code>member(workspace_id, user_id, role)</code> 入 workspace。</li>
+<li>daemon 今天只：注册/心跳 runtime、轮询队列、执行<b>被派发</b>的任务。<b>不</b>观察用户自己起的 ad-hoc 本地会话。<code>daemon disk-usage</code> 只扫 <code>~/multica_workspaces</code>，从不碰 <code>~/.claude</code>。</li>
+</ul>
+</div>
+
+<h2>发现 · 三</h2>
+<div class="field"><div class="field-label">Findings — 本机对话日志原始数据（已实地抽样）</div>
+<p>用户假设「解析本地对话记录」<b>可行</b>：原始数据齐全，且<b>仓库已有两套解析器</b>（只是被绑死在任务执行链路里）。</p>
+<table>
+<tr><th>来源</th><th>路径</th><th>用量字段</th><th>身份/上下文字段</th></tr>
+<tr><td><b>Claude Code</b></td><td class="path">~/.claude/projects/&lt;cwd-slug&gt;/&lt;sessionId&gt;.jsonl<br>（本机 23 个 project 目录）</td><td><code>type:assistant</code> 行 → <code>.message.usage.{input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens}</code></td><td><code>.sessionId</code>、<code>.message.model</code>、<code>.cwd</code>、<code>.gitBranch</code>、<code>.timestamp</code>(UTC)、<code>.requestId</code>、<code>.message.id</code>、<code>.isSidechain</code>(子agent)、<code>.userType/.entrypoint</code>。<b>无 userEmail/userId</b></td></tr>
+<tr><td><b>Codex</b></td><td class="path">~/.codex/sessions/Y/M/D/rollout-*.jsonl</td><td><code>token_count</code> 事件 → <code>payload.info.{total_token_usage(累计), last_token_usage(单轮)}</code></td><td><code>session_meta.{cwd,id}</code>、<code>turn_context.{cwd,model}</code></td></tr>
+</table>
+<ul>
+<li><b>仓库已有解析能力</b>：<code>pkg/agent/codex.go:1230-1335</code>（<code>scanCodexSessionUsage</code> 读 <code>~/.codex/sessions</code>）、<code>pkg/agent/claude.go:239-252,392-430</code>（解析 Claude stream-json 用量）。但两者都<b>任务级、run 结束后即时解析</b>，无全局扫描器。grep 确认：全仓没有任何代码扫 <code>~/.claude/projects</code>（只 <code>.claude/skills</code> 被读）。<code>os.UserHomeDir()</code>/<code>CODEX_HOME</code> 等复用点已在 daemon 中存在。</li>
+<li><b>注意去重隐患</b>：Multica 任务运行<b>也</b>把 transcript 落到 <code>~/.claude/projects/-Users-feibo-multica-workspaces-…/</code> 和 <code>~/.codex/sessions</code> —— 朴素全局扫描会和 <code>task_usage</code> 既有数据重复计数。</li>
+<li>聚合口径跨源一致：input / output / cache-read / cache-write(creation) + model + timestamp，正好对齐 <code>task_usage_hourly</code> 的 UTC 分桶模式。</li>
+</ul>
+</div>
+
+<h2>发现 · 四</h2>
+<div class="field"><div class="field-label">Findings — 采集→server 链路 &amp; 自然扩展点</div>
+<p>数据流（现状）：</p>
+<div class="path" style="background:#fff;border:1px solid var(--border);padding:10px 14px">agent CLI → result.Usage → daemon.ReportTaskUsage(task.ID) → POST /api/daemon/tasks/{taskId}/usage → UpsertTaskUsage → task_usage → [每60s] rollup_task_usage_hourly() → task_usage_hourly → 读端</div>
+<ul>
+<li><b>唯一 ingestion</b> = <code>POST /api/daemon/tasks/{taskId}/usage</code>，URL + DB FK 双重 task 绑定。<b>没有</b>通用「上报用量事件」端点。（<code>internal/metrics</code> 是 Prometheus 运维遥测、<code>internal/analytics</code> PostHog 无 token 数 —— 都不是用量入口。）</li>
+<li>daemon 鉴权：<code>Bearer mdt_/mul_/JWT</code>（<code>middleware/daemon_auth.go</code>）。注册 <code>POST /api/daemon/register</code> upsert <code>agent_runtime</code> 并落 <code>owner_id</code>。心跳<b>不</b>带用量。</li>
+</ul>
+<h3>自然扩展点（仅描述，不设计）</h3>
+<ol class="num">
+<li><b>新建 runtime 级写端点</b>（而非 task 级），如 <code>POST /api/daemon/runtimes/{runtimeId}/usage</code>，复用 <code>requireDaemonRuntimeAccess</code>（<span class="path">daemon.go:73</span>）—— 免费拿到 workspace + owner(person) 归属。</li>
+<li><b>新建一张 task-less 用量表</b>，键 <code>(runtime_id [+ session/conversation/request id], provider, model, bucket)</code>，不强制 <code>task_id/agent_id</code> —— 因为现有 <code>task_usage(_hourly)</code> 的 NOT NULL 约束装不下无任务的行。</li>
+<li><b>daemon 侧采集点</b>：仿 <code>diskusage.go</code> 扫描任务目录的方式，做一个 runtime 级的本地会话清扫（增量按 mtime/offset），就地解析、就地去重、只上报数字。</li>
+<li><b>读/rollup 复用</b>：进程内分钟级 rollup worker、tz 机器、CLI 表格渲染均可原样复用。</li>
+</ol>
+</div>
+
+<h2>发现 · 五</h2>
+<div class="field"><div class="field-label">Findings — 坑 / 约束 / 前人方案</div>
+<h3>三个必须正面处理的坑</h3>
+<ol class="num">
+<li><b>双重计数（mounted run vs 解析 transcript）</b> —— 高危但可解。现有 <code>task_usage</code> 键 <code>(task_id, provider, model)</code>，<b>不带 session_id/message_id/request_id</b>，无共享键可去重。好消息：daemon 已存了每个任务的 Claude <code>session_id</code>（<code>agent_task_queue.session_id</code>），而 transcript 文件名就是该 session_id → 去重 = 「跳过 session_id 已被任务计过的 transcript」。难点：一个 session 跨多任务续用（<code>prior_session_id</code>）、文件内一个请求产生 2-10 行同 <code>requestId</code>。<b>结论：需要在用量写入链路加 <code>(session_id, message_id, request_id)</code> 去重键。</b></li>
+<li><b>100× 漏算陷阱</b> —— 高危、极易写错。约 75% 的 Claude JSONL assistant 行 <code>input_tokens</code> 是 0/1 的流式占位符，从不回填；朴素求和会把 input 少算 100-174×、output 少算 10-17×。<b>正解：每个 <code>requestId</code> 取最终/最大用量对象，而非逐行求和</b>（ccusage 法）；<b>更省事的替代</b>（agent-usage 法）：直接 <code>cache_creation_input_tokens == nil ⇒ 跳过</code> 滤掉流式块 —— 只有终态消息带该字段，无需追 requestId。两法皆可、Plan 选一；都依赖「终态消息一定带 cache_creation」这个假设。cache 字段从头可靠。</li>
+<li><b>隐私</b> —— transcript 含完整 prompt/代码/工具 I/O。本功能只需 <code>session_id + timestamp + model + provider + 四个 token 数</code>。<b>绝不读取/上传 <code>message.content</code></b>。就地解析、只上报数字聚合。仓库目前<b>无</b>本地日志的隐私条款 —— Plan 需<b>新立</b>这条边界。</li>
+</ol>
+<h3>其它风险</h3>
+<ul>
+<li>schema drift：JSONL 是未公开、版本易变的内部格式（Anthropic 有 open issue #33978 要做一等 <code>claude usage</code>）。解析必须逐行 fail-soft、缺字段当 0（对齐仓库「Enum drift downgrades, not crashes」doctrine）。</li>
+<li>归属歧义：<code>owner_id</code> 只覆盖<b>已挂载</b> runtime；未挂载/共享机器需定 (machine→person) 绑定。本机 <code>git config user.email</code> 为空，该归属路径不可靠。</li>
+<li>覆盖面：Claude ≠ 全部工具，Codex 等格式各异 —— 建议 v1 先 Claude，其余做可插拔 adapter。</li>
+</ul>
+<h3>前人方案</h3>
+<ul>
+<li><b>briqt/agent-usage</b>（<a href="https://github.com/briqt/agent-usage">github</a>，Go · 用户点名）：<b>单机单用户版 ccusage ×6 工具</b>（Claude/Codex/OpenClaw/OpenCode/Kiro/Pi）。一个 Go 二进制扫本机日志 → SQLite → 内嵌 dashboard，<b>GET-only、无鉴权、无 ingestion、无跨机同步、schema 零 user/person/host 维度</b>。<u>采集层机制可直接借鉴，但「归属」它完全没做 —— 归属正是 Multica 的独有难点 + 价值。</u>可借鉴 5 件：① 漏算用<b>结构过滤替代 requestId 去重</b>（<code>cache_creation_input_tokens == nil ⇒ skip</code> + <code>model=="&lt;synthetic&gt;" ⇒ skip</code>）；② <b>增量 tailing</b> <code>file_state(path,last_offset,scan_context)</code> seek 续读、缓存解析态；③ <b>幂等去重</b> <code>INSERT OR IGNORE</code> + 复合唯一索引 <code>(session_id,model,timestamp,in,out)</code>（含 timestamp+token，罕见同值会误撞掉一条）；④ <b>成本层解耦</b>：只存裸 token，按 litellm 价表每小时同步并<b>回填历史</b>；⑤ <b>Collector 接口</b> <code>Scan() error</code> 可插拔（Codex 累计取差 <code>input−cached</code>、OpenCode 读 SQLite 源、Kiro 只能按 % 估算）。</li>
+<li><b>ccusage</b>（<a href="https://github.com/ryoppippi/ccusage">github</a>）：读 <code>~/.claude/projects/**/*.jsonl</code>，<b>按 <code>messageId:requestId</code> 哈希去重</b>（一个请求 2-10 行）。单机参考实现。</li>
+<li><b>Claude Code 原生 OTEL</b>（<a href="https://code.claude.com/docs/en/monitoring-usage">docs</a>）：每请求发 <code>claude_code.token.usage</code>，带类型 + <code>session.id</code> + <b><code>user.email</code></b> + <code>query_source</code>。是 log-parse 的<b>真正替代路线</b>：来自终态响应（无 100× 漏算）、不含 transcript 内容（隐私干净）、自带 person 归属；代价是每用户要配 <code>OTEL_EXPORTER_OTLP_ENDPOINT</code>，且只覆盖会发 OTEL 的工具。</li>
+<li>cache 计费坑（<a href="https://github.com/BerriAI/litellm/issues/19680">litellm #19680</a>）：cache-read 按折扣价计费，必须与普通 input 分开算（仓库 schema 已分 <code>cache_read/cache_write</code> ✓）。</li>
+</ul>
+<h3>仓库硬约束（Plan 必须遵守）</h3>
+<ul class="crit">
+<li>多租户：所有 query 过滤 <code>workspace_id</code>，<code>X-Workspace-ID</code> 路由（CLAUDE.md:422）。新表/新 query 必须带并过滤 workspace_id。</li>
+<li>Handler UUID 解析约定（#1661）：写库前先经 loader 校验，再用 <code>entity.ID</code>；新 ingest 端点照此顺序。</li>
+<li>API Response Compatibility（#2143/2147/2192）：任何 UI 消费的新端点须 <code>parseWithFallback</code> + zod schema + 一个 malformed-response 测试，同 PR 交付。</li>
+<li>包边界：transcript 解析是 <b>Go（CLI/daemon）</b>的事，<b>绝不</b>进 <code>packages/core</code>；UI 进 <code>packages/views</code>、web+desktop 双端接线。</li>
+<li><b>复用既有管线、不分叉</b>：<code>task_usage_hourly</code> 是唯一真相源（其 PK 已含 runtime/agent/project/provider/model）。新用量应汇入该 rollup 体系，而非另起平行表。（与「新表装 task-less 行」需在 Plan 里调和 —— 见开放问题。）</li>
+</ul>
+</div>
+
+<h2>待解问题</h2>
+<div class="field"><div class="field-label">Open Questions — Plan 前必须定</div>
+<ol class="num">
+<li><b>采集源之争：解析 JSONL vs 接 OTEL？</b> OTEL 绕开 100× 漏算、零内容外泄、自带 user.email；但要用户配 exporter。JSONL 被动可用但脆且漏算。可能 v1 JSONL + 后续 OTEL。</li>
+<li><b>未挂载会话的 person/runtime 归属</b>：transcript 无身份。按 (machine daemon_id → runtime owner_id)？按本地 git email（本机为空，不可靠）？还是 daemon 盖上登录的 Multica user？多人共用一机今天无解。</li>
+<li><b>未挂载会话算哪个 runtime？</b> 用户交互式 Claude Desktop 可能根本没有 <code>agent_runtime</code> 行。是否给每个 (machine × provider × user) 造一个<b>合成/隐式 runtime</b>，还是归到 catch-all？</li>
+<li><b>存储形态</b>：扩 <code>task_usage</code>（需 nullable task_id，破坏 FK/unique）？还是新 <code>session_usage</code>/<code>runtime_usage</code> 表 + 汇入 <code>task_usage_hourly</code>？rollup PK 是否加 person 维度，还是经 runtime.owner_id 派生？</li>
+<li><b>去重权威</b>：daemon 上传前剔除已计 session，还是 server 端 rollup 时按 session_id 对账？两种都要求把 session_id 加进用量写入链路。</li>
+<li><b>回填窗口</b>：本机 <code>~/.claude/projects</code> 存了数月历史 —— 一次性 backfill 还是只向前？（注意：Codex <code>total_token_usage</code> 累计「末值取胜」，Claude 用量逐消息「需求和」，两源聚合数学不同。）</li>
+<li><b>多工具范围</b>：Claude-only v1，还是 Codex/其它从一开始就做 pluggable adapter？</li>
+</ol>
+</div>
+
+<h2>推荐方向</h2>
+<div class="field"><div class="field-label">Recommended Approaches — 选项，非决策（决策属 Plan session）</div>
+<h3>方向 A —— daemon 本地扫描器（用户假设的直球落地）</h3>
+<p>daemon 定期清扫 <code>~/.claude/projects</code>(+<code>~/.codex/sessions</code>)，就地解析用量（每 requestId 取终值）、按 session_id 对已计任务去重、归到 runtime.owner_id，经<b>新 runtime 级端点</b>上报到<b>新 task-less 用量表</b>，再汇入 <code>task_usage_hourly</code> rollup。<br><b>优</b>：被动零配置、复用 owner_id 人链接、复用 rollup 模式、仓库已有解析器可改。<b>劣</b>：要正面扛 100× 漏算 + schema drift + 去重 + 隐私（碰内容文件）。<br><b>现成参考</b>：<code>briqt/agent-usage</code> 就是这套采集层的 Go 实现（扫描 + 增量 tailing + 幂等去重 + 6 工具 + 成本回填），可直接对照借鉴 —— Multica 只需补它缺的那半：<b>transport + 鉴权 + person×runtime 归属</b>，而这半 Multica 的 daemon（已有 <code>owner_id</code> + Bearer 鉴权 + rollup）<b>恰好已具备</b>。A 的实现风险因此显著下降。</p>
+<h3>方向 B —— 接 Claude Code 原生 OTEL</h3>
+<p>引导用户把 Claude Code 的 OTEL exporter 指向 Multica 接收端，吃 <code>claude_code.token.usage</code> 指标（终态、带类型、含 session.id + user.email）。<br><b>优</b>：无漏算、零内容外泄（隐私干净）、自带 person 归属、字段稳定。<b>劣</b>：每用户要配 <code>OTEL_EXPORTER_OTLP_ENDPOINT</code>（配置摩擦）；只覆盖发 OTEL 的工具（Claude Code 有，Codex 待查）；需建 OTLP 接收端点。</p>
+<h3>方向 C —— 分阶段混合</h3>
+<p>v1 = 方向 A 但<b>只做 Claude JSONL</b>、按 session_id 去重、归属用 daemon owner；v2 加 Codex adapter；可选 v3 引入方向 B 的 OTEL 作为高保真路径/校验。<br><b>优</b>：最快见效、风险分摊、appetite 可控。<b>劣</b>：先吃 JSONL 的全部坑。</p>
+<div class="callout"><b>给 Plan 的种子判断（不是决策）：</b>「person × runtime」骨架已有（<code>runtime.owner_id</code>），最大未知不在「存哪」而在「<b>未挂载会话如何归到一个 person/runtime</b>」+「<b>去重与漏算的正确性</b>」。建议 Plan 先在 A vs B 之间拍源，再定存储与归属。</div>
+</div>
+
+<footer>team-context · RPI Research phase · Multica 迭代 · 4 并行子 agent + briqt/agent-usage 对照 · multica issue 内渲染</footer>
+</body></html>

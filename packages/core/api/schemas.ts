@@ -280,6 +280,22 @@ const DashboardUsageByAgentSchema = z.object({
 
 export const DashboardUsageByAgentListSchema = z.array(DashboardUsageByAgentSchema);
 
+// Per-person combined usage. owner_id "" is the legitimate "unattributed"
+// bucket, so it defaults to "" rather than failing the row. ambient_tokens is
+// the local-CLI portion of the total; an older backend that lacks the field
+// degrades it to 0 (the row still renders, just without the "includes local
+// CLI" split) instead of dropping to the [] fallback.
+const DashboardUsageByPersonSchema = z.object({
+  owner_id: z.string().default(""),
+  input_tokens: z.number().default(0),
+  output_tokens: z.number().default(0),
+  cache_read_tokens: z.number().default(0),
+  cache_write_tokens: z.number().default(0),
+  ambient_tokens: z.number().default(0),
+}).loose();
+
+export const DashboardUsageByPersonListSchema = z.array(DashboardUsageByPersonSchema);
+
 const DashboardAgentRunTimeSchema = z.object({
   agent_id: z.string().default(""),
   total_seconds: z.number().default(0),

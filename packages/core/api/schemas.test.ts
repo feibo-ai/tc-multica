@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DashboardAgentRunTimeListSchema,
   DashboardUsageByAgentListSchema,
+  DashboardUsageByPersonListSchema,
   DashboardUsageDailyListSchema,
   DuplicateIssueErrorBodySchema,
   EMPTY_LIST_PROJECTS_RESPONSE,
@@ -361,5 +362,49 @@ describe("dashboard + runtime usage schema drift", () => {
       { date: "2026-05-19", region: "us-east" },
     ]);
     expect((parsed[0] as Record<string, unknown>).region).toBe("us-east");
+  });
+});
+
+describe("DashboardUsageByPersonListSchema (drift safety)", () => {
+  it("defaults a missing ambient_tokens to 0 (older backend) so the row still renders", () => {
+    const parsed = DashboardUsageByPersonListSchema.parse([
+      { owner_id: "u1", input_tokens: 100, output_tokens: 10 },
+    ]);
+    expect(parsed[0]?.ambient_tokens).toBe(0);
+    expect(parsed[0]?.input_tokens).toBe(100);
+  });
+
+  it("keeps owner_id \"\" as the legitimate unattributed bucket", () => {
+    const parsed = DashboardUsageByPersonListSchema.parse([
+      { owner_id: "", input_tokens: 50, ambient_tokens: 55 },
+    ]);
+    expect(parsed[0]?.owner_id).toBe("");
+    expect(parsed[0]?.ambient_tokens).toBe(55);
+  });
+
+  it("defaults a missing owner_id key to \"\" (degrades to unattributed, not a crash)", () => {
+    const parsed = DashboardUsageByPersonListSchema.parse([{ input_tokens: 7 }]);
+    expect(parsed[0]?.owner_id).toBe("");
+  });
+
+  // The malformed-response contract: a wrong-typed field or a non-array body
+  // must make parseWithFallback return its [] fallback, never throw into the UI.
+  it("falls back to [] on a malformed response", () => {
+    expect(
+      parseWithFallback(
+        [{ owner_id: "u1", input_tokens: "lots-of-tokens" }],
+        DashboardUsageByPersonListSchema,
+        [],
+        { endpoint: "test" },
+      ),
+    ).toEqual([]);
+    expect(
+      parseWithFallback(
+        { rows: [] },
+        DashboardUsageByPersonListSchema,
+        [],
+        { endpoint: "test" },
+      ),
+    ).toEqual([]);
   });
 });

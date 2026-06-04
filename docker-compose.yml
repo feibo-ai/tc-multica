@@ -10,7 +10,11 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # pg18+ stores data under a major-version subdirectory and wants the
+      # volume mounted at the parent /var/lib/postgresql, NOT at .../data — a
+      # /data mount is rejected as an "unused mount/volume" on startup. See the
+      # postgres image's 18+ note (docker-library/postgres#1259).
+      - pgdata:/var/lib/postgresql
 
 volumes:
   pgdata:

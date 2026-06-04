@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>runtime-token-usage</title>
+<style>
+:root{--ink:#1A1A1A;--ink2:#2D2D2D;--paper:#F5F2EB;--paper2:#EDE8DC;--accent:#C73E1D;--gray:#8B8680;--border:#D4CFC4;--green:#4A6B3A;--gold:#B8862E}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Songti SC","Noto Serif SC",Georgia,serif;background:var(--paper);color:var(--ink);line-height:1.8;font-size:15px;padding:48px 40px;max-width:760px;margin:0 auto}
+.eyebrow{font-family:"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+h1{font-weight:900;font-size:40px;line-height:1.15;letter-spacing:-1px;margin-bottom:18px;border-bottom:3px double var(--ink);padding-bottom:20px}
+.meta{display:flex;gap:32px;flex-wrap:wrap;font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--gray);margin-bottom:36px}
+.meta b{color:var(--ink);font-weight:600}
+h2{font-weight:700;font-size:22px;margin:36px 0 14px;padding-left:14px;border-left:4px solid var(--accent)}
+.field{background:#fff;border:1px solid var(--border);padding:18px 22px;margin-bottom:14px}
+.field-label{font-family:"SF Mono",Menlo,monospace;font-size:10px;letter-spacing:1.5px;color:var(--gray);text-transform:uppercase;margin-bottom:6px}
+ul{list-style:none;margin:8px 0}
+li{padding:6px 0 6px 24px;position:relative}
+li::before{content:"▸";position:absolute;left:4px;color:var(--accent)}
+.crit li::before{content:"☐";color:var(--green)}
+code{font-family:"SF Mono",Menlo,monospace;background:var(--paper2);padding:1px 6px;border-radius:2px;font-size:13px}
+.callout{background:var(--paper2);border-left:4px solid var(--gold);padding:14px 18px;margin:18px 0;font-size:14px}
+footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--border);font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--gray)}
+</style></head>
+<body>
+<div class="eyebrow">PLAN · 计划 · project</div>
+<h1>runtime-token-usage</h1>
+<div class="meta"><span>DRI <b>曾振华</b></span><span>Layer <b>project</b></span><span>Appetite <b>2 周（project 层，Shape Up appetite —— 上限非估算）。评审重定位风险：真实风险在 Phase B（B1 去重算法原本是反的、B2 daemon 无本地 session store），非 Phase C UI；Phase B 预算据此上调。不可逆在 Phase A（schema）。B3 归属修复经确认复审缩小（回填自愈已现成）。Shock absorber 仍 = Phase C 的 per-person UI：若吃紧，先在既有 runtime/dashboard 视图露『含本地 CLI』总数 + 最小 per-person 列表，专属面板做 fast-follow。Codex adapter / OTEL / 历史回填 / 单机多人 + 跨-workspace 机器全局归属 明确不在 v1。</b></span></div>
+<h2>目标</h2><div class="field"><div class="field-label">Goal</div>为 Multica 新增一个『个人 × runtime』粒度的 token 用量维度，覆盖本机【全部】Claude Code 对话 —— 包括从未经 agent_task_queue 派发的 ad-hoc 本地会话（今天对所有报表 0 行不可见，见 handler/runtime.go:84-87 自陈盲区）。做法：daemon 就地解析本地 transcript 日志（【只读数字、绝不读 message.content】），按 (message.id, requestId) 去重并经 server 端排除已执行任务的 session 去双算，归到 runtime.owner_id（= 注册该 daemon 的用户），经新 runtime 级端点上报到新的 task-less 用量表，再汇入复用控制骨架的并行 rollup，最终在 dashboard 露出一个【包含这部分此前不可见本地用量】的 per-person 总数。v1 范围：JSONL 解析、可插拔 Collector 框架（Claude 为首个 adapter）、只向前、daemon-owner 归属（含 owner_id 可靠性修复）。</div>
+<h2>完成标准</h2><div class="field crit"><ul><li>【本地会话可见】在 Multica 之外跑一个 ad-hoc claude 会话（无任务），其 token 在一个 rollup tick 内出现在用量里，归到 daemon owner 的 person × runtime（= 注册该 daemon 的用户；今天的 mul_ PAT 路径成立）—— 跑一个一次性 claude 会话即可演示其 token 落账。</li><li>【不双算】Multica 派发的任务其 transcript 不被重复计数：server 端 rollup 经 LEFT JOIN agent_task_queue 排除已执行任务的 session_id（session_id 已进写链）—— 对比一次 mounted run 前后的总数与它已产生的 task_usage 行可证（允许 in-flight 窗口内短暂双算、完成后下一 tick 自愈）。</li><li>【用量正确性·评审 B1 修正】对含同-(message.id, requestId) 重复行的 fixture JSONL，去重后求和 = ccusage 参考值（不被重复行放大为 ~3.46×）；落盘 JSONL 无『流式 0 占位』病（那是 stream-json wire 格式的病）。</li><li>【隐私】上报载荷与落库行只含 {session_id, timestamp, model, provider, 四个 token 数}；测试断言 upload 结构体永不读入 message.content / prompt 文本。边界 doctrine 记入 decisions/。</li><li>【幂等 + fail-soft】对同一批文件重跑 scanner 0 新增行（复合唯一键生效）；一条畸形 JSONL 行被跳过而非致命（daemon 继续 tick）。</li><li>【可插拔】Collector 接口有 ≥1 个具体 adapter（Claude）且契约文档化，加 Codex = 新写一个实现 Scan 的文件、不动管线。</li><li>【端点受护】POST /api/daemon/runtimes/{id}/usage 经 requireDaemonRuntimeAccess 解析 runtime、过滤 workspace_id、校验 body；UI 读端点经 zod + parseWithFallback，并有一个 malformed-response 测试。</li><li>【per-person 读出】dashboard 显示一个 per-person（× runtime）token 总数，同时含 mounted 任务用量与未挂载本地会话；字段缺失时优雅降级。</li><li>【归属修复·评审 B3】owner_id IS NULL 的 ambient 行落『未归属』桶而非静默归 owner；032 回填为 workspace-owner 的旧 runtime 在真实用户 daemon 重注册后归属自愈（现有 COALESCE upsert 已提供）。</li><li>【绿管线】make check 通过（typecheck / TS test / Go test / E2E）。</li></ul></div>
+<h2>分工</h2><div class="field"><div class="field-label">Roles</div>DRI <code>曾振华</code> · EXEC <code>曾振华, Claude Code（Implement 会话）</code> · COLLAB <code>待定 —— 若 server/ 有独立负责人，邀其评 rollup + 新 ingest 端点 + owner_id 归属修复（触及用量子系统）</code> · REVIEW <code>第二个 Claude session（staff engineer 角色）· 两轮：首轮对码+实测 955 份 transcript，确认复审 ALL BLOCKERS CLOSED</code></div>
+<h2>投入预算</h2><div class="callout"><b>2 周（project 层，Shape Up appetite —— 上限非估算）。评审重定位风险：真实风险在 Phase B（B1 去重算法原本是反的、B2 daemon 无本地 session store），非 Phase C UI；Phase B 预算据此上调。不可逆在 Phase A（schema）。B3 归属修复经确认复审缩小（回填自愈已现成）。Shock absorber 仍 = Phase C 的 per-person UI：若吃紧，先在既有 runtime/dashboard 视图露『含本地 CLI』总数 + 最小 per-person 列表，专属面板做 fast-follow。Codex adapter / OTEL / 历史回填 / 单机多人 + 跨-workspace 机器全局归属 明确不在 v1。</b> · 超时触发 plan_upgrade(升版强制重审)。</div>
+<h2>方案</h2><div class="field">## 锁定的 DRI 决策（2026-06-03，驱动本计划）
+1. **采集机制** → **解析本地 JSONL（方向 A）**。OTEL（方向 B）不在 v1。
+2. **工具范围** → **一开始就做可插拔 Collector 框架** + **Claude 为首个（且唯一）具体 adapter**；Codex 等做 drop-in 后续、不改管线。
+3. **历史回填** → **只向前**（offset/mtime 水位）。回填做 fast-follow。
+4. **未挂载会话归属** → **daemon 的 runtime.owner_id**。**评审 B3 后追加：v1 内修 owner_id 可靠性**（见「归属正确性」）。
+5. **存储分叉（评审后 DRI 拍板）** → **批准** 用独立兄弟表 + 并行 rollup 承载 ambient 用量（对硬约束#6 的一次有意、已裁决的分叉）。
+
+## 架构骨架（对码核验）
+- person × runtime 模型已存在：agent_runtime.owner_id → user(id)（032）。新端点免费拿归属：requireDaemonRuntimeAccess(daemon.go:73-92，behind middleware.DaemonAuth，router.go:287)。
+- rollup 模式可复用：task_usage_hourly(101) + 进程内分钟 worker(usage_rollup.go:24-92，Zeabur 无 pg_cron)。**N5：rollup 重算体硬绑 task_usage→agent_task_queue→agent→issue（102:322-348），新源是结构平行的【新函数】、非照搬。**
+- 去重锚点：agent_task_queue.session_id(020:6)。session-chaining(prior_session_id)真实存在(daemon.go:2423-2540)—— 列为 v1 已知边缘。
+- 解析器存在但仅参考：claude.go:239-252/391-430、codex.go:1230-1265—— 都是 live-run 解析、不做 requestId 去重（正是坑#1 所需）。盲区自陈：runtime.go:84-87。唯一 ingestion = POST /api/daemon/tasks/{taskId}/usage(router.go:308)。
+
+## 存储形态（DRI 已批准的分叉）
+task_usage_hourly 唯一键要求 **agent_id NOT NULL + runtime_id NOT NULL**（101:40-41,52-54）。ambient（无任务）会话有 runtime 但无 agent，装不进。**评审裁定 nullable-agent_id 更差**：rollup 重算体 JOIN agent_task_queue→agent→issue（102:322-348），无任务行无 atq 行可 JOIN，会把函数分叉成两条 disjoint 路径。故：
+- **新建 raw 表 ambient_usage**（**N1：避开 runtime_usage —— 该名被 013 用过、046 drop，且 runtime_usage.sql 查询文件已被复用为读 task_usage_hourly；新表/新 .sql 会撞命名空间**）。列：workspace_id, runtime_id, provider, model, session_id, message_id, request_id, event_at(UTC), input/output/cache_read/cache_write_tokens, source。**复合唯一索引 (runtime_id, provider, model, session_id, message_id, request_id)** —— 一键双用：跨扫描幂等 + 文件内同-requestId 重复行去重（坑#1）。无 task_id、无 agent_id。
+- **新建 rollup ambient_usage_hourly** + dirty/state，键 (bucket_hour, workspace_id, runtime_id, provider, model)。**新函数 rollup_ambient_usage_hourly()：复用 102 控制骨架（advisory-lock 4246、水位、dirty-drain、capped 1-day window、deleted_empty CTE）但函数体是新的**（raw 表自带 workspace_id/runtime_id，无需 JOIN）。进程内 worker 并行 tick。
+- **读端 UNION**：per-person / 含本地总数，在 (workspace, runtime→owner_id, provider, model, bucket) 粒度 UNION task_usage_hourly + ambient_usage_hourly。person = runtime.owner_id JOIN。
+- **硬约束#6 调和（DRI 已批准）**：#6 精神 = executed-task 用量只有一份 rollup。ambient 是类别不同的源（无 task/agent/issue），读层经 owner_id 再统一。这确实是第二张 rollup 表 = 一次有意、已 DRI 批准的分叉。**不再声称『不分叉』**。已否决：造合成 sentinel agent 骑既有表 —— 需 backing agent_task_queue 行（102:338-343）、会污染 by-agent 报表。
+
+## 归属正确性（评审 B3 → DRI 选「v1 内修」；确认复审重定范围）
+owner_id **nullable**、032 回填为 workspace **owner**（032:1-9）。DaemonRegister（daemon.go:269-285）：PAT/JWT 路径 ownerID = member.UserID（:284）；mdt_ 路径 ownerID 留零、COALESCE 保留旧值（:278）。**关键缓和（对码核实）**：mdt_ 铸造函数 GenerateDaemonToken（auth/jwt.go:41）**零调用**、尚未接通（daemon_auth_test.go:55-56），今天 daemon 走 mul_ PAT → PAT 路径 → owner_id = PAT 主人（真实用户，daemon_auth.go:153-154）✓。daemon-token 身份只含 {WorkspaceID, DaemonID}、不含 UserID（daemon_token_cache.go:22-25）。
+- **v1 修复（复审重定范围）**：(a) 旧回填行自愈 **已由现有 upsert 提供** —— runtime.sql:55 owner_id = COALESCE(EXCLUDED.owner_id, agent_runtime.owner_id)，PAT 路径 EXCLUDED.owner_id 非空，每次 PAT 重注册即覆盖 032 回填的 workspace-owner 值，**无需改 register SQL**；(b) **owner_id IS NULL 的 guard**：ambient 行落 workspace『未归属』桶、不静默归 owner（读/ambient 层）；(c) **前瞻钩子**：当 mdt_ 铸造接通，须在铸造时记录 minting user（或要求一次 PAT 注册盖戳）。**A4 净新工作 = (b)+(c)，不是重写现有 register SQL。**
+- **保留的 v1 已知局限**：单机多人全算一人；单 daemon token 绑单 workspace 但 ~/.claude/projects 是机器全局（N4）—— 跨 workspace / 无关 ad-hoc 的 ambient 会归到该 daemon 上报的 workspace，文档标注。
+
+## 三个必须正面处理的坑（评审后修正）
+1. **用量正确性（B1：~3.46× 过算，不是 100× 漏算）** —— 实测 955 份 transcript / 108,218 行：on-disk JSONL 的 cache_creation_input_tokens 恒存在（『流式 0 占位』是 stream-json wire 格式的病），原『== null ⇒ skip』是 no-op。真坑是同 (message.id, requestId) 重复行（最多 33 份）→ 朴素求和 13.3M vs ccusage 去重 3.85M（3.46×）。
+   - **修复**：按 (message.id, requestId) 去重（ccusage 法）。主力去重 = ambient_usage 复合唯一索引（ON CONFLICT DO NOTHING）；adapter 再做内存内 per-requestId 去重 避免上传 33× 行。弃用 cache_creation==null 过滤；保留 model==&lt;synthetic&gt; 跳过（N3）。
+   - **注（复审）**：ON CONFLICT DO NOTHING 保留**首达** tuple，依赖『同 (message.id,requestId) 重复行 token 数一致』这一落盘 JSONL 不变式（成立但未形式验证）。
+   - 完成标准：fixture 含同-requestId 重复行，断言去重后求和 = ccusage 参考。
+2. **跨表双算 —— B2：server 侧做权威** —— ambient_usage 唯一键只表内去重、不对 task_usage 去重；mounted run 的 transcript（也落 ~/.claude/projects/-Users-…-multica-workspaces-…）会被扫进。且 daemon 不本地持久化已执行 session_id（只转发 server：client.go:183-228）→ daemon 侧 skip 重启即失效。
+   - **修复（server 权威）**：rollup_ambient_usage_hourly() **LEFT JOIN agent_task_queue ON session_id、WHERE atq.session_id IS NULL**，排除已执行任务的 session（那些已在 task_usage；复审确认：失败/取消任务**也**报 usage 且落 session_id，daemon.go:2062-2071 / agent.sql:386，故排除正确）。daemon 侧 skip 降 best-effort。
+   - **两个时序窗口（复审补充，须文档化）**：(i) **in-flight 窗口**：daemon 先 ReportTaskUsage（daemon.go:2068）后才在 Complete/FailAgentTask 落 atq.session_id（agent.sql:320/386，daemon.go:2131/2147）；二者之间 atq.session_id IS NULL，若 ambient 扫描在此间上传该 session 且 rollup tick 先触发 → 不被排除 → 该 mounted run **临时双算**，任务完成后下一 rollup tick 幂等 REPLACE **自愈**（101:10-15 非增量）。(ii) **失败丢 session**：runner 无 TaskResult 出错时 FailTask 带空 session_id（daemon.go:2081-2089），其 transcript 留作 ambient（安全、无误排除）、窄边缘。
+   - **session_id 进写链（N6 → Phase A 交付物）**：否则『不双算』不可观测。已知 v1 边缘：prior_session_id 跨任务续用 / 同会话混合态的边界处可能错算（整会话排除会连同后续 ad-hoc 一起丢）—— v2 用 message_id 级对账再修。
+3. **隐私（新立 doctrine）** —— scanner 只读 type:assistant 行的 {session_id, timestamp, model, provider, 四个 token 数}，绝不反序列化/上传 message.content。记入 decisions/2026-06-03-local-log-privacy.md。测试断言 upload 结构体无 content/prompt。fail-soft：畸形/残行跳过（缺字段当 0）、绝不致命（对齐『Enum drift downgrades, not crashes』）。
+
+## 分阶段实施（A→B→C；评审后 B 预算上调）
+### Phase A — 存储 + ingestion 脊柱 + 归属修复（后端）
+- **A0.** 隐私 doctrine 入 decisions/（坑#3）。
+- **A1.** migration：ambient_usage 表 + 复合唯一索引；ambient_usage_hourly rollup + dirty/state（照 101 结构）。make sqlc。
+- **A2.** rollup_ambient_usage_hourly()：复用 102 控制骨架、新函数体、LEFT JOIN agent_task_queue 排除已执行 session（坑#2）。进程内 worker 并行 tick。
+- **A3.** 新端点 POST /api/daemon/runtimes/{runtimeId}/usage，requireDaemonRuntimeAccess 解析 → workspace+owner；UpsertAmbientUsage 幂等于唯一键；handler UUID 约定、过滤 workspace_id；session_id 进写链（N6）。
+- **A4.** 归属修复（B3，**复审重定范围**）：旧回填行自愈已由现有 COALESCE upsert（runtime.sql:55）提供、**无需改 register SQL**；净新 = (b) owner_id IS NULL 的『未归属』桶 guard + (c) mdt_ 接通时记 minting user 的前瞻钩子。
+- **A5.** 测试客户端（非 scanner）驱动 A 全链路（含去重排除 + 归属）。**不可逆 schema，先落。**
+### Phase B — Collector 框架 + Claude adapter（daemon；预算上调，B1/B2 是核心算法）
+- **B1.** 可插拔 Collector 接口：Scan(ctx, watermark) ([]UsageEvent, error) + 增量 file_state(path, last_offset, mtime) tailing。**循环骨架仿 gcLoop（gc.go:18-48）**；只借 diskusage.go 的只读遍历安全契约（跳 .git、不跟 symlink、仅常规文件）（N2）。
+- **B2.** Claude adapter：扫 ~/.claude/projects/**/*.jsonl；per-requestId 内存去重（坑#1）、per-line fail-soft（坑#3）、只抽数字+id（坑#3）、跳 &lt;synthetic&gt;。只向前水位。
+- **B3.** 去重：依赖 server 端权威排除（坑#2）；daemon 侧进程内 skip = best-effort。
+- **B4.** daemon tick（仿 gcLoop）：scan → POST A3。
+### Phase C — 读出 + per-person UI（可切减震器）
+- **C1.** per-person 聚合读端点：UNION task_usage_hourly + ambient_usage_hourly，按 owner_id 分组。
+- **C2.** 净新视图入 packages/views/，web+desktop 双端接线（transcript 解析仅 Go、绝不进 packages/core；UI 进 views）。
+- **C3.** zod + parseWithFallback + malformed-response 测试。
+- **吃紧切线**：先在既有 runtime/dashboard 视图露『含本地 CLI』总数 + 最小 per-person 列表，专属面板 fast-follow。
+
+## 不在 v1（已记录）
+Codex / 其它 adapter；方向 B（OTEL）；历史回填（注意 Codex 累计末值取胜 vs Claude 逐消息求和的两源数学差异）；单机多人 + 跨-workspace 机器全局归属的彻底解。
+
+## 仓库硬约束遵守
+多租户（新表/query 过滤 workspace_id）、Handler UUID 约定（#1661：loader→entity.ID）、API Response Compatibility（#2143/2147/2192：parseWithFallback + zod + malformed 测试同 PR）、包边界（transcript 解析仅 Go、UI 进 views、web+desktop 双端）、复用 rollup 控制骨架（新源走兄弟表，DRI 已批准的有意分叉）。
+
+## 评审（Review）
+- **Reviewer**：第二个 Claude session，staff-engineer 角色，独立对码 + 实测本机 955 份 transcript / 108,218 行。**Reviewed**：2026-06-03。
+- **Verdict**：CHANGES-REQUESTED（3 阻断）→ 全数处理 + DRI 拍板 2 项 → 确认复审 **ALL BLOCKERS CLOSED** → **APPROVED（v1.2）**。
+- **阻断项 → 处置**：
+  1. **B1 漏算框架错位**：实测证明落盘 JSONL 无流式 0 占位，真坑是同-requestId 重复行 → 3.46× 过算。→ ccusage 去重（复合唯一键 + adapter 内存去重）、弃 cache_creation 过滤。
+  2. **B2 daemon 无本地 session store**：→ 去重权威移 server（rollup LEFT JOIN agent_task_queue 排除已执行 session）；daemon 侧 best-effort；session_id 进写链 = Phase A 交付物。
+  3. **B3 归属塌缩**：→ 对码确认 mdt_ 未接通、今天 mul_ PAT（owner_id 已= 真实用户）；v1 修 = NULL guard + mdt_ 前瞻（回填自愈已由现有 COALESCE 提供）。
+- **确认复审（v1.1 → v1.2）**：独立第二 staff-engineer session 对码确认 **3 阻断全闭**（B1 复合唯一键去重 / B2 排除正确且失败任务也报 usage / B3 mdt_ 零调用、COALESCE 已自愈）。折入 4 条非阻断：坑#2 in-flight 双算窗口（完成后下一 tick 自愈）+ 失败丢-session 窄边缘；坑#1 DO-NOTHING 首达值依赖；A4 重定范围（自愈已现成，净新 = NULL-bucket guard + mdt_ 前瞻）。无残留阻断。
+- **存储分叉裁决**：评审判 nullable-agent_id 更差；DRI 批准兄弟表 + 并行 rollup，措辞已改为如实承认分叉。
+- **非阻断已采纳**：N1 ambient_usage、N2 gcLoop、N4 机器全局归属局限、N5 新函数非照搬、N6 session_id Phase A、N3 &lt;synthetic&gt; 跳过。
+- **Verified sound（勿再纠）**：owner_id / requireDaemonRuntimeAccess / 101 唯一键 / 进程内 rollup / agent_task_queue.session_id + prior_session_id / 解析器存在 / 盲区自陈 / 唯一 ingestion / 包边界与多租户 plumbing —— 均对码确认。</div>
+
+<footer>team-context · RPI Plan phase · multica issue 内渲染</footer>
+</body></html>

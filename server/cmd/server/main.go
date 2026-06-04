@@ -342,6 +342,10 @@ func main() {
 	// Keep task_usage_hourly fresh for the token-usage dashboard. Substitutes
 	// for the pg_cron job our Postgres image can't run. See usage_rollup.go.
 	go runTaskUsageRollup(sweepCtx, pool)
+	// Same substitute for the parallel ambient (task-less local CLI) usage
+	// rollup. Independent advisory lock, so it never serialises against the
+	// task rollup. See ambient_usage_rollup.go.
+	go runAmbientUsageRollup(sweepCtx, pool)
 
 	if metricsServer != nil {
 		go func() {

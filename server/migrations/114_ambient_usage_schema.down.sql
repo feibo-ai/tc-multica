@@ -1,0 +1,11 @@
+DROP INDEX IF EXISTS idx_ambient_usage_hourly_dirty_enqueued_at;
+DROP TABLE IF EXISTS ambient_usage_hourly_dirty;
+DROP TABLE IF EXISTS ambient_usage_hourly_rollup_state;
+DROP INDEX IF EXISTS idx_ambient_usage_hourly_runtime_time;
+DROP INDEX IF EXISTS idx_ambient_usage_hourly_workspace_time;
+DROP TABLE IF EXISTS ambient_usage_hourly;
+DROP INDEX IF EXISTS idx_agent_task_queue_session_id;
+DROP INDEX IF EXISTS idx_ambient_usage_rollup;
+DROP INDEX IF EXISTS idx_ambient_usage_session_id;
+DROP INDEX IF EXISTS idx_ambient_usage_created_at;
+DROP TABLE IF EXISTS ambient_usage;

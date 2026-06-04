@@ -31,16 +31,17 @@ const (
 	// daemon-visible activity — see MUL-2300. 30 min keeps the safety net for
 	// truly stuck runs (dockerd hang) while leaving headroom for long writes.
 	// Set MULTICA_AGENT_IDLE_WATCHDOG=0 to disable.
-	DefaultAgentIdleWatchdog = 30 * time.Minute
-	DefaultRuntimeName                    = "Local Agent"
-	DefaultWorkspaceSyncInterval          = 30 * time.Second
-	DefaultHealthPort                     = 19514
-	DefaultMaxConcurrentTasks             = 20
-	DefaultGCInterval                     = 1 * time.Hour
-	DefaultGCTTL                          = 24 * time.Hour // 1 day — AI-coding issues rarely stay open long
-	DefaultGCOrphanTTL                    = 72 * time.Hour // 3 days — orphans with no meta (crashes, pre-GC leftovers)
-	DefaultGCArtifactTTL                  = 12 * time.Hour // 12h — drop regenerable artifacts on completed but still-open issues
-	DefaultAutoUpdateCheckInterval        = 6 * time.Hour  // how often the daemon polls GitHub for a newer CLI release
+	DefaultAgentIdleWatchdog       = 30 * time.Minute
+	DefaultRuntimeName             = "Local Agent"
+	DefaultWorkspaceSyncInterval   = 30 * time.Second
+	DefaultHealthPort              = 19514
+	DefaultMaxConcurrentTasks      = 20
+	DefaultGCInterval              = 1 * time.Hour
+	DefaultGCTTL                   = 24 * time.Hour  // 1 day — AI-coding issues rarely stay open long
+	DefaultGCOrphanTTL             = 72 * time.Hour  // 3 days — orphans with no meta (crashes, pre-GC leftovers)
+	DefaultGCArtifactTTL           = 12 * time.Hour  // 12h — drop regenerable artifacts on completed but still-open issues
+	DefaultAutoUpdateCheckInterval = 6 * time.Hour   // how often the daemon polls GitHub for a newer CLI release
+	DefaultAmbientUsageInterval    = 1 * time.Minute // how often the ambient (local-CLI) usage collector scans transcripts
 )
 
 // DefaultGCArtifactPatterns lists basename matches that the GC loop treats as
@@ -74,6 +75,8 @@ type Config struct {
 	GCArtifactPatterns             []string              // basename patterns whose subtrees are removed during artifact cleanup (default: node_modules, .next, .turbo)
 	AutoUpdateEnabled              bool                  // periodically check for a newer CLI release and self-update when idle (default: true on Multica Cloud, false on self-host)
 	AutoUpdateCheckInterval        time.Duration         // how often the auto-update loop polls for a new release (default: 6h)
+	AmbientUsageEnabled            bool                  // periodically collect token usage from local CLI transcripts (ad-hoc sessions never dispatched as tasks) and report it per-runtime (default: true)
+	AmbientUsageInterval           time.Duration         // how often the ambient-usage collector scans transcripts (default: 1m)
 	PollInterval                   time.Duration
 	HeartbeatInterval              time.Duration
 	AgentTimeout                   time.Duration
@@ -355,6 +358,17 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	}
 	gcArtifactPatterns := patternsFromEnv("MULTICA_GC_ARTIFACT_PATTERNS", DefaultGCArtifactPatterns)
 
+	// Ambient-usage collector config: env > defaults. Opt-out via
+	// MULTICA_AMBIENT_USAGE_ENABLED=false.
+	ambientUsageEnabled := true
+	if v := os.Getenv("MULTICA_AMBIENT_USAGE_ENABLED"); v == "false" || v == "0" {
+		ambientUsageEnabled = false
+	}
+	ambientUsageInterval, err := durationFromEnv("MULTICA_AMBIENT_USAGE_INTERVAL", DefaultAmbientUsageInterval)
+	if err != nil {
+		return Config{}, err
+	}
+
 	// Auto-update config: default -> env override -> CLI override.
 	//
 	// Default is opt-in on Multica Cloud (api.multica.ai) and opt-out for
@@ -400,6 +414,8 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		GCOrphanTTL:                    gcOrphanTTL,
 		GCArtifactTTL:                  gcArtifactTTL,
 		GCArtifactPatterns:             gcArtifactPatterns,
+		AmbientUsageEnabled:            ambientUsageEnabled,
+		AmbientUsageInterval:           ambientUsageInterval,
 		AutoUpdateEnabled:              autoUpdateEnabled,
 		AutoUpdateCheckInterval:        autoUpdateInterval,
 		HealthPort:                     healthPort,

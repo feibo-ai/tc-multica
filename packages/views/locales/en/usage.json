@@ -48,6 +48,16 @@
     "header_tasks": "Tasks",
     "no_data": "No agent activity in this window."
   },
+  "by_person": {
+    "title": "By person",
+    "caption": "{{count}} people",
+    "header_person": "Person",
+    "header_tokens": "Tokens",
+    "header_local": "Local CLI",
+    "includes_local": "Local CLI tokens included in this person's total",
+    "unattributed": "Unattributed",
+    "no_data": "No personal usage in this window."
+  },
   "empty": {
     "title": "No usage yet",
     "body": "Once agents start running tasks here, their token spend and run time will appear in this view."
