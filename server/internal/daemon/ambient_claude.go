@@ -90,6 +90,14 @@ func (c *claudeCollector) Scan(ctx context.Context, prevState json.RawMessage) (
 	// same assistant line many times (empirically up to ~33x), so a naive sum
 	// over-counts. The server's unique key is authoritative across scans; this
 	// trims the upload volume (坑#1).
+	//
+	// NOTE: this is per-scan and per (message.id, requestId) only. A session
+	// resume/fork copies prior lines verbatim into a NEW session file (same
+	// ids, new sessionId), which crosses the watermark on a later tick — so the
+	// `seen` set cannot collapse it, and because the server's unique key
+	// includes session_id, both copies persist (a bounded per-session
+	// over-count). Known v1 limitation documented at uq_ambient_usage_key
+	// (migration 114); v2 does message-level cross-session reconciliation.
 	seen := map[string]struct{}{}
 	present := map[string]struct{}{}
 

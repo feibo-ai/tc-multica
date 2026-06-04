@@ -1845,15 +1845,24 @@ func (h *Handler) ReportRuntimeUsage(w http.ResponseWriter, r *http.Request) {
 	for _, u := range req.Usage {
 		params, ok := normalizeAmbientUsage(u)
 		if !ok {
+			// Malformed event: drop it silently. The daemon must NOT retry a
+			// row that can never normalize, so this is a skip, not an error.
 			skipped++
 			continue
 		}
 		params.WorkspaceID = rt.WorkspaceID
 		params.RuntimeID = rt.ID
 		if err := h.Queries.UpsertAmbientUsage(r.Context(), params); err != nil {
+			// A normalize-clean row that failed to persist is almost always a
+			// transient DB error. Fail the whole batch (500) rather than
+			// swallowing it into `skipped`: the daemon commits its watermark
+			// only on a 2xx, so a 500 makes it retry from the same offset, and
+			// the composite-key ON CONFLICT makes re-sending the already-
+			// upserted rows a no-op. Swallowing it here would advance the
+			// watermark past a row that never landed — silent loss.
 			slog.Warn("upsert ambient usage failed", "runtime_id", runtimeID, "model", params.Model, "error", err)
-			skipped++
-			continue
+			writeError(w, http.StatusInternalServerError, "failed to persist usage")
+			return
 		}
 		accepted++
 	}

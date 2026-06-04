@@ -245,13 +245,16 @@ export function DashboardPage() {
     runTimeQuery.isLoading ||
     runTimeDailyQuery.isLoading;
 
-  // Four independent rollups, but the empty-state is one decision — only
-  // show "no data yet" when ALL came back empty so a project with tokens
+  // Independent rollups, but the empty-state is one decision — only show
+  // "no data yet" when ALL came back empty (incl. per-person ambient, so a
+  // pure-local-CLI workspace with no dispatched tasks still shows its list)
+  // so a project with tokens
   // but no runs (or vice-versa) doesn't look broken.
   const hasNoData =
     !isLoading &&
     dailyUsage.length === 0 &&
     byAgentUsage.length === 0 &&
+    byPersonUsage.length === 0 &&
     runTimeRows.length === 0 &&
     runTimeDailyRows.length === 0;
 

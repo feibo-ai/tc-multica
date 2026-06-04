@@ -308,7 +308,7 @@ WITH combined AS (
         tuh.input_tokens, tuh.output_tokens, tuh.cache_read_tokens, tuh.cache_write_tokens,
         0::bigint AS ambient_tokens
       FROM task_usage_hourly tuh
-      JOIN agent_runtime rt ON rt.id = tuh.runtime_id
+      LEFT JOIN agent_runtime rt ON rt.id = tuh.runtime_id
      WHERE tuh.workspace_id = $1
        AND tuh.bucket_hour >= $2::timestamptz
     UNION ALL
@@ -317,7 +317,7 @@ WITH combined AS (
         auh.input_tokens, auh.output_tokens, auh.cache_read_tokens, auh.cache_write_tokens,
         (auh.input_tokens + auh.output_tokens + auh.cache_read_tokens + auh.cache_write_tokens)::bigint AS ambient_tokens
       FROM ambient_usage_hourly auh
-      JOIN agent_runtime rt ON rt.id = auh.runtime_id
+      LEFT JOIN agent_runtime rt ON rt.id = auh.runtime_id
      WHERE auh.workspace_id = $1
        AND auh.bucket_hour >= $2::timestamptz
 )
@@ -356,11 +356,16 @@ type ListDashboardUsageByPersonRow struct {
 // ambient_tokens carries ONLY the local-CLI portion of the total so the UI can
 // surface "includes local CLI" without a second query.
 //
-// owner_id is nullable: a runtime with no resolved owner aggregates into the
-// NULL "unattributed" bucket here rather than being silently folded into a
-// person (plan A4b — the caller renders NULL as "Unattributed"). #6 is honoured
-// because executed-task usage still has exactly one rollup (task_usage_hourly);
-// ambient is a different source class unioned here at read time on owner_id.
+// owner_id is nullable AND the join to agent_runtime is a LEFT JOIN: a runtime
+// with no resolved owner — OR one hard-deleted by the offline-runtime GC
+// (DeleteStaleOfflineRuntimes; an ambient-only local-CLI machine that went quiet
+// for the TTL is exactly its profile) — aggregates into the NULL "unattributed"
+// bucket instead of having its usage dropped. An INNER JOIN here would make a
+// deleted runtime's ambient history vanish from the dashboard, defeating the
+// feature via the project's own GC. NULL renders as "Unattributed" (plan A4b).
+// #6 is honoured because executed-task usage still has exactly one rollup
+// (task_usage_hourly); ambient is a different source class unioned here at read
+// time on owner_id.
 //
 // No date bucket, so no @tz — @since is the viewer-local cutoff computed in Go.
 // No project filter: ambient usage has no project, so scoping the union to a

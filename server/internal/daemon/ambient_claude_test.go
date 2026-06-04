@@ -46,13 +46,22 @@ func asstLine(session, msgID, reqID, model, ts string, in, out, cr, cw int64, co
 // TestAmbientUsageEntryHasNoContentField is the daemon-side twin of the server
 // privacy test: the upload struct carries numbers and ids only.
 func TestAmbientUsageEntryHasNoContentField(t *testing.T) {
-	banned := []string{"content", "prompt", "text", "body", "message", "cwd", "gitbranch"}
+	// Substring-match content words (catches OutputText / MessageBody / …);
+	// exact-match words that prefix legit id/count fields (MessageID, …).
+	substringBanned := []string{"content", "prompt", "text", "body", "cwd", "gitbranch"}
+	exactBanned := []string{"message", "summary", "output", "input"}
 	ty := reflect.TypeOf(AmbientUsageEntry{})
 	for i := 0; i < ty.NumField(); i++ {
 		name := strings.ToLower(ty.Field(i).Name)
-		for _, b := range banned {
-			if name == b {
-				t.Errorf("AmbientUsageEntry.%s looks like a content field; the collector must never carry message content (decisions/2026-06-03-local-log-privacy.md)", ty.Field(i).Name)
+		jsonTag := strings.ToLower(strings.SplitN(ty.Field(i).Tag.Get("json"), ",", 2)[0])
+		for _, b := range substringBanned {
+			if strings.Contains(name, b) || strings.Contains(jsonTag, b) {
+				t.Errorf("AmbientUsageEntry.%s looks like a content field (matched %q); the collector must never carry message content (decisions/2026-06-03-local-log-privacy.md)", ty.Field(i).Name, b)
+			}
+		}
+		for _, b := range exactBanned {
+			if name == b || jsonTag == b {
+				t.Errorf("AmbientUsageEntry.%s looks like a content field (matched %q); the collector must never carry message content (decisions/2026-06-03-local-log-privacy.md)", ty.Field(i).Name, b)
 			}
 		}
 	}

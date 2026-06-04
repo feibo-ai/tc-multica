@@ -53,6 +53,18 @@ CREATE TABLE ambient_usage (
     --       SUM over them inflates usage ~3.46x vs ccusage. This key collapses
     --       them to the first-arrival row.
     -- workspace_id is omitted from the key: runtime_id already determines it.
+    --
+    -- KNOWN v1 LIMITATION — session_id IS in the key, so dedup is *per session*,
+    -- not the global (message.id, requestId) ccusage uses. Claude session
+    -- resume/fork copies prior transcript lines VERBATIM into the new session
+    -- file (same message.id + requestId, new sessionId). Those copies cross the
+    -- forward-only watermark on different scan ticks, so the daemon's per-scan
+    -- in-memory dedup does not collapse them and BOTH survive here — the forked
+    -- assistant turn is counted once per session it appears in (empirically
+    -- ~4-5% of keys span >1 session with identical token tuples). This is the
+    -- prior_session edge the plan scoped to v1-known / v2-fix (v2: message-level
+    -- cross-session reconciliation). It is a bounded over-count, NOT a privacy
+    -- or task-double-count issue (the task-exclusion anti-join is separate).
     CONSTRAINT uq_ambient_usage_key
         UNIQUE (runtime_id, provider, model, session_id, message_id, request_id)
 );

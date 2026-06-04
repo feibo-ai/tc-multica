@@ -17,18 +17,31 @@ import (
 // the daemon uploads carries numbers and ids ONLY. If a future change adds a
 // field that could smuggle message content / prompt text, this fails closed.
 func TestAmbientUsagePayloadHasNoContentField(t *testing.T) {
-	banned := []string{"content", "prompt", "text", "body", "message", "summary", "output", "input_text"}
+	// Content-bearing words that are safe to SUBSTRING-match: no numbers/ids
+	// field on this struct contains them, so a future OutputText / MessageBody /
+	// PromptDraft is caught even though its name only *contains* the word.
+	substringBanned := []string{"content", "prompt", "text", "body"}
+	// Words that appear as a benign prefix in legit fields (MessageID,
+	// OutputTokens, InputTokens) — match these EXACTLY so the test doesn't
+	// false-positive on an id/count column.
+	exactBanned := []string{"message", "summary", "output", "input"}
 	ty := reflect.TypeOf(AmbientUsagePayload{})
 	for i := 0; i < ty.NumField(); i++ {
 		name := strings.ToLower(ty.Field(i).Name)
-		jsonTag := strings.ToLower(ty.Field(i).Tag.Get("json"))
-		for _, b := range banned {
-			// input_tokens / output_tokens are counts, not text — only flag a
-			// field whose name IS a banned word, not one that contains "input".
-			if name == b || strings.HasPrefix(jsonTag, b+",") || jsonTag == b {
-				t.Errorf("AmbientUsagePayload.%s looks like a content field (matched %q); "+
-					"the collector must never carry message content — see decisions/2026-06-03-local-log-privacy.md",
-					ty.Field(i).Name, b)
+		jsonTag := strings.ToLower(strings.SplitN(ty.Field(i).Tag.Get("json"), ",", 2)[0])
+		flag := func(matched string) {
+			t.Errorf("AmbientUsagePayload.%s looks like a content field (matched %q); "+
+				"the collector must never carry message content — see decisions/2026-06-03-local-log-privacy.md",
+				ty.Field(i).Name, matched)
+		}
+		for _, b := range substringBanned {
+			if strings.Contains(name, b) || strings.Contains(jsonTag, b) {
+				flag(b)
+			}
+		}
+		for _, b := range exactBanned {
+			if name == b || jsonTag == b {
+				flag(b)
 			}
 		}
 	}
@@ -204,6 +217,21 @@ func TestReportRuntimeUsage_DedupExcludeSelfHeal(t *testing.T) {
 	if got := hourlyInput(t, ctx, runtimeID); got != 100 {
 		t.Fatalf("self-heal failed: after task session set, expected S-task excluded (input=100), got %d", got)
 	}
+
+	// agent_task_queue.session_id is NOT unique — a retry/resume clones it onto
+	// a sibling task. The exclusion anti-join must stay correct when the same
+	// session matches N>1 atq rows (no fan-out double-exclude / negative sum).
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO agent_task_queue (agent_id, runtime_id, status, priority, session_id)
+		VALUES ($1, $2, 'completed', 0, 'S-task')`, agentID, runtimeID); err != nil {
+		t.Fatalf("create second task with same session: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `SELECT rollup_ambient_usage_hourly_window($1, now() + interval '1 hour')`, tMid); err != nil {
+		t.Fatalf("third rollup: %v", err)
+	}
+	if got := hourlyInput(t, ctx, runtimeID); got != 100 {
+		t.Fatalf("anti-join with 2 atq rows for one session miscounted: expected input=100, got %d", got)
+	}
 }
 
 func hourlyInput(t *testing.T, ctx context.Context, runtimeID string) int64 {
@@ -308,5 +336,83 @@ func TestDashboardUsageByPerson_CombinesTaskAndAmbient(t *testing.T) {
 	}
 	if un.InputTokens != 50 || un.AmbientTokens != 55 {
 		t.Errorf("unattributed bucket wrong: in=%d ambient=%d (want 50/55)", un.InputTokens, un.AmbientTokens)
+	}
+}
+
+// TestDashboardUsageByPerson_DeletedRuntimeUnattributed pins the LEFT JOIN: a
+// runtime hard-deleted by the offline-runtime GC leaves its ambient_usage_hourly
+// rows behind with no agent_runtime to resolve an owner. They must surface in
+// the "unattributed" bucket, NOT vanish (an INNER JOIN would silently drop
+// exactly the local-CLI usage this feature exists to surface).
+func TestDashboardUsageByPerson_DeletedRuntimeUnattributed(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	var wsID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO workspace (name, slug, description, issue_prefix)
+		VALUES ('Deleted RT Test', 'deleted-rt-test-ws', '', 'DRT') RETURNING id`).Scan(&wsID); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(ctx, `DELETE FROM ambient_usage_hourly WHERE workspace_id = $1`, wsID)
+		testPool.Exec(ctx, `DELETE FROM workspace WHERE id = $1`, wsID)
+	})
+
+	// Ambient rollup rows whose runtime_id has NO matching agent_runtime row
+	// (the runtime was GC'd). gen_random_uuid() guarantees the absence.
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO ambient_usage_hourly (bucket_hour, workspace_id, runtime_id, provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, event_count)
+		VALUES (date_trunc('hour', now() - interval '1 day'), $1, gen_random_uuid(), 'claude', 'opus', 999, 9, 0, 0, 1)`, wsID); err != nil {
+		t.Fatalf("insert ambient_usage_hourly: %v", err)
+	}
+
+	since := pgtype.Timestamptz{Time: time.Now().Add(-7 * 24 * time.Hour), Valid: true}
+	rows, err := testHandler.listDashboardUsageByPerson(ctx, parseUUID(wsID), since)
+	if err != nil {
+		t.Fatalf("listDashboardUsageByPerson: %v", err)
+	}
+	if len(rows) != 1 || rows[0].OwnerID != "" || rows[0].InputTokens != 999 {
+		t.Fatalf("deleted runtime's ambient usage must fall to the unattributed bucket; got %+v", rows)
+	}
+}
+
+// TestReportRuntimeUsage_RejectsCrossWorkspace verifies a daemon authenticated
+// for one workspace cannot push usage onto a runtime in another (the workspace
+// is server-resolved from the runtime, never the client).
+func TestReportRuntimeUsage_RejectsCrossWorkspace(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	var runtimeID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_runtime (workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at)
+		VALUES ($1, NULL, 'xws runtime', 'local', 'claude', 'online', '', '{}'::jsonb, now()) RETURNING id`, testWorkspaceID).Scan(&runtimeID); err != nil {
+		t.Fatalf("create runtime: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_runtime WHERE id = $1`, runtimeID) })
+
+	// Daemon authenticated for a DIFFERENT workspace than the runtime's.
+	otherWS := "99999999-9999-4999-8999-999999999999"
+	body := map[string]any{"usage": []AmbientUsagePayload{{
+		SessionID: "s", MessageID: "m", RequestID: "r",
+		Provider: "claude", Model: "opus", EventAt: "2026-04-01T08:30:00Z", InputTokens: 1, Source: "claude",
+	}}}
+	w := httptest.NewRecorder()
+	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/usage", body, otherWS, "xws-daemon")
+	req = withURLParam(req, "runtimeId", runtimeID)
+	testHandler.ReportRuntimeUsage(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("cross-workspace push should be 404, got %d: %s", w.Code, w.Body.String())
+	}
+	var n int
+	testPool.QueryRow(ctx, `SELECT count(*) FROM ambient_usage WHERE runtime_id = $1`, runtimeID).Scan(&n)
+	if n != 0 {
+		t.Fatalf("cross-workspace push leaked %d rows", n)
 	}
 }
