@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>runtime-token-usage</title>
+<style>
+:root{--ink:#1A1A1A;--ink2:#2D2D2D;--paper:#F5F2EB;--paper2:#EDE8DC;--accent:#C73E1D;--gray:#8B8680;--border:#D4CFC4;--green:#4A6B3A;--gold:#B8862E}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Songti SC","Noto Serif SC",Georgia,serif;background:var(--paper);color:var(--ink);line-height:1.8;font-size:15px;padding:48px 40px;max-width:760px;margin:0 auto}
+.eyebrow{font-family:"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+h1{font-weight:900;font-size:40px;line-height:1.15;letter-spacing:-1px;margin-bottom:18px;border-bottom:3px double var(--ink);padding-bottom:20px}
+.meta{display:flex;gap:32px;flex-wrap:wrap;font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--gray);margin-bottom:36px}
+.meta b{color:var(--ink);font-weight:600}
+h2{font-weight:700;font-size:22px;margin:36px 0 14px;padding-left:14px;border-left:4px solid var(--accent)}
+.field{background:#fff;border:1px solid var(--border);padding:18px 22px;margin-bottom:14px}
+.field-label{font-family:"SF Mono",Menlo,monospace;font-size:10px;letter-spacing:1.5px;color:var(--gray);text-transform:uppercase;margin-bottom:6px}
+ul{list-style:none;margin:8px 0}
+li{padding:6px 0 6px 24px;position:relative}
+li::before{content:"▸";position:absolute;left:4px;color:var(--accent)}
+.crit li::before{content:"☐";color:var(--green)}
+code{font-family:"SF Mono",Menlo,monospace;background:var(--paper2);padding:1px 6px;border-radius:2px;font-size:13px}
+.callout{background:var(--paper2);border-left:4px solid var(--gold);padding:14px 18px;margin:18px 0;font-size:14px}
+footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--border);font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--gray)}
+</style></head>
+<body>
+<div class="eyebrow">CASE · 复盘</div>
+<h1>runtime-token-usage</h1>
+<div class="meta"><span>Phase <b>RPI Debrief</b></span></div>
+<h2>1 · 目标</h2><div class="field">为 Multica 新增一个『个人 × runtime』粒度的 token 用量维度，覆盖本机【全部】Claude Code 对话 —— 包括从未经 agent_task_queue 派发的 ad-hoc 本地会话（今天对所有报表 0 行不可见，见 handler/runtime.go:84-87 自陈盲区）。做法：daemon 就地解析本地 transcript 日志（【只读数字、绝不读 message.content】），按 (message.id, requestId) 去重并经 server 端排除已执行任务的 session 去双算，归到 runtime.owner_id（= 注册该 daemon 的用户），经新 runtime 级端点上报到新的 task-less 用量表，再汇入复用控制骨架的并行 rollup，最终在 dashboard 露出一个【包含这部分此前不可见本地用量】的 per-person 总数。v1 范围：JSONL 解析、可插拔 Collector 框架（Claude 为首个 adapter）、只向前、daemon-owner 归属（含 owner_id 可靠性修复）。</div>
+<h2>2 · 实际发生</h2><div class="field">单个 Implement session 按 plan v1.2 执行 A→B→C，每个 green 边界提交（6 commit）。Phase A（不可逆 schema + ingestion + rollup）因本地 dev DB 已停，改用一次性 pg18 容器验证。最高风险逻辑——server 权威去重排除已执行 session + agent_task_queue 触发器重滚桶使 in-flight 双算自愈——用一个「窗口推到水位之后、只能靠 dirty queue 浮现桶」的测试证明触发器是 load-bearing。Claude adapter 针对本机 961 份真实 transcript 实测：去重 46841 事件 vs ccusage 式 jq 参考 46842（差 1 是末行无换行符被正确延迟）。Phase C 走 DRI 批准的减震器路线：在既有 dashboard 加 per-person 列表而非专属面板。收尾 make check：typecheck/单测/Go 全绿（Go 全套针对修好的 dev DB）；E2E 仅因预存问题失败（缺 Playwright 浏览器[已装]；auth spec 断言旧登录 UI；本地 /api dev-proxy 指向前端口），均非本分支所碰。顺带修了一个 docker-compose pg18 挂载点 bug 以复活 dev DB。</div>
+<h2>3 · 完成标准</h2><div class="field crit"><ul><li>✅ 本地会话可见：ad-hoc claude 会话 token 在一个 rollup tick 内落到 daemon owner 的 person×runtime</li><li>✅ 不双算：server 端 rollup LEFT JOIN agent_task_queue 排除已执行 session</li><li>✅ 用量正确性 B1：同-(message.id,requestId) 重复行去重后求和=ccusage 参考，不被放大</li><li>✅ 隐私：上报/落库只含 {session_id,timestamp,model,provider,4 token 数}，绝不读 message.content</li><li>✅ 幂等+fail-soft：重扫 0 新增行；畸形 JSONL 行跳过而非致命</li><li>✅ 可插拔：Collector 接口≥1 具体 adapter(Claude)且契约文档化，加 Codex=新写一文件</li><li>✅ 端点受护：POST /runtimes/{id}/usage 经 requireDaemonRuntimeAccess+过滤 workspace_id；UI 读端经 zod+parseWithFallback+malformed 测试</li><li>✅ per-person 读出：dashboard 显示 per-person token 总数，含 mounted+未挂载本地会话，字段缺失优雅降级</li><li>✅ 归属修复 B3：owner_id IS NULL 落『未归属』桶；旧回填行经 PAT 重注册自愈</li><li>❌ 绿管线 make check 通过(typecheck/TS test/Go test/E2E) — typecheck(6/6)+TS 单测(600+)+Go 全套(含新端点/daemon/migration/触发器，针对真实 dev DB)全绿；E2E 仅因预存且与本 feature 无关的问题失败：缺 Playwright 浏览器(已装)、auth.spec 断言旧登录 UI、本地 /api dev-proxy 指向前端口。git diff 证实本分支未碰 login/auth-UI/proxy/e2e。CI(built 前端+正确 proxy)为权威 E2E。已 spawn 独立任务修过时 specs。</li></ul></div>
+<h2>4 · 关键判断</h2><div class="field"><div class="field-label">判断:不可逆 schema 用一次性 pg18 容器验证，不动停掉的 dev DB</div>
+<b>背景</b> Phase A 的 114/115 是不可逆 schema，提交前必须验证；但本地 dev DB 容器已 Exited(pg18 卷不兼容)<br>
+<b>选项</b> 擅自 make db-reset 清空共享 dev 数据(销毁性、未经同意) / 先写代码靠 CI 验证 / 起一个匹配 prod 镜像的一次性 pg18 容器就地验证<br>
+<b>选择</b> 一次性 pg18 容器：应用全部 migration + SQL 级冒烟测试(去重+rollup 数学) + 后续全套 Go 测试，零风险动用户 dev 数据；并在 SQL 层提前为 B1/B2 算法去险<br>
+<b>事后看</b> 对。最高风险阶段拿到快、安全、可复现的验证；也促成后来发现 dev DB 本身需要改 compose 挂载点<br>
+<b>古法不可能</b> AI 代理在实现中途内联起一个 prod 镜像临时库、跑 115 个 migration、做 SQL 级正确性探针、再销毁——替代了原本要手动 DBA/devops 的绕路</div>
+<div class="field"><div class="field-label">判断:去重排除做成 server 权威 + atq 触发器自愈，而非 daemon 侧</div>
+<b>背景</b> mounted run 的 transcript 也落 ~/.claude/projects 会被扫进而双算；daemon 重启不持久化已执行 session_id<br>
+<b>选项</b> 信任 daemon 跳过已执行 session / task_usage_hourly 改 nullable agent_id / 兄弟表 + server 端 anti-join + atq 触发器重滚桶<br>
+<b>选择</b> 兄弟表 ambient_usage + rollup 对 agent_task_queue.session_id anti-join + AFTER 触发器重入 dirty 桶，使 in-flight 双算下一 tick 自愈。测试把窗口推到水位之后，让桶只能靠 dirty queue 浮现，从而证明触发器 load-bearing<br>
+<b>事后看</b> 对。plan 评审已把这点从『反向的 daemon 侧去重』翻正；测试设计(窗口越过水位)让自愈是被证明的而非被断言的<br>
+<b>古法不可能</b> 对分布式 in-flight 竞态推理 + 编出隔离 dirty-queue 路径的确定性测试，是 AI-native 对抗式验证才便宜的事</div>
+<div class="field"><div class="field-label">判断:Claude adapter 只向前 seeding(seed 不发射)，不回填历史</div>
+<b>背景</b> 本机已有 961 份 transcript；首扫要么回填多年历史，要么只建水位<br>
+<b>选项</b> 首扫回填全部历史 / 永不发射直到出现新文件 / seed 每个现存文件当前 EOF、只发射其后追加/全新文件<br>
+<b>选择</b> 首扫 seed-不发射(记录现 EOF offset)，之后只 tail 追加字节 + 全新文件从 0 读。符合 plan『只向前』，避免巨量首传<br>
+<b>事后看</b> 对。实测验证(seed 对 961 文件发射 0；强制重读与 jq 参考差 1)。末行无换行符的延迟边界自然落出，并解释了 46841 vs 46842 的差异<br>
+<b>古法不可能</b> 对用户约 108k 行真实本地日志实测解析器、再从第一性原理解释单个事件差异，都在一个 session 内完成</div>
+<div class="field"><div class="field-label">判断:判定 E2E 失败为预存且无关，而非追下去</div>
+<b>背景</b> make check 的 E2E 失败；失败的全是 auth/nav/issues spec——本分支一处没碰<br>
+<b>选项</b> 假设我的改动弄坏了去深挖 / 现在就修过时 specs+proxy(scope creep) / 证明非因果后停手<br>
+<b>选择</b> 证明了：git diff 显示无 login/auth-UI/proxy/e2e 改动；页面快照显示登录页正常但 spec 断言旧文案/placeholder；dev /api proxy 解析到前端口。为过时 specs spawn 了独立任务<br>
+<b>事后看</b> 对。Go 全套(真正测了新端点/daemon/migration 针对真实 DB)才是本地权威验证；追 E2E 环境会把 scope 烧在预存问题上<br>
+<b>古法不可能</b> 交叉比对浏览器 DOM 快照、测试源码、proxy 配置、commit diff 来在几分钟内证伪『我的代码弄坏了它』</div>
+<h2>5 · 规则候选</h2><div class="field"><ul><li>当 schema/DB 层工作的共享 dev DB 已停或镜像不兼容时，起一个匹配 prod 镜像的一次性容器在其上验证，而非销毁性重置共享 DB。</li><li>给热表(被广泛写入，如 agent_task_queue)新增触发器，必须跑完整测试套件作为回归门，因为它会在所有无关测试的每次操作时触发。</li><li>本地 E2E 套件不是后端 feature 的验证面——用 Go 套件针对已迁移 DB 验证；E2E 的环境/spec 失败默认按预存处理，直到 diff 检查证明确为本次改动所致。</li></ul></div>
+<footer>team-context · RPI Debrief · SOP 非妥协 #2 · multica issue 内渲染</footer>
+</body></html>
