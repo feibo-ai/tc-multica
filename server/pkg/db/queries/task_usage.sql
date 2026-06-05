@@ -141,6 +141,93 @@ SELECT
  GROUP BY owner_id
  ORDER BY (SUM(input_tokens) + SUM(output_tokens) + SUM(cache_read_tokens) + SUM(cache_write_tokens)) DESC;
 
+-- name: ListDashboardAmbientUsageByPerson :many
+-- Per-(owner, model) ambient token totals for the workspace. This is the
+-- user-tab read-out: it covers ONLY ad-hoc local-CLI usage
+-- (ambient_usage_hourly), never executed-task usage — the clean ambient / task
+-- split (plan D2). The model dimension is preserved so the client can compute
+-- cost from its per-model pricing table and then fold the rows by owner; the
+-- sibling ListDashboardUsageByPerson collapses model and so can only report
+-- tokens, which is exactly why this model-preserving variant exists.
+--
+-- owner_id is nullable AND the join is a LEFT JOIN: a runtime with no resolved
+-- owner — OR one hard-deleted by the offline-runtime GC
+-- (DeleteStaleOfflineRuntimes; an ambient-only local-CLI machine that went
+-- quiet for the TTL) — aggregates into the NULL "unattributed" bucket
+-- (rendered "" → "Unattributed", plan Q1) instead of having its usage dropped.
+--
+-- No date bucket, so no @tz — @since is the viewer-local cutoff computed in Go.
+-- No project filter: ambient usage has no project.
+SELECT
+    rt.owner_id,
+    auh.model,
+    SUM(auh.input_tokens)::bigint        AS input_tokens,
+    SUM(auh.output_tokens)::bigint       AS output_tokens,
+    SUM(auh.cache_read_tokens)::bigint   AS cache_read_tokens,
+    SUM(auh.cache_write_tokens)::bigint  AS cache_write_tokens
+FROM ambient_usage_hourly auh
+LEFT JOIN agent_runtime rt ON rt.id = auh.runtime_id
+WHERE auh.workspace_id = $1
+  AND auh.bucket_hour >= @since::timestamptz
+GROUP BY rt.owner_id, auh.model
+ORDER BY rt.owner_id, auh.model;
+
+-- name: ListDashboardAmbientUsageDaily :many
+-- Daily per-(date, model) ambient token aggregates for a SINGLE owner (or the
+-- unattributed bucket), from ambient_usage_hourly sliced into calendar days
+-- under the caller-supplied @tz. Powers the user-tab 26-week heatmap.
+--
+-- This query has NO "all owners" mode. The owner_id filter resolves to exactly
+-- one of two branches:
+--   * narg owner_id IS NOT NULL → that owner's rows only;
+--   * narg owner_id IS NULL     → the unattributed bucket (rt.owner_id IS NULL).
+-- The Go handler passes pgtype.UUID{Valid:false} for the unattributed case
+-- (owner_id="" or param absent); it MUST NOT run "" through any UUID parse
+-- (util.ParseUUID("") errors). Keeping the two-branch invariant explicit stops
+-- "" from drifting between "unattributed bucket" and "no filter at all".
+--
+-- @since is already the viewer's local start-of-day-(N) (parseSinceParamInTZ)
+-- — passed straight through, NOT re-truncated; see ListDashboardUsageDaily.
+SELECT
+    DATE(auh.bucket_hour AT TIME ZONE sqlc.arg('tz')::text) AS date,
+    auh.model,
+    SUM(auh.input_tokens)::bigint        AS input_tokens,
+    SUM(auh.output_tokens)::bigint       AS output_tokens,
+    SUM(auh.cache_read_tokens)::bigint   AS cache_read_tokens,
+    SUM(auh.cache_write_tokens)::bigint  AS cache_write_tokens
+FROM ambient_usage_hourly auh
+LEFT JOIN agent_runtime rt ON rt.id = auh.runtime_id
+WHERE auh.workspace_id = $1
+  AND auh.bucket_hour >= sqlc.arg('since')::timestamptz
+  AND (
+        (sqlc.narg('owner_id')::uuid IS NOT NULL AND rt.owner_id = sqlc.narg('owner_id'))
+     OR (sqlc.narg('owner_id')::uuid IS NULL     AND rt.owner_id IS NULL)
+      )
+GROUP BY DATE(auh.bucket_hour AT TIME ZONE sqlc.arg('tz')::text), auh.model
+ORDER BY DATE(auh.bucket_hour AT TIME ZONE sqlc.arg('tz')::text) DESC, auh.model;
+
+-- name: ListDashboardAgentUsageDaily :many
+-- Daily per-(date, model) task token aggregates for a SINGLE agent, from
+-- task_usage_hourly sliced into calendar days under @tz. Powers the agent-tab
+-- 26-week heatmap. The index idx_task_usage_hourly_workspace_agent_time covers
+-- (workspace_id, agent_id, bucket_hour).
+--
+-- @since is already the viewer's local start-of-day-(N) (parseSinceParamInTZ)
+-- — passed straight through, NOT re-truncated; see ListDashboardUsageDaily.
+SELECT
+    DATE(bucket_hour AT TIME ZONE sqlc.arg('tz')::text) AS date,
+    model,
+    SUM(input_tokens)::bigint        AS input_tokens,
+    SUM(output_tokens)::bigint       AS output_tokens,
+    SUM(cache_read_tokens)::bigint   AS cache_read_tokens,
+    SUM(cache_write_tokens)::bigint  AS cache_write_tokens
+FROM task_usage_hourly
+WHERE workspace_id = $1
+  AND agent_id = @agent_id::uuid
+  AND bucket_hour >= sqlc.arg('since')::timestamptz
+GROUP BY DATE(bucket_hour AT TIME ZONE sqlc.arg('tz')::text), model
+ORDER BY DATE(bucket_hour AT TIME ZONE sqlc.arg('tz')::text) DESC, model;
+
 -- name: ListDashboardRunTimeDaily :many
 -- Daily per-date run time + task counts for the workspace, optionally
 -- scoped to a single project. Powers the workspace dashboard's "Time"

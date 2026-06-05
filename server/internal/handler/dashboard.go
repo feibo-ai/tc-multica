@@ -252,6 +252,173 @@ func (h *Handler) listDashboardUsageByPerson(
 	return resp, nil
 }
 
+// DashboardAmbientUsageByPersonResponse is one (owner, model) ambient row — the
+// "user tab" read-out. Unlike DashboardUsageByPersonResponse it covers ONLY
+// local-CLI usage (ambient_usage_hourly), never executed-task usage (clean
+// ambient / task split, plan D2), and it KEEPS the model dimension so the
+// client can fold rows by owner and price each model. OwnerID is "" for the
+// "unattributed" bucket (ambient usage on a runtime with no resolved owner).
+type DashboardAmbientUsageByPersonResponse struct {
+	OwnerID          string `json:"owner_id"`
+	Model            string `json:"model"`
+	InputTokens      int64  `json:"input_tokens"`
+	OutputTokens     int64  `json:"output_tokens"`
+	CacheReadTokens  int64  `json:"cache_read_tokens"`
+	CacheWriteTokens int64  `json:"cache_write_tokens"`
+}
+
+// GetDashboardAmbientUsageByPerson returns per-(owner, model) ambient token
+// aggregates for the workspace — the user-tab leaderboard feed. Model stays on
+// the wire so the client folds rows by owner and computes per-model cost.
+//
+// No project filter (ambient usage has no project). No date bucket — tz only
+// sets the ?days= cutoff boundary.
+func (h *Handler) GetDashboardAmbientUsageByPerson(w http.ResponseWriter, r *http.Request) {
+	workspaceID := h.resolveWorkspaceID(r)
+	if _, ok := h.workspaceMember(w, r, workspaceID); !ok {
+		return
+	}
+	tz := h.resolveViewingTZ(r)
+	since := parseSinceParamInTZ(r, 30, tz)
+
+	rows, err := h.Queries.ListDashboardAmbientUsageByPerson(r.Context(), db.ListDashboardAmbientUsageByPersonParams{
+		WorkspaceID: parseUUID(workspaceID),
+		Since:       since,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list ambient usage by person")
+		return
+	}
+
+	resp := make([]DashboardAmbientUsageByPersonResponse, len(rows))
+	for i, row := range rows {
+		// NULL owner → "" so the client renders the "Unattributed" bucket
+		// instead of folding it into a person (plan Q1; same as by-person).
+		ownerID := ""
+		if row.OwnerID.Valid {
+			ownerID = uuidToString(row.OwnerID)
+		}
+		resp[i] = DashboardAmbientUsageByPersonResponse{
+			OwnerID:          ownerID,
+			Model:            row.Model,
+			InputTokens:      row.InputTokens,
+			OutputTokens:     row.OutputTokens,
+			CacheReadTokens:  row.CacheReadTokens,
+			CacheWriteTokens: row.CacheWriteTokens,
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// DashboardUsageDailyByModelResponse is one (date, model) bucket of token
+// counts, shared by BOTH heatmap endpoints (ambient/daily and by-agent/daily)
+// since their wire shape is identical. No task_count: the heatmap colours by
+// tokens or by client-computed cost, neither of which needs the count.
+type DashboardUsageDailyByModelResponse struct {
+	Date             string `json:"date"`
+	Model            string `json:"model"`
+	InputTokens      int64  `json:"input_tokens"`
+	OutputTokens     int64  `json:"output_tokens"`
+	CacheReadTokens  int64  `json:"cache_read_tokens"`
+	CacheWriteTokens int64  `json:"cache_write_tokens"`
+}
+
+// GetDashboardAmbientUsageDaily returns per-(date, model) ambient token rows
+// for a SINGLE owner — or the unattributed bucket — sliced into calendar days
+// under the viewer's tz. Powers the user-tab 26-week heatmap.
+//
+// owner_id handling is deliberately NOT the blanket parseUUIDOrBadRequest: this
+// endpoint has no "all owners" mode. An empty OR absent owner_id means the
+// unattributed bucket (rt.owner_id IS NULL), passed to the query as SQL NULL
+// via pgtype.UUID{Valid:false}. We MUST NOT run "" through any UUID parse
+// (util.ParseUUID("") errors), and an empty owner_id is NOT a 400. Note
+// r.URL.Query().Get("owner_id") returns "" both for `?owner_id=` and for the
+// key being absent entirely; both route to the unattributed bucket. Only a
+// non-empty, malformed owner_id is a 400.
+func (h *Handler) GetDashboardAmbientUsageDaily(w http.ResponseWriter, r *http.Request) {
+	workspaceID := h.resolveWorkspaceID(r)
+	if _, ok := h.workspaceMember(w, r, workspaceID); !ok {
+		return
+	}
+
+	ownerID := pgtype.UUID{} // Valid:false → SQL NULL → unattributed bucket
+	if raw := r.URL.Query().Get("owner_id"); raw != "" {
+		parsed, ok := parseUUIDOrBadRequest(w, raw, "owner_id")
+		if !ok {
+			return
+		}
+		ownerID = parsed
+	}
+
+	tz := h.resolveViewingTZ(r)
+	since := parseSinceParamInTZ(r, 30, tz)
+
+	rows, err := h.Queries.ListDashboardAmbientUsageDaily(r.Context(), db.ListDashboardAmbientUsageDailyParams{
+		WorkspaceID: parseUUID(workspaceID),
+		Tz:          tz,
+		Since:       since,
+		OwnerID:     ownerID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list ambient usage daily")
+		return
+	}
+
+	resp := make([]DashboardUsageDailyByModelResponse, len(rows))
+	for i, row := range rows {
+		resp[i] = DashboardUsageDailyByModelResponse{
+			Date:             row.Date.Time.Format("2006-01-02"),
+			Model:            row.Model,
+			InputTokens:      row.InputTokens,
+			OutputTokens:     row.OutputTokens,
+			CacheReadTokens:  row.CacheReadTokens,
+			CacheWriteTokens: row.CacheWriteTokens,
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// GetDashboardAgentUsageDaily returns per-(date, model) task token rows for a
+// SINGLE agent, sliced into calendar days under the viewer's tz. Powers the
+// agent-tab 26-week heatmap. agent_id is a required UUID — malformed input is a
+// 400 (#1661 boundary convention), though this is a pure read with no write.
+func (h *Handler) GetDashboardAgentUsageDaily(w http.ResponseWriter, r *http.Request) {
+	workspaceID := h.resolveWorkspaceID(r)
+	if _, ok := h.workspaceMember(w, r, workspaceID); !ok {
+		return
+	}
+	agentID, ok := parseUUIDOrBadRequest(w, r.URL.Query().Get("agent_id"), "agent_id")
+	if !ok {
+		return
+	}
+	tz := h.resolveViewingTZ(r)
+	since := parseSinceParamInTZ(r, 30, tz)
+
+	rows, err := h.Queries.ListDashboardAgentUsageDaily(r.Context(), db.ListDashboardAgentUsageDailyParams{
+		WorkspaceID: parseUUID(workspaceID),
+		Tz:          tz,
+		AgentID:     agentID,
+		Since:       since,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list agent usage daily")
+		return
+	}
+
+	resp := make([]DashboardUsageDailyByModelResponse, len(rows))
+	for i, row := range rows {
+		resp[i] = DashboardUsageDailyByModelResponse{
+			Date:             row.Date.Time.Format("2006-01-02"),
+			Model:            row.Model,
+			InputTokens:      row.InputTokens,
+			OutputTokens:     row.OutputTokens,
+			CacheReadTokens:  row.CacheReadTokens,
+			CacheWriteTokens: row.CacheWriteTokens,
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // DashboardAgentRunTimeResponse is one agent's total terminal-task run time
 // over the window. Includes failed tasks so the dashboard can surface how
 // much execution time was spent on runs that didn't succeed.

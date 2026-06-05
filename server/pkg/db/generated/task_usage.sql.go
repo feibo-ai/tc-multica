@@ -150,6 +150,234 @@ func (q *Queries) ListDashboardAgentRunTime(ctx context.Context, arg ListDashboa
 	return items, nil
 }
 
+const listDashboardAgentUsageDaily = `-- name: ListDashboardAgentUsageDaily :many
+SELECT
+    DATE(bucket_hour AT TIME ZONE $2::text) AS date,
+    model,
+    SUM(input_tokens)::bigint        AS input_tokens,
+    SUM(output_tokens)::bigint       AS output_tokens,
+    SUM(cache_read_tokens)::bigint   AS cache_read_tokens,
+    SUM(cache_write_tokens)::bigint  AS cache_write_tokens
+FROM task_usage_hourly
+WHERE workspace_id = $1
+  AND agent_id = $3::uuid
+  AND bucket_hour >= $4::timestamptz
+GROUP BY DATE(bucket_hour AT TIME ZONE $2::text), model
+ORDER BY DATE(bucket_hour AT TIME ZONE $2::text) DESC, model
+`
+
+type ListDashboardAgentUsageDailyParams struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Tz          string             `json:"tz"`
+	AgentID     pgtype.UUID        `json:"agent_id"`
+	Since       pgtype.Timestamptz `json:"since"`
+}
+
+type ListDashboardAgentUsageDailyRow struct {
+	Date             pgtype.Date `json:"date"`
+	Model            string      `json:"model"`
+	InputTokens      int64       `json:"input_tokens"`
+	OutputTokens     int64       `json:"output_tokens"`
+	CacheReadTokens  int64       `json:"cache_read_tokens"`
+	CacheWriteTokens int64       `json:"cache_write_tokens"`
+}
+
+// Daily per-(date, model) task token aggregates for a SINGLE agent, from
+// task_usage_hourly sliced into calendar days under @tz. Powers the agent-tab
+// 26-week heatmap. The index idx_task_usage_hourly_workspace_agent_time covers
+// (workspace_id, agent_id, bucket_hour).
+//
+// @since is already the viewer's local start-of-day-(N) (parseSinceParamInTZ)
+// — passed straight through, NOT re-truncated; see ListDashboardUsageDaily.
+func (q *Queries) ListDashboardAgentUsageDaily(ctx context.Context, arg ListDashboardAgentUsageDailyParams) ([]ListDashboardAgentUsageDailyRow, error) {
+	rows, err := q.db.Query(ctx, listDashboardAgentUsageDaily,
+		arg.WorkspaceID,
+		arg.Tz,
+		arg.AgentID,
+		arg.Since,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDashboardAgentUsageDailyRow{}
+	for rows.Next() {
+		var i ListDashboardAgentUsageDailyRow
+		if err := rows.Scan(
+			&i.Date,
+			&i.Model,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CacheReadTokens,
+			&i.CacheWriteTokens,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDashboardAmbientUsageByPerson = `-- name: ListDashboardAmbientUsageByPerson :many
+SELECT
+    rt.owner_id,
+    auh.model,
+    SUM(auh.input_tokens)::bigint        AS input_tokens,
+    SUM(auh.output_tokens)::bigint       AS output_tokens,
+    SUM(auh.cache_read_tokens)::bigint   AS cache_read_tokens,
+    SUM(auh.cache_write_tokens)::bigint  AS cache_write_tokens
+FROM ambient_usage_hourly auh
+LEFT JOIN agent_runtime rt ON rt.id = auh.runtime_id
+WHERE auh.workspace_id = $1
+  AND auh.bucket_hour >= $2::timestamptz
+GROUP BY rt.owner_id, auh.model
+ORDER BY rt.owner_id, auh.model
+`
+
+type ListDashboardAmbientUsageByPersonParams struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Since       pgtype.Timestamptz `json:"since"`
+}
+
+type ListDashboardAmbientUsageByPersonRow struct {
+	OwnerID          pgtype.UUID `json:"owner_id"`
+	Model            string      `json:"model"`
+	InputTokens      int64       `json:"input_tokens"`
+	OutputTokens     int64       `json:"output_tokens"`
+	CacheReadTokens  int64       `json:"cache_read_tokens"`
+	CacheWriteTokens int64       `json:"cache_write_tokens"`
+}
+
+// Per-(owner, model) ambient token totals for the workspace. This is the
+// user-tab read-out: it covers ONLY ad-hoc local-CLI usage
+// (ambient_usage_hourly), never executed-task usage — the clean ambient / task
+// split (plan D2). The model dimension is preserved so the client can compute
+// cost from its per-model pricing table and then fold the rows by owner; the
+// sibling ListDashboardUsageByPerson collapses model and so can only report
+// tokens, which is exactly why this model-preserving variant exists.
+//
+// owner_id is nullable AND the join is a LEFT JOIN: a runtime with no resolved
+// owner — OR one hard-deleted by the offline-runtime GC
+// (DeleteStaleOfflineRuntimes; an ambient-only local-CLI machine that went
+// quiet for the TTL) — aggregates into the NULL "unattributed" bucket
+// (rendered "" → "Unattributed", plan Q1) instead of having its usage dropped.
+//
+// No date bucket, so no @tz — @since is the viewer-local cutoff computed in Go.
+// No project filter: ambient usage has no project.
+func (q *Queries) ListDashboardAmbientUsageByPerson(ctx context.Context, arg ListDashboardAmbientUsageByPersonParams) ([]ListDashboardAmbientUsageByPersonRow, error) {
+	rows, err := q.db.Query(ctx, listDashboardAmbientUsageByPerson, arg.WorkspaceID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDashboardAmbientUsageByPersonRow{}
+	for rows.Next() {
+		var i ListDashboardAmbientUsageByPersonRow
+		if err := rows.Scan(
+			&i.OwnerID,
+			&i.Model,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CacheReadTokens,
+			&i.CacheWriteTokens,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDashboardAmbientUsageDaily = `-- name: ListDashboardAmbientUsageDaily :many
+SELECT
+    DATE(auh.bucket_hour AT TIME ZONE $2::text) AS date,
+    auh.model,
+    SUM(auh.input_tokens)::bigint        AS input_tokens,
+    SUM(auh.output_tokens)::bigint       AS output_tokens,
+    SUM(auh.cache_read_tokens)::bigint   AS cache_read_tokens,
+    SUM(auh.cache_write_tokens)::bigint  AS cache_write_tokens
+FROM ambient_usage_hourly auh
+LEFT JOIN agent_runtime rt ON rt.id = auh.runtime_id
+WHERE auh.workspace_id = $1
+  AND auh.bucket_hour >= $3::timestamptz
+  AND (
+        ($4::uuid IS NOT NULL AND rt.owner_id = $4)
+     OR ($4::uuid IS NULL     AND rt.owner_id IS NULL)
+      )
+GROUP BY DATE(auh.bucket_hour AT TIME ZONE $2::text), auh.model
+ORDER BY DATE(auh.bucket_hour AT TIME ZONE $2::text) DESC, auh.model
+`
+
+type ListDashboardAmbientUsageDailyParams struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Tz          string             `json:"tz"`
+	Since       pgtype.Timestamptz `json:"since"`
+	OwnerID     pgtype.UUID        `json:"owner_id"`
+}
+
+type ListDashboardAmbientUsageDailyRow struct {
+	Date             pgtype.Date `json:"date"`
+	Model            string      `json:"model"`
+	InputTokens      int64       `json:"input_tokens"`
+	OutputTokens     int64       `json:"output_tokens"`
+	CacheReadTokens  int64       `json:"cache_read_tokens"`
+	CacheWriteTokens int64       `json:"cache_write_tokens"`
+}
+
+// Daily per-(date, model) ambient token aggregates for a SINGLE owner (or the
+// unattributed bucket), from ambient_usage_hourly sliced into calendar days
+// under the caller-supplied @tz. Powers the user-tab 26-week heatmap.
+//
+// This query has NO "all owners" mode. The owner_id filter resolves to exactly
+// one of two branches:
+//   - narg owner_id IS NOT NULL → that owner's rows only;
+//   - narg owner_id IS NULL     → the unattributed bucket (rt.owner_id IS NULL).
+//
+// The Go handler passes pgtype.UUID{Valid:false} for the unattributed case
+// (owner_id="" or param absent); it MUST NOT run "" through any UUID parse
+// (util.ParseUUID("") errors). Keeping the two-branch invariant explicit stops
+// "" from drifting between "unattributed bucket" and "no filter at all".
+//
+// @since is already the viewer's local start-of-day-(N) (parseSinceParamInTZ)
+// — passed straight through, NOT re-truncated; see ListDashboardUsageDaily.
+func (q *Queries) ListDashboardAmbientUsageDaily(ctx context.Context, arg ListDashboardAmbientUsageDailyParams) ([]ListDashboardAmbientUsageDailyRow, error) {
+	rows, err := q.db.Query(ctx, listDashboardAmbientUsageDaily,
+		arg.WorkspaceID,
+		arg.Tz,
+		arg.Since,
+		arg.OwnerID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDashboardAmbientUsageDailyRow{}
+	for rows.Next() {
+		var i ListDashboardAmbientUsageDailyRow
+		if err := rows.Scan(
+			&i.Date,
+			&i.Model,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CacheReadTokens,
+			&i.CacheWriteTokens,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDashboardRunTimeDaily = `-- name: ListDashboardRunTimeDaily :many
 SELECT
     DATE(atq.completed_at AT TIME ZONE $2::text) AS date,
