@@ -1,9 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { BarChart3, FolderKanban, HelpCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "@multica/ui/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -17,7 +23,9 @@ import { projectListOptions } from "@multica/core/projects/queries";
 import {
   dashboardUsageDailyOptions,
   dashboardUsageByAgentOptions,
-  dashboardUsageByPersonOptions,
+  dashboardAmbientUsageByPersonOptions,
+  dashboardAmbientUsageDailyOptions,
+  dashboardAgentUsageDailyOptions,
   dashboardAgentRunTimeOptions,
   dashboardRunTimeDailyOptions,
 } from "@multica/core/dashboard";
@@ -34,6 +42,8 @@ import {
   WeeklyTokensChart,
   WeeklyTimeChart,
   WeeklyTasksChart,
+  ActivityHeatmap,
+  type HeatmapMetric,
 } from "../../runtimes/components/charts";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -50,12 +60,14 @@ import {
   aggregateDailyTasks,
   aggregateDailyTime,
   aggregateDailyTokens,
+  aggregateOwnerAmbient,
   aggregateWeeklyTasks,
   aggregateWeeklyTime,
   computeDailyTotals,
   formatDuration,
   mergeAgentDashboardRows,
   type AgentDashboardRow,
+  type OwnerCostRow,
 } from "../utils";
 
 // Period selector — mirrors the runtime detail page so users see the same
@@ -97,7 +109,8 @@ const ALL_PROJECTS = "__all__";
 // reference-equality dep check and trips the exhaustive-deps lint rule.
 const EMPTY_DAILY: import("@multica/core/types").DashboardUsageDaily[] = [];
 const EMPTY_BY_AGENT: import("@multica/core/types").DashboardUsageByAgent[] = [];
-const EMPTY_BY_PERSON: import("@multica/core/types").DashboardUsageByPerson[] = [];
+const EMPTY_AMBIENT_BY_PERSON: import("@multica/core/types").DashboardAmbientUsageByPerson[] = [];
+const EMPTY_DAILY_BY_MODEL: import("@multica/core/types").DashboardUsageDailyByModel[] = [];
 const EMPTY_RUNTIME: import("@multica/core/types").DashboardAgentRunTime[] = [];
 const EMPTY_RUNTIME_DAILY: import("@multica/core/types").DashboardRunTimeDaily[] = [];
 
@@ -205,16 +218,18 @@ export function DashboardPage() {
   const runTimeDailyQuery = useQuery(
     dashboardRunTimeDailyOptions(wsId, chartFetchDays, projectId, viewTZ),
   );
-  // Per-person usage is workspace-wide (no project filter — ambient usage has
-  // no project). members resolve owner_id → a name + avatar.
-  const byPersonQuery = useQuery(
-    dashboardUsageByPersonOptions(wsId, days, viewTZ),
+  // Ambient (local-CLI) per-person usage powers the user tab. Workspace-wide
+  // (no project filter — ambient usage has no project); members resolve
+  // owner_id → a name + avatar. The legacy /usage/by-person endpoint is kept
+  // for older installed desktop builds but is no longer rendered here.
+  const ambientByPersonQuery = useQuery(
+    dashboardAmbientUsageByPersonOptions(wsId, days, viewTZ),
   );
   const { data: members = [] } = useQuery(memberListOptions(wsId));
 
   const dailyUsage = dailyQuery.data ?? EMPTY_DAILY;
   const byAgentUsage = byAgentQuery.data ?? EMPTY_BY_AGENT;
-  const byPersonUsage = byPersonQuery.data ?? EMPTY_BY_PERSON;
+  const ambientByPersonUsage = ambientByPersonQuery.data ?? EMPTY_AMBIENT_BY_PERSON;
   const runTimeRows = runTimeQuery.data ?? EMPTY_RUNTIME;
   const runTimeDailyRows = runTimeDailyQuery.data ?? EMPTY_RUNTIME_DAILY;
 
@@ -241,20 +256,20 @@ export function DashboardPage() {
   const isLoading =
     dailyQuery.isLoading ||
     byAgentQuery.isLoading ||
-    byPersonQuery.isLoading ||
+    ambientByPersonQuery.isLoading ||
     runTimeQuery.isLoading ||
     runTimeDailyQuery.isLoading;
 
   // Independent rollups, but the empty-state is one decision — only show
-  // "no data yet" when ALL came back empty (incl. per-person ambient, so a
-  // pure-local-CLI workspace with no dispatched tasks still shows its list)
-  // so a project with tokens
-  // but no runs (or vice-versa) doesn't look broken.
+  // "no data yet" when ALL came back empty. The ambient per-person feed is in
+  // the tally so a pure-local-CLI workspace (no dispatched tasks, only local
+  // Claude Code usage) still renders its user tab instead of the empty state;
+  // a project with tokens but no runs (or vice-versa) doesn't look broken.
   const hasNoData =
     !isLoading &&
     dailyUsage.length === 0 &&
     byAgentUsage.length === 0 &&
-    byPersonUsage.length === 0 &&
+    ambientByPersonUsage.length === 0 &&
     runTimeRows.length === 0 &&
     runTimeDailyRows.length === 0;
 
@@ -421,18 +436,19 @@ export function DashboardPage() {
                 lessThanMinuteLabel={t(($) => $.duration.less_than_minute)}
               />
 
-              {/* Per-agent leaderboard — user picks the ranking metric;
-                  the progress bar and column emphasis follow the metric. */}
-              <Leaderboard
-                rows={agentRows}
+              {/* Users | Agents tabs. User tab = ambient (local-CLI) usage by
+                  person; Agent tab = the per-agent task leaderboard. Each tab
+                  pairs a ranked list with a 26-week activity heatmap for the
+                  selected row (defaults to the top spender). */}
+              <UsageTabs
+                wsId={wsId}
+                viewTZ={viewTZ}
+                ambientRows={ambientByPersonUsage}
+                members={members}
+                agentRows={agentRows}
                 agents={agents}
                 lessThanMinuteLabel={t(($) => $.duration.less_than_minute)}
               />
-
-              {/* Per-person totals — folds each person's mounted-task usage
-                  together with their ad-hoc local CLI sessions, the read-out
-                  that surfaces previously-invisible local Claude Code spend. */}
-              <PersonUsageList rows={byPersonUsage} members={members} />
             </>
           )}
         </div>
@@ -641,10 +657,18 @@ function Leaderboard({
   rows,
   agents,
   lessThanMinuteLabel,
+  selectedId,
+  onSelect,
 }: {
   rows: AgentDashboardRow[];
   agents: { id: string; name: string }[];
   lessThanMinuteLabel: string;
+  // When provided, each row becomes selectable: clicking it calls onSelect and
+  // the matching row is highlighted. Used by the agent tab to drive the
+  // adjacent heatmap. The avatar's hover card is hover-triggered, so it doesn't
+  // fight the row click.
+  selectedId?: string | null;
+  onSelect?: (agentId: string) => void;
 }) {
   const { t } = useT("usage");
   const [sortBy, setSortBy] = useState<LeaderboardSort>("tokens");
@@ -707,10 +731,20 @@ function Leaderboard({
               const agent = agents.find((a) => a.id === row.agentId);
               const value = SORT_METRIC[sortBy](row);
               const pct = maxValue > 0 ? (value / maxValue) * 100 : 0;
+              const isSelected = selectedId === row.agentId;
               return (
                 <div
                   key={row.agentId}
-                  className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_5rem_5rem_5rem_4rem] items-center gap-3 px-4 py-2"
+                  onClick={onSelect ? () => onSelect(row.agentId) : undefined}
+                  className={`grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_5rem_5rem_5rem_4rem] items-center gap-3 px-4 py-2 ${
+                    onSelect ? "cursor-pointer" : ""
+                  } ${
+                    isSelected
+                      ? "bg-muted/60"
+                      : onSelect
+                        ? "hover:bg-muted/30"
+                        : ""
+                  }`}
                 >
                   <div className="flex min-w-0 items-center gap-2">
                     <ActorAvatar
@@ -719,7 +753,7 @@ function Leaderboard({
                       size={22}
                       enableHoverCard
                     />
-                    <span className="cursor-pointer truncate text-sm font-medium">
+                    <span className="truncate text-sm font-medium">
                       {agent?.name ?? row.agentId}
                     </span>
                   </div>
@@ -759,107 +793,289 @@ function Leaderboard({
   );
 }
 
-// PersonUsageList is the shock-absorber surfacing of per-person usage: a
-// compact ranked list that, unlike the agent leaderboard, includes each
-// person's ad-hoc local Claude Code sessions (the `ambient` portion) on top of
-// their agents' task usage. Owner-less rows (owner_id "") render as the
-// "Unattributed" bucket. Field-missing degrades gracefully — a stale backend
-// that omits ambient_tokens just shows "—" in the local column.
-function PersonUsageList({
+// UsageTabs splits the lower dashboard into 👤 Users (ambient / local-CLI usage
+// by person) and 🤖 Agents (the per-agent task leaderboard) — the clean
+// ambient/task split (plan D2). Each tab pairs a ranked list with a 26-week
+// activity heatmap for the selected row (layout B).
+function UsageTabs({
+  wsId,
+  viewTZ,
+  ambientRows,
+  members,
+  agentRows,
+  agents,
+  lessThanMinuteLabel,
+}: {
+  wsId: string;
+  viewTZ: string;
+  ambientRows: import("@multica/core/types").DashboardAmbientUsageByPerson[];
+  members: { user_id: string; name: string }[];
+  agentRows: AgentDashboardRow[];
+  agents: { id: string; name: string }[];
+  lessThanMinuteLabel: string;
+}) {
+  const { t } = useT("usage");
+  return (
+    <Tabs defaultValue="users" className="gap-4">
+      <TabsList>
+        <TabsTrigger value="users">👤 {t(($) => $.tabs.users)}</TabsTrigger>
+        <TabsTrigger value="agents">🤖 {t(($) => $.tabs.agents)}</TabsTrigger>
+      </TabsList>
+      <TabsContent value="users">
+        <UserUsagePanel
+          wsId={wsId}
+          viewTZ={viewTZ}
+          rows={ambientRows}
+          members={members}
+        />
+      </TabsContent>
+      <TabsContent value="agents">
+        <AgentUsagePanel
+          wsId={wsId}
+          viewTZ={viewTZ}
+          rows={agentRows}
+          agents={agents}
+          lessThanMinuteLabel={lessThanMinuteLabel}
+        />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+// Shared right-hand side of both tabs: the 26-week heatmap with a cost/tokens
+// toggle. Shows a hint when nothing is selected (empty list) and a skeleton
+// while the per-day query loads. `extra` injects the user tab's tools bar.
+function HeatmapPanel({
+  usage,
+  metric,
+  onMetricChange,
+  hasSelection,
+  isLoading,
+  viewTZ,
+  extra,
+}: {
+  usage: import("@multica/core/types").DashboardUsageDailyByModel[];
+  metric: HeatmapMetric;
+  onMetricChange: (m: HeatmapMetric) => void;
+  hasSelection: boolean;
+  isLoading: boolean;
+  viewTZ: string;
+  extra?: ReactNode;
+}) {
+  const { t } = useT("usage");
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="mb-3 flex justify-end">
+        <Segmented
+          value={metric}
+          onChange={onMetricChange}
+          options={[
+            { label: t(($) => $.heatmap.metric_cost), value: "cost" as const },
+            { label: t(($) => $.heatmap.metric_tokens), value: "tokens" as const },
+          ]}
+        />
+      </div>
+      {!hasSelection ? (
+        <div className="flex min-h-[200px] items-center justify-center px-6 text-center text-xs text-muted-foreground">
+          {t(($) => $.heatmap.select_hint)}
+        </div>
+      ) : isLoading ? (
+        <Skeleton className="h-[220px] rounded-md" />
+      ) : (
+        <ActivityHeatmap usage={usage} tz={viewTZ} metric={metric} />
+      )}
+      {extra}
+    </div>
+  );
+}
+
+// User tab — ambient (local-CLI) usage ranked by cost, with the unattributed
+// bucket as its own row. Selecting a row (defaults to the top spender) drives
+// the adjacent 26-week heatmap. "" (unattributed) is a valid selection, so the
+// effective-id coalesce guards against null only — never `!!`, which would drop
+// the empty-string bucket and leave its heatmap permanently un-fetched.
+export function UserUsagePanel({
+  wsId,
+  viewTZ,
   rows,
   members,
 }: {
-  rows: import("@multica/core/types").DashboardUsageByPerson[];
+  wsId: string;
+  viewTZ: string;
+  rows: import("@multica/core/types").DashboardAmbientUsageByPerson[];
   members: { user_id: string; name: string }[];
 }) {
   const { t } = useT("usage");
+  const [metric, setMetric] = useState<HeatmapMetric>("cost");
+  const [selectedOwnerId, setSelectedOwnerId] = useState<string | null>(null);
 
-  const sortedRows = useMemo(() => {
-    return rows
-      .map((r) => ({
-        row: r,
-        total:
-          r.input_tokens + r.output_tokens + r.cache_read_tokens + r.cache_write_tokens,
-      }))
-      .sort((a, b) => b.total - a.total);
-  }, [rows]);
+  const ownerRows: OwnerCostRow[] = useMemo(
+    () => aggregateOwnerAmbient(rows),
+    [rows],
+  );
+  // null = nothing selected, "" = unattributed selected, UUID = a person.
+  // Validate the pick against the current rows (same defensive derivation as the
+  // page-top project filter): if the selected owner dropped out on a refetch,
+  // fall back to the top spender rather than fetching a stale id's heatmap.
+  // Membership test, NOT truthiness — "" (unattributed) is a real selection.
+  const effectiveOwnerId = useMemo(() => {
+    if (
+      selectedOwnerId !== null &&
+      ownerRows.some((r) => r.ownerId === selectedOwnerId)
+    ) {
+      return selectedOwnerId;
+    }
+    return ownerRows[0]?.ownerId ?? null;
+  }, [selectedOwnerId, ownerRows]);
 
-  const maxTotal = useMemo(
-    () => sortedRows.reduce((m, r) => Math.max(m, r.total), 0),
-    [sortedRows],
+  const heatmapQuery = useQuery(
+    dashboardAmbientUsageDailyOptions(wsId, effectiveOwnerId, viewTZ),
   );
 
   return (
-    <div className="rounded-lg border bg-card">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 pt-4 pb-3">
-        <h4 className="text-sm font-semibold">{t(($) => $.by_person.title)}</h4>
-        <span className="text-xs text-muted-foreground">
-          {t(($) => $.by_person.caption, { count: rows.length })}
-        </span>
-      </div>
-      {sortedRows.length === 0 ? (
-        <p className="px-4 py-8 text-center text-xs text-muted-foreground">
-          {t(($) => $.by_person.no_data)}
-        </p>
-      ) : (
-        <>
-          <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_6rem_6rem] items-center gap-3 border-b px-4 py-2 text-xs font-medium text-muted-foreground">
-            <span>{t(($) => $.by_person.header_person)}</span>
-            <span />
-            <span className="text-right text-foreground">
-              {t(($) => $.by_person.header_tokens)}
-            </span>
-            <span className="text-right">{t(($) => $.by_person.header_local)}</span>
-          </div>
-          <div className="divide-y">
-            {sortedRows.map(({ row, total }) => {
-              const isUnattributed = row.owner_id === "";
-              const member = members.find((m) => m.user_id === row.owner_id);
-              const name = isUnattributed
-                ? t(($) => $.by_person.unattributed)
-                : (member?.name ?? row.owner_id);
-              const pct = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
-              return (
-                <div
-                  key={row.owner_id || "__unattributed__"}
-                  className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_6rem_6rem] items-center gap-3 px-4 py-2"
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    {isUnattributed ? (
-                      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-muted">
-                        <HelpCircle className="h-3 w-3 text-muted-foreground" />
-                      </span>
-                    ) : (
-                      <ActorAvatar
-                        actorType="member"
-                        actorId={row.owner_id}
-                        size={22}
-                        enableHoverCard
-                      />
-                    )}
-                    <span className="truncate text-sm font-medium">{name}</span>
-                  </div>
-                  <div className="relative h-2 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-chart-2 transition-[width] duration-300 ease-out"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <div className="text-right text-xs font-medium tabular-nums text-foreground">
-                    {formatTokens(total)}
-                  </div>
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+      <div className="rounded-lg border bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 pt-4 pb-3">
+          <h4 className="text-sm font-semibold">{t(($) => $.tabs.users)}</h4>
+          <span className="text-xs text-muted-foreground">
+            {t(($) => $.by_user.caption, { count: ownerRows.length })}
+          </span>
+        </div>
+        {ownerRows.length === 0 ? (
+          <p className="px-4 py-8 text-center text-xs text-muted-foreground">
+            {t(($) => $.by_user.no_data)}
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-[minmax(0,1.6fr)_5rem_5rem] items-center gap-3 border-b px-4 py-2 text-xs font-medium text-muted-foreground">
+              <span>{t(($) => $.by_user.header_user)}</span>
+              <span className="text-right">{t(($) => $.by_user.header_cost)}</span>
+              <span className="text-right">{t(($) => $.by_user.header_tokens)}</span>
+            </div>
+            <div className="divide-y">
+              {ownerRows.map((row) => {
+                const isUnattributed = row.ownerId === "";
+                const member = members.find((m) => m.user_id === row.ownerId);
+                const name = isUnattributed
+                  ? t(($) => $.by_user.unattributed)
+                  : (member?.name ?? row.ownerId);
+                const isSelected = effectiveOwnerId === row.ownerId;
+                return (
                   <div
-                    className="text-right text-xs tabular-nums text-muted-foreground"
-                    title={t(($) => $.by_person.includes_local)}
+                    key={row.ownerId || "__unattributed__"}
+                    onClick={() => setSelectedOwnerId(row.ownerId)}
+                    className={`grid cursor-pointer grid-cols-[minmax(0,1.6fr)_5rem_5rem] items-center gap-3 px-4 py-2 ${
+                      isSelected ? "bg-muted/60" : "hover:bg-muted/30"
+                    }`}
                   >
-                    {row.ambient_tokens > 0 ? formatTokens(row.ambient_tokens) : "—"}
+                    <div className="flex min-w-0 items-center gap-2">
+                      {isUnattributed ? (
+                        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-muted">
+                          <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                        </span>
+                      ) : (
+                        <ActorAvatar
+                          actorType="member"
+                          actorId={row.ownerId}
+                          size={22}
+                          enableHoverCard
+                        />
+                      )}
+                      <span className="truncate text-sm font-medium">{name}</span>
+                    </div>
+                    <div className="text-right text-xs font-medium tabular-nums text-foreground">
+                      {fmtMoney(row.cost)}
+                    </div>
+                    <div className="text-right text-xs tabular-nums text-muted-foreground">
+                      {formatTokens(row.tokens)}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+
+      <HeatmapPanel
+        usage={heatmapQuery.data ?? EMPTY_DAILY_BY_MODEL}
+        metric={metric}
+        onMetricChange={setMetric}
+        hasSelection={effectiveOwnerId !== null}
+        isLoading={heatmapQuery.isLoading}
+        viewTZ={viewTZ}
+        extra={
+          effectiveOwnerId !== null ? (
+            // Static placeholder for now — ambient_usage_hourly has no source
+            // column, so a real tool breakdown is Phase 2 (rollup key change).
+            <div className="mt-4 border-t pt-3">
+              <div className="mb-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
+                {t(($) => $.by_user.tools_label)}
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium">
+                  {t(($) => $.by_user.tool_claude_code)}
+                </span>
+                <span className="tabular-nums text-muted-foreground">100%</span>
+              </div>
+            </div>
+          ) : null
+        }
+      />
+    </div>
+  );
+}
+
+// Agent tab — reuses the per-agent leaderboard (now selectable) on the left and
+// the selected agent's 26-week task heatmap on the right. Agent ids are never
+// "", so the effective-id coalesce is a plain ?? against null.
+export function AgentUsagePanel({
+  wsId,
+  viewTZ,
+  rows,
+  agents,
+  lessThanMinuteLabel,
+}: {
+  wsId: string;
+  viewTZ: string;
+  rows: AgentDashboardRow[];
+  agents: { id: string; name: string }[];
+  lessThanMinuteLabel: string;
+}) {
+  const [metric, setMetric] = useState<HeatmapMetric>("cost");
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+
+  // rows arrive sorted cost-desc, so the top spender is the default selection.
+  // Validate against the current rows so a selected agent that dropped out on a
+  // refetch falls back to the top instead of fetching a stale id's heatmap.
+  const effectiveAgentId = useMemo(() => {
+    if (selectedAgentId !== null && rows.some((r) => r.agentId === selectedAgentId)) {
+      return selectedAgentId;
+    }
+    return rows[0]?.agentId ?? null;
+  }, [selectedAgentId, rows]);
+
+  const heatmapQuery = useQuery(
+    dashboardAgentUsageDailyOptions(wsId, effectiveAgentId, viewTZ),
+  );
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+      <Leaderboard
+        rows={rows}
+        agents={agents}
+        lessThanMinuteLabel={lessThanMinuteLabel}
+        selectedId={effectiveAgentId}
+        onSelect={setSelectedAgentId}
+      />
+      <HeatmapPanel
+        usage={heatmapQuery.data ?? EMPTY_DAILY_BY_MODEL}
+        metric={metric}
+        onMetricChange={setMetric}
+        hasSelection={effectiveAgentId !== null}
+        isLoading={heatmapQuery.isLoading}
+        viewTZ={viewTZ}
+      />
     </div>
   );
 }

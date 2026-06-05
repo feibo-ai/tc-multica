@@ -250,6 +250,7 @@
   "charts": {
     "heatmap_less": "Less",
     "heatmap_more": "More",
+    "heatmap_window": "Last 26 weeks",
     "tooltip_total": "Total"
   },
   "list": {

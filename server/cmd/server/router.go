@@ -654,6 +654,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Get("/usage/daily", h.GetDashboardUsageDaily)
 				r.Get("/usage/by-agent", h.GetDashboardUsageByAgent)
 				r.Get("/usage/by-person", h.GetDashboardUsageByPerson)
+				// Usage v2 — ambient-only per-person leaderboard + the two
+				// 26-week heatmap feeds (user-tab by owner, agent-tab by agent).
+				r.Get("/usage/ambient/by-person", h.GetDashboardAmbientUsageByPerson)
+				r.Get("/usage/ambient/daily", h.GetDashboardAmbientUsageDaily)
+				r.Get("/usage/by-agent/daily", h.GetDashboardAgentUsageDaily)
 				r.Get("/agent-runtime", h.GetDashboardAgentRunTime)
 				r.Get("/runtime/daily", h.GetDashboardRunTimeDaily)
 			})

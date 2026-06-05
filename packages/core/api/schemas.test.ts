@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   DashboardAgentRunTimeListSchema,
+  DashboardAmbientUsageByPersonListSchema,
   DashboardUsageByAgentListSchema,
-  DashboardUsageByPersonListSchema,
+  DashboardUsageDailyByModelListSchema,
   DashboardUsageDailyListSchema,
   DuplicateIssueErrorBodySchema,
   EMPTY_LIST_PROJECTS_RESPONSE,
@@ -365,35 +366,32 @@ describe("dashboard + runtime usage schema drift", () => {
   });
 });
 
-describe("DashboardUsageByPersonListSchema (drift safety)", () => {
-  it("defaults a missing ambient_tokens to 0 (older backend) so the row still renders", () => {
-    const parsed = DashboardUsageByPersonListSchema.parse([
-      { owner_id: "u1", input_tokens: 100, output_tokens: 10 },
+// Usage v2 (Phase 1): the user-tab leaderboard feed. Like by-person it keeps
+// owner_id "" as the unattributed bucket, but it ALSO carries `model` (so the
+// client prices per model) and drops the `ambient_tokens` split.
+describe("DashboardAmbientUsageByPersonListSchema (drift safety)", () => {
+  it("keeps model and owner_id, defaults missing token fields to 0", () => {
+    const parsed = DashboardAmbientUsageByPersonListSchema.parse([
+      { owner_id: "u1", model: "claude-opus-4-7", input_tokens: 100 },
     ]);
-    expect(parsed[0]?.ambient_tokens).toBe(0);
-    expect(parsed[0]?.input_tokens).toBe(100);
+    expect(parsed[0]?.model).toBe("claude-opus-4-7");
+    expect(parsed[0]?.owner_id).toBe("u1");
+    expect(parsed[0]?.output_tokens).toBe(0);
   });
 
-  it("keeps owner_id \"\" as the legitimate unattributed bucket", () => {
-    const parsed = DashboardUsageByPersonListSchema.parse([
-      { owner_id: "", input_tokens: 50, ambient_tokens: 55 },
+  it("keeps owner_id \"\" as the unattributed bucket", () => {
+    const parsed = DashboardAmbientUsageByPersonListSchema.parse([
+      { owner_id: "", model: "m", input_tokens: 50 },
     ]);
-    expect(parsed[0]?.owner_id).toBe("");
-    expect(parsed[0]?.ambient_tokens).toBe(55);
-  });
-
-  it("defaults a missing owner_id key to \"\" (degrades to unattributed, not a crash)", () => {
-    const parsed = DashboardUsageByPersonListSchema.parse([{ input_tokens: 7 }]);
     expect(parsed[0]?.owner_id).toBe("");
   });
 
-  // The malformed-response contract: a wrong-typed field or a non-array body
-  // must make parseWithFallback return its [] fallback, never throw into the UI.
+  // Malformed-response contract: wrong-typed field OR non-array body → [].
   it("falls back to [] on a malformed response", () => {
     expect(
       parseWithFallback(
-        [{ owner_id: "u1", input_tokens: "lots-of-tokens" }],
-        DashboardUsageByPersonListSchema,
+        [{ owner_id: "u1", input_tokens: "lots" }],
+        DashboardAmbientUsageByPersonListSchema,
         [],
         { endpoint: "test" },
       ),
@@ -401,7 +399,40 @@ describe("DashboardUsageByPersonListSchema (drift safety)", () => {
     expect(
       parseWithFallback(
         { rows: [] },
-        DashboardUsageByPersonListSchema,
+        DashboardAmbientUsageByPersonListSchema,
+        [],
+        { endpoint: "test" },
+      ),
+    ).toEqual([]);
+  });
+});
+
+// Usage v2 (Phase 1): the (date, model) bucket shared by BOTH heatmap endpoints
+// (ambient/daily by owner, by-agent/daily by agent). A single drifted row must
+// not blank the whole heatmap; a structurally broken body fails to [].
+describe("DashboardUsageDailyByModelListSchema (drift safety)", () => {
+  it("coerces missing token/date fields without dropping the row", () => {
+    const parsed = DashboardUsageDailyByModelListSchema.parse([
+      { model: "claude-opus-4-7", input_tokens: 9 },
+    ]);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.date).toBe("");
+    expect(parsed[0]?.cache_write_tokens).toBe(0);
+  });
+
+  it("falls back to [] on a malformed response", () => {
+    expect(
+      parseWithFallback(
+        [{ date: "2026-05-19", input_tokens: "many" }],
+        DashboardUsageDailyByModelListSchema,
+        [],
+        { endpoint: "test" },
+      ),
+    ).toEqual([]);
+    expect(
+      parseWithFallback(
+        { rows: [] },
+        DashboardUsageDailyByModelListSchema,
         [],
         { endpoint: "test" },
       ),

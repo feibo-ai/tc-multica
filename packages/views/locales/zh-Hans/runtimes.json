@@ -238,6 +238,7 @@
   "charts": {
     "heatmap_less": "少",
     "heatmap_more": "多",
+    "heatmap_window": "最近 26 周",
     "tooltip_total": "总计"
   },
   "list": {

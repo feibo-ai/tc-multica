@@ -48,15 +48,24 @@
     "header_tasks": "Tasks",
     "no_data": "No agent activity in this window."
   },
-  "by_person": {
-    "title": "By person",
-    "caption": "{{count}} people",
-    "header_person": "Person",
+  "tabs": {
+    "users": "Users",
+    "agents": "Agents"
+  },
+  "heatmap": {
+    "metric_cost": "Cost",
+    "metric_tokens": "Tokens",
+    "select_hint": "Select a row to see its 26-week activity"
+  },
+  "by_user": {
+    "caption": "{{count}} users",
+    "header_user": "User",
+    "header_cost": "Cost",
     "header_tokens": "Tokens",
-    "header_local": "Local CLI",
-    "includes_local": "Local CLI tokens included in this person's total",
     "unattributed": "Unattributed",
-    "no_data": "No personal usage in this window."
+    "tools_label": "Tools",
+    "tool_claude_code": "Claude Code",
+    "no_data": "No local CLI usage in this window."
   },
   "empty": {
     "title": "No usage yet",

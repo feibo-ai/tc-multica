@@ -476,19 +476,30 @@ export interface DashboardUsageByAgent {
   task_count: number;
 }
 
-// Per-person combined token totals for the workspace dashboard: a person's
-// agents' mounted-task usage PLUS their own ad-hoc local CLI sessions that
-// were never dispatched as tasks. `ambient_tokens` is the local-CLI portion
-// of the total, so the UI can label a row "includes local CLI" without a
-// second request. `owner_id` is "" for the "unattributed" bucket — usage on a
-// runtime with no resolved owner.
-export interface DashboardUsageByPerson {
+// Per-(owner, model) ambient-only token totals for the usage page's user tab.
+// This is local-CLI usage ONLY (no mounted-task usage; the clean ambient / task
+// split) and KEEPS the model dimension, so the client folds rows by owner and
+// computes per-model cost. `owner_id` is "" for the "unattributed" bucket.
+export interface DashboardAmbientUsageByPerson {
   owner_id: string;
+  model: string;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
   cache_write_tokens: number;
-  ambient_tokens: number;
+}
+
+// One (date, model) token bucket shared by BOTH usage-page heatmap feeds — the
+// user-tab heatmap (one owner's ambient usage by day) and the agent-tab heatmap
+// (one agent's task usage by day). No task_count: the heatmap colours by tokens
+// or by client-computed cost. Cost stays client-side via the pricing table.
+export interface DashboardUsageDailyByModel {
+  date: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
 }
 
 // Per-agent total terminal-task run-time + counts. Powers the workspace

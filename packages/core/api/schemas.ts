@@ -280,21 +280,36 @@ const DashboardUsageByAgentSchema = z.object({
 
 export const DashboardUsageByAgentListSchema = z.array(DashboardUsageByAgentSchema);
 
-// Per-person combined usage. owner_id "" is the legitimate "unattributed"
-// bucket, so it defaults to "" rather than failing the row. ambient_tokens is
-// the local-CLI portion of the total; an older backend that lacks the field
-// degrades it to 0 (the row still renders, just without the "includes local
-// CLI" split) instead of dropping to the [] fallback.
-const DashboardUsageByPersonSchema = z.object({
+// Usage v2 (Phase 1) — user/agent tabs + heatmap.
+//
+// Ambient-only per-(owner, model) totals for the user tab. Unlike the v1
+// /usage/by-person feed (which collapses model), this KEEPS the model so the
+// client folds rows by owner and computes per-model cost. owner_id "" is the
+// unattributed bucket (defaults to "" rather than failing the row).
+const DashboardAmbientUsageByPersonSchema = z.object({
   owner_id: z.string().default(""),
+  model: z.string().default(""),
   input_tokens: z.number().default(0),
   output_tokens: z.number().default(0),
   cache_read_tokens: z.number().default(0),
   cache_write_tokens: z.number().default(0),
-  ambient_tokens: z.number().default(0),
 }).loose();
 
-export const DashboardUsageByPersonListSchema = z.array(DashboardUsageByPersonSchema);
+export const DashboardAmbientUsageByPersonListSchema = z.array(DashboardAmbientUsageByPersonSchema);
+
+// Per-(date, model) token bucket shared by BOTH heatmap feeds (ambient/daily
+// by owner, by-agent/daily by agent) — identical wire shape. No task_count:
+// the heatmap colours by tokens or by client-computed cost.
+const DashboardUsageDailyByModelSchema = z.object({
+  date: z.string().default(""),
+  model: z.string().default(""),
+  input_tokens: z.number().default(0),
+  output_tokens: z.number().default(0),
+  cache_read_tokens: z.number().default(0),
+  cache_write_tokens: z.number().default(0),
+}).loose();
+
+export const DashboardUsageDailyByModelListSchema = z.array(DashboardUsageDailyByModelSchema);
 
 const DashboardAgentRunTimeSchema = z.object({
   agent_id: z.string().default(""),

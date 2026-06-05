@@ -48,7 +48,8 @@ import type {
   RuntimeUsageByHour,
   DashboardUsageDaily,
   DashboardUsageByAgent,
-  DashboardUsageByPerson,
+  DashboardAmbientUsageByPerson,
+  DashboardUsageDailyByModel,
   DashboardAgentRunTime,
   DashboardRunTimeDaily,
   RuntimeUpdate,
@@ -130,7 +131,8 @@ import {
   DashboardAgentRunTimeListSchema,
   DashboardRunTimeDailyListSchema,
   DashboardUsageByAgentListSchema,
-  DashboardUsageByPersonListSchema,
+  DashboardAmbientUsageByPersonListSchema,
+  DashboardUsageDailyByModelListSchema,
   DashboardUsageDailyListSchema,
   EMPTY_AGENT_TEMPLATE_DETAIL,
   EMPTY_AGENT_TEMPLATE_SUMMARY_LIST,
@@ -1018,20 +1020,59 @@ export class ApiClient {
     );
   }
 
-  // No project_id: ambient (local-CLI) usage has no project, so scoping the
-  // person totals to a project would silently drop everyone's local-CLI part.
-  async getDashboardUsageByPerson(
+  // Usage v2 — ambient-only per-(owner, model) leaderboard for the user tab.
+  // Like by-person, no project_id (ambient usage has no project), but the model
+  // dimension is preserved so the client prices per model.
+  async getDashboardAmbientUsageByPerson(
     params: { days?: number; tz?: string },
-  ): Promise<DashboardUsageByPerson[]> {
+  ): Promise<DashboardAmbientUsageByPerson[]> {
     const search = new URLSearchParams();
     if (params.days) search.set("days", String(params.days));
     if (params.tz) search.set("tz", params.tz);
-    const raw = await this.fetch<unknown>(`/api/dashboard/usage/by-person?${search}`);
-    return parseWithFallback<DashboardUsageByPerson[]>(
+    const raw = await this.fetch<unknown>(`/api/dashboard/usage/ambient/by-person?${search}`);
+    return parseWithFallback<DashboardAmbientUsageByPerson[]>(
       raw,
-      DashboardUsageByPersonListSchema,
+      DashboardAmbientUsageByPersonListSchema,
       [],
-      { endpoint: "GET /api/dashboard/usage/by-person" },
+      { endpoint: "GET /api/dashboard/usage/ambient/by-person" },
+    );
+  }
+
+  // Usage v2 — one owner's ambient usage per day for the user-tab heatmap.
+  // `owner_id` is always sent explicitly: "" is the unattributed bucket (the
+  // backend reads "" / absent as SQL NULL), a UUID is one person. Callers only
+  // invoke this once a row is selected (owner_id is never null here).
+  async getDashboardAmbientUsageDaily(
+    params: { owner_id: string; days?: number; tz?: string },
+  ): Promise<DashboardUsageDailyByModel[]> {
+    const search = new URLSearchParams();
+    search.set("owner_id", params.owner_id);
+    if (params.days) search.set("days", String(params.days));
+    if (params.tz) search.set("tz", params.tz);
+    const raw = await this.fetch<unknown>(`/api/dashboard/usage/ambient/daily?${search}`);
+    return parseWithFallback<DashboardUsageDailyByModel[]>(
+      raw,
+      DashboardUsageDailyByModelListSchema,
+      [],
+      { endpoint: "GET /api/dashboard/usage/ambient/daily" },
+    );
+  }
+
+  // Usage v2 — one agent's task usage per day for the agent-tab heatmap.
+  // `agent_id` is a required UUID (a malformed value is a 400 server-side).
+  async getDashboardAgentUsageDaily(
+    params: { agent_id: string; days?: number; tz?: string },
+  ): Promise<DashboardUsageDailyByModel[]> {
+    const search = new URLSearchParams();
+    search.set("agent_id", params.agent_id);
+    if (params.days) search.set("days", String(params.days));
+    if (params.tz) search.set("tz", params.tz);
+    const raw = await this.fetch<unknown>(`/api/dashboard/usage/by-agent/daily?${search}`);
+    return parseWithFallback<DashboardUsageDailyByModel[]>(
+      raw,
+      DashboardUsageDailyByModelListSchema,
+      [],
+      { endpoint: "GET /api/dashboard/usage/by-agent/daily" },
     );
   }
 
