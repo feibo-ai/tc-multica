@@ -58,6 +58,25 @@
     "unattributed": "Unattributed",
     "no_data": "No personal usage in this window."
   },
+  "tabs": {
+    "users": "Users",
+    "agents": "Agents"
+  },
+  "heatmap": {
+    "metric_cost": "Cost",
+    "metric_tokens": "Tokens",
+    "select_hint": "Select a row to see its 26-week activity"
+  },
+  "by_user": {
+    "caption": "{{count}} users",
+    "header_user": "User",
+    "header_cost": "Cost",
+    "header_tokens": "Tokens",
+    "unattributed": "Unattributed",
+    "tools_label": "Tools",
+    "tool_claude_code": "Claude Code",
+    "no_data": "No local CLI usage in this window."
+  },
   "empty": {
     "title": "No usage yet",
     "body": "Once agents start running tasks here, their token spend and run time will appear in this view."

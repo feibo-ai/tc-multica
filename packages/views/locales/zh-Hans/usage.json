@@ -58,6 +58,25 @@
     "unattributed": "未归属",
     "no_data": "所选时间范围内暂无成员消耗。"
   },
+  "tabs": {
+    "users": "用户",
+    "agents": "智能体"
+  },
+  "heatmap": {
+    "metric_cost": "费用",
+    "metric_tokens": "Token",
+    "select_hint": "选择一行查看其最近 26 周活动"
+  },
+  "by_user": {
+    "caption": "{{count}} 位用户",
+    "header_user": "用户",
+    "header_cost": "费用",
+    "header_tokens": "Token",
+    "unattributed": "未归属",
+    "tools_label": "工具",
+    "tool_claude_code": "Claude Code",
+    "no_data": "此窗口内暂无本地 CLI 用量。"
+  },
   "empty": {
     "title": "暂无消耗数据",
     "body": "当智能体在这里开始执行任务后，它们的 token 消耗和运行时长将出现在此处。"

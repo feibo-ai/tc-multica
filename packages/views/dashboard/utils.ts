@@ -1,6 +1,7 @@
 import type {
   DashboardUsageDaily,
   DashboardUsageByAgent,
+  DashboardAmbientUsageByPerson,
   DashboardAgentRunTime,
   DashboardRunTimeDaily,
 } from "@multica/core/types";
@@ -169,6 +170,35 @@ export function aggregateAgentTokens(rows: DashboardUsageByAgent[]): AgentCostRo
     entry.cost += estimateCost(r);
     entry.taskCount += r.task_count;
     map.set(r.agent_id, entry);
+  }
+  return [...map.values()].sort((a, b) => b.cost - a.cost);
+}
+
+export interface OwnerCostRow {
+  ownerId: string; // "" = the unattributed bucket
+  tokens: number;
+  cost: number;
+}
+
+// Fold per-(owner, model) ambient rows into one row per owner — the user-tab
+// leaderboard. Mirrors aggregateAgentTokens: sum tokens, sum cost across this
+// owner's models (each model priced on its own rate), sort by cost desc so the
+// heaviest local-CLI spender lands first. owner_id "" folds into one
+// "unattributed" row. There is no task_count — ambient usage has no tasks.
+export function aggregateOwnerAmbient(
+  rows: DashboardAmbientUsageByPerson[],
+): OwnerCostRow[] {
+  const map = new Map<string, OwnerCostRow>();
+  for (const r of rows) {
+    const entry = map.get(r.owner_id) ?? {
+      ownerId: r.owner_id,
+      tokens: 0,
+      cost: 0,
+    };
+    entry.tokens +=
+      r.input_tokens + r.output_tokens + r.cache_read_tokens + r.cache_write_tokens;
+    entry.cost += estimateCost(r);
+    map.set(r.owner_id, entry);
   }
   return [...map.values()].sort((a, b) => b.cost - a.cost);
 }
