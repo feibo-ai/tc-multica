@@ -476,24 +476,9 @@ export interface DashboardUsageByAgent {
   task_count: number;
 }
 
-// Per-person combined token totals for the workspace dashboard: a person's
-// agents' mounted-task usage PLUS their own ad-hoc local CLI sessions that
-// were never dispatched as tasks. `ambient_tokens` is the local-CLI portion
-// of the total, so the UI can label a row "includes local CLI" without a
-// second request. `owner_id` is "" for the "unattributed" bucket — usage on a
-// runtime with no resolved owner.
-export interface DashboardUsageByPerson {
-  owner_id: string;
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
-  cache_write_tokens: number;
-  ambient_tokens: number;
-}
-
 // Per-(owner, model) ambient-only token totals for the usage page's user tab.
-// Unlike DashboardUsageByPerson this is local-CLI usage ONLY (no mounted-task
-// usage) and KEEPS the model dimension, so the client folds rows by owner and
+// This is local-CLI usage ONLY (no mounted-task usage; the clean ambient / task
+// split) and KEEPS the model dimension, so the client folds rows by owner and
 // computes per-model cost. `owner_id` is "" for the "unattributed" bucket.
 export interface DashboardAmbientUsageByPerson {
   owner_id: string;

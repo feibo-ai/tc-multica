@@ -48,16 +48,6 @@
     "header_tasks": "任务数",
     "no_data": "所选时间范围内暂无智能体活动。"
   },
-  "by_person": {
-    "title": "按成员",
-    "caption": "{{count}} 位成员",
-    "header_person": "成员",
-    "header_tokens": "Token",
-    "header_local": "本地 CLI",
-    "includes_local": "该成员总量中已包含的本地 CLI token",
-    "unattributed": "未归属",
-    "no_data": "所选时间范围内暂无成员消耗。"
-  },
   "tabs": {
     "users": "用户",
     "agents": "智能体"

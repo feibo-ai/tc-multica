@@ -48,7 +48,6 @@ import type {
   RuntimeUsageByHour,
   DashboardUsageDaily,
   DashboardUsageByAgent,
-  DashboardUsageByPerson,
   DashboardAmbientUsageByPerson,
   DashboardUsageDailyByModel,
   DashboardAgentRunTime,
@@ -132,7 +131,6 @@ import {
   DashboardAgentRunTimeListSchema,
   DashboardRunTimeDailyListSchema,
   DashboardUsageByAgentListSchema,
-  DashboardUsageByPersonListSchema,
   DashboardAmbientUsageByPersonListSchema,
   DashboardUsageDailyByModelListSchema,
   DashboardUsageDailyListSchema,
@@ -1019,23 +1017,6 @@ export class ApiClient {
       DashboardUsageByAgentListSchema,
       [],
       { endpoint: "GET /api/dashboard/usage/by-agent" },
-    );
-  }
-
-  // No project_id: ambient (local-CLI) usage has no project, so scoping the
-  // person totals to a project would silently drop everyone's local-CLI part.
-  async getDashboardUsageByPerson(
-    params: { days?: number; tz?: string },
-  ): Promise<DashboardUsageByPerson[]> {
-    const search = new URLSearchParams();
-    if (params.days) search.set("days", String(params.days));
-    if (params.tz) search.set("tz", params.tz);
-    const raw = await this.fetch<unknown>(`/api/dashboard/usage/by-person?${search}`);
-    return parseWithFallback<DashboardUsageByPerson[]>(
-      raw,
-      DashboardUsageByPersonListSchema,
-      [],
-      { endpoint: "GET /api/dashboard/usage/by-person" },
     );
   }
 
