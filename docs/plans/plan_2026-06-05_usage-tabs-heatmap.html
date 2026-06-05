@@ -196,8 +196,38 @@ D2 锁定「干净二分：用户 tab = ambient 仅此」。现有 <code>PersonU
 <b>第四次·终版批准通读（独立 agent，收口核验 v1.2）</b>：逐条核验 5 处修补(四处 cost+<code>&lt;title&gt;</code> / owner <code>""</code> 特例 / 对账 token / 前端 <code>null</code> 哨兵守卫 / 人榜聚合口径)<b>全部到位且对码命中真源</b>；「三处/四处」全文扫净无残留矛盾；SOP 四字段齐、完成标准条条可观测；范围闸成立无暗逼破例；HTML 标签全配平。仅余 4 处文件路径锚点轻微不精确(函数名/行号均对)→ <b>已按 git 真源校正</b>(<code>server/cmd/server/router.go</code>、<code>packages/core/dashboard/queries.ts</code>、<code>packages/views/dashboard/utils.ts</code>、<code>ALL_PROJECTS</code> 在 dashboard-page.tsx)。<b>最终裁决：APPROVED,可交 Implement。</b>
 </div>
 
-<h2>Current State（handoff slot —— 见 tc-handoff skill）</h2>
-<div class="field">（首次 handoff 前为空）</div>
+<h2>Current State（handoff @ 2026-06-05 · Plan→Implement）</h2>
+<div class="field">
+<div class="field-label">Handoff</div>
+<b>Last commit</b>：<code>1dfa5bd0</code> docs(plan): usage tabs + heatmap — runtime-token-usage v2 Phase 1<br>
+<b>Worktree</b>：<code>feat/usage-tabs-heatmap</code>，我的改动 0 file 未提交(唯一 untracked = 无关的 <code>cap-hardening</code> 草稿，<b>勿动</b>)。<br><br>
+
+<b>What's done</b>
+<ul>
+<li>本 plan(v2 Phase 1)写完、commit <code>1dfa5bd0</code>;第二个 session <b>4 轮评审</b>(评审→确认→新鲜通读→终版批准)判定 <b>APPROVED</b>。</li>
+<li>Multica 迭代 issue <code>33cd4566</code>(project <code>d47d2c07</code>):v1.2-final inline;<code>plan_approve</code> 闸已盖(<code>2026-06-05T06:24:37Z</code>)。</li>
+<li>4 个待决项全裁决(Q1 未归属单行可点开 / Q2 固定 26 周 / Q3 Phase3 隐私只记方向 / Q4 agent per-day 新 query)。</li>
+</ul>
+
+<b>Next action</b>(Implement session 冷启动,够具体直接开干)
+<ul>
+<li>开 <code>tc-4-build</code>,以本 plan HTML 为<b>主输入</b>,按 §9 顺序:① 后端 3 query(<code>ListDashboardAmbientUsageByPerson</code> 保 model / <code>ListDashboardAmbientUsageDaily</code> owner narg NULL=未归属 / <code>ListDashboardAgentUsageDaily</code>)入 <code>server/pkg/db/queries/task_usage.sql</code> + <code>make sqlc</code> + 3 handler 入 <code>server/internal/handler/dashboard.go</code> + 路由入 <code>server/cmd/server/router.go</code> + Go 测试 → ② API 层 <code>packages/core/api/schemas.ts</code>·<code>client.ts</code>·<code>packages/core/dashboard/queries.ts</code>·<code>schemas.test.ts</code> → ③ 热力图 <code>activity-heatmap.tsx</code> 参数化(4 处 cost→value 含 <code>:245</code> <code>&lt;title&gt;</code>,加 <code>metric</code> prop)→ ④ <code>dashboard-page.tsx</code> 接 shadcn Tabs + 两面板 + 选中态(null/""/UUID 三态)+ 移除 PersonUsageList 渲染(端点保留)→ ⑤ i18n(先读 conventions.mdx)→ ⑥ <code>make check</code> 绿。</li>
+<li>开工前先读 §0 对码锚点 + <code>conventions.mdx</code>。每段 diff 过人眼再 commit(底线规则#5)。</li>
+</ul>
+
+<b>Dead ends —— do NOT retry</b>
+<ul>
+<li><b>(前端守卫·真陷阱)</b>勿 <code>enabled: !!selectedOwnerId</code> —— 未归属 owner_id 是 <code>""</code>、<code>!!"" === false</code> ⇒ 未归属热力图永不加载、违反完成标准#3。用 <code>selectedOwnerId !== null</code>(null=未选/""=选中未归属/UUID=选中某人)。</li>
+<li><b>(后端 UUID)</b>owner_id <code>""</code> 勿过任何 parse(<code>util.ParseUUID("")</code> 报错)—— 未归属直接构造 <code>pgtype.UUID{Valid:false}</code>;非空才 <code>parseUUIDOrBadRequest</code>。</li>
+<li>勿扩 <code>ListDashboardUsageByAgent</code> 做 per-day(全 agent/无日期、有现存消费者,会分叉/破榜)→ 写新 <code>ListDashboardAgentUsageDaily</code>(Q4)。</li>
+<li>勿复用 <code>ListDashboardUsageByPerson</code> 喂用户 tab(塌了 model、算不了 per-model cost)→ 新 query 必须保 model。</li>
+<li>勿加 migration/daemon/collector/新表/<code>source</code> 列(Phase 2);用户 tab 工具拆分本期是纯静态死文案「Claude Code 100%」。</li>
+<li>勿做 Claude Desktop 工具细分(audit.jsonl 无 token 数);勿把 task 用量放用户 tab(清洁二分 D2)。</li>
+<li>路径已校正:<code>router.go</code> 在 <code>server/cmd/server/</code>、dashboard query options 在 <code>packages/core/dashboard/</code>(<b>不</b>在 api/)、<code>aggregateAgentTokens</code> 在 <code>packages/views/dashboard/utils.ts</code>(与 <code>estimateCost</code> 的 <code>runtimes/utils.ts</code> 是两文件)。</li>
+</ul>
+
+<b>Context pollution signal</b>:<b>无</b> —— 干净 RPI 阶段切换(Plan 完成 → Implement)。SOP 要求 Plan 与 Implement 分离 session、且写+评审 plan 的 session 不可自己执行;clear 是为用全新 context 冷启 Implement、以 approved plan 为唯一输入。
+</div>
 
 <footer>team-context · RPI Plan phase · multica issue 内渲染 · plan_2026-06-05_usage-tabs-heatmap</footer>
 </body></html>
