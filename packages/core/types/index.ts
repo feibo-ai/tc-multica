@@ -34,6 +34,8 @@ export type {
   DashboardUsageDaily,
   DashboardUsageByAgent,
   DashboardUsageByPerson,
+  DashboardAmbientUsageByPerson,
+  DashboardUsageDailyByModel,
   DashboardAgentRunTime,
   DashboardRunTimeDaily,
   RuntimeUpdate,

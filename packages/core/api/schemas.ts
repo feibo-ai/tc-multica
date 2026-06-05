@@ -296,6 +296,37 @@ const DashboardUsageByPersonSchema = z.object({
 
 export const DashboardUsageByPersonListSchema = z.array(DashboardUsageByPersonSchema);
 
+// Usage v2 (Phase 1) — user/agent tabs + heatmap.
+//
+// Ambient-only per-(owner, model) totals for the user tab. Unlike
+// DashboardUsageByPersonSchema this KEEPS the model so the client folds rows by
+// owner and computes per-model cost. owner_id "" is the unattributed bucket
+// (defaults to "" rather than failing the row).
+const DashboardAmbientUsageByPersonSchema = z.object({
+  owner_id: z.string().default(""),
+  model: z.string().default(""),
+  input_tokens: z.number().default(0),
+  output_tokens: z.number().default(0),
+  cache_read_tokens: z.number().default(0),
+  cache_write_tokens: z.number().default(0),
+}).loose();
+
+export const DashboardAmbientUsageByPersonListSchema = z.array(DashboardAmbientUsageByPersonSchema);
+
+// Per-(date, model) token bucket shared by BOTH heatmap feeds (ambient/daily
+// by owner, by-agent/daily by agent) — identical wire shape. No task_count:
+// the heatmap colours by tokens or by client-computed cost.
+const DashboardUsageDailyByModelSchema = z.object({
+  date: z.string().default(""),
+  model: z.string().default(""),
+  input_tokens: z.number().default(0),
+  output_tokens: z.number().default(0),
+  cache_read_tokens: z.number().default(0),
+  cache_write_tokens: z.number().default(0),
+}).loose();
+
+export const DashboardUsageDailyByModelListSchema = z.array(DashboardUsageDailyByModelSchema);
+
 const DashboardAgentRunTimeSchema = z.object({
   agent_id: z.string().default(""),
   total_seconds: z.number().default(0),

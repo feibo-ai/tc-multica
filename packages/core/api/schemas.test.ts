@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   DashboardAgentRunTimeListSchema,
+  DashboardAmbientUsageByPersonListSchema,
   DashboardUsageByAgentListSchema,
   DashboardUsageByPersonListSchema,
+  DashboardUsageDailyByModelListSchema,
   DashboardUsageDailyListSchema,
   DuplicateIssueErrorBodySchema,
   EMPTY_LIST_PROJECTS_RESPONSE,
@@ -402,6 +404,80 @@ describe("DashboardUsageByPersonListSchema (drift safety)", () => {
       parseWithFallback(
         { rows: [] },
         DashboardUsageByPersonListSchema,
+        [],
+        { endpoint: "test" },
+      ),
+    ).toEqual([]);
+  });
+});
+
+// Usage v2 (Phase 1): the user-tab leaderboard feed. Like by-person it keeps
+// owner_id "" as the unattributed bucket, but it ALSO carries `model` (so the
+// client prices per model) and drops the `ambient_tokens` split.
+describe("DashboardAmbientUsageByPersonListSchema (drift safety)", () => {
+  it("keeps model and owner_id, defaults missing token fields to 0", () => {
+    const parsed = DashboardAmbientUsageByPersonListSchema.parse([
+      { owner_id: "u1", model: "claude-opus-4-7", input_tokens: 100 },
+    ]);
+    expect(parsed[0]?.model).toBe("claude-opus-4-7");
+    expect(parsed[0]?.owner_id).toBe("u1");
+    expect(parsed[0]?.output_tokens).toBe(0);
+  });
+
+  it("keeps owner_id \"\" as the unattributed bucket", () => {
+    const parsed = DashboardAmbientUsageByPersonListSchema.parse([
+      { owner_id: "", model: "m", input_tokens: 50 },
+    ]);
+    expect(parsed[0]?.owner_id).toBe("");
+  });
+
+  // Malformed-response contract: wrong-typed field OR non-array body → [].
+  it("falls back to [] on a malformed response", () => {
+    expect(
+      parseWithFallback(
+        [{ owner_id: "u1", input_tokens: "lots" }],
+        DashboardAmbientUsageByPersonListSchema,
+        [],
+        { endpoint: "test" },
+      ),
+    ).toEqual([]);
+    expect(
+      parseWithFallback(
+        { rows: [] },
+        DashboardAmbientUsageByPersonListSchema,
+        [],
+        { endpoint: "test" },
+      ),
+    ).toEqual([]);
+  });
+});
+
+// Usage v2 (Phase 1): the (date, model) bucket shared by BOTH heatmap endpoints
+// (ambient/daily by owner, by-agent/daily by agent). A single drifted row must
+// not blank the whole heatmap; a structurally broken body fails to [].
+describe("DashboardUsageDailyByModelListSchema (drift safety)", () => {
+  it("coerces missing token/date fields without dropping the row", () => {
+    const parsed = DashboardUsageDailyByModelListSchema.parse([
+      { model: "claude-opus-4-7", input_tokens: 9 },
+    ]);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.date).toBe("");
+    expect(parsed[0]?.cache_write_tokens).toBe(0);
+  });
+
+  it("falls back to [] on a malformed response", () => {
+    expect(
+      parseWithFallback(
+        [{ date: "2026-05-19", input_tokens: "many" }],
+        DashboardUsageDailyByModelListSchema,
+        [],
+        { endpoint: "test" },
+      ),
+    ).toEqual([]);
+    expect(
+      parseWithFallback(
+        { rows: [] },
+        DashboardUsageDailyByModelListSchema,
         [],
         { endpoint: "test" },
       ),
