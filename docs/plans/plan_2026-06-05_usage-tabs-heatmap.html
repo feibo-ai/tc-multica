@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>usage-tabs-heatmap (runtime-token-usage v2 · Phase 1)</title>
+<style>
+:root{--ink:#1A1A1A;--ink2:#2D2D2D;--paper:#F5F2EB;--paper2:#EDE8DC;--accent:#C73E1D;--gray:#8B8680;--border:#D4CFC4;--green:#4A6B3A;--gold:#B8862E}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Songti SC","Noto Serif SC",Georgia,serif;background:var(--paper);color:var(--ink);line-height:1.8;font-size:15px;padding:48px 40px;max-width:820px;margin:0 auto}
+.eyebrow{font-family:"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+h1{font-weight:900;font-size:36px;line-height:1.15;letter-spacing:-1px;margin-bottom:18px;border-bottom:3px double var(--ink);padding-bottom:20px}
+.meta{display:flex;gap:32px;flex-wrap:wrap;font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--gray);margin-bottom:36px}
+.meta b{color:var(--ink);font-weight:600}
+h2{font-weight:700;font-size:22px;margin:36px 0 14px;padding-left:14px;border-left:4px solid var(--accent)}
+h3{font-weight:700;font-size:16px;margin:24px 0 8px;color:var(--ink2)}
+.field{background:#fff;border:1px solid var(--border);padding:18px 22px;margin-bottom:14px}
+.field-label{font-family:"SF Mono",Menlo,monospace;font-size:10px;letter-spacing:1.5px;color:var(--gray);text-transform:uppercase;margin-bottom:6px}
+ul{list-style:none;margin:8px 0}
+li{padding:6px 0 6px 24px;position:relative}
+li::before{content:"▸";position:absolute;left:4px;color:var(--accent)}
+.crit li::before{content:"☐";color:var(--green)}
+code{font-family:"SF Mono",Menlo,monospace;background:var(--paper2);padding:1px 6px;border-radius:2px;font-size:12.5px}
+.callout{background:var(--paper2);border-left:4px solid var(--gold);padding:14px 18px;margin:18px 0;font-size:14px}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px;background:#fff}
+th,td{border:1px solid var(--border);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:var(--paper2);font-family:"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--ink2)}
+.tag{display:inline-block;font-family:"SF Mono",Menlo,monospace;font-size:10px;padding:1px 6px;border-radius:2px;background:var(--green);color:#fff}
+.tag.new{background:var(--accent)}
+.tag.reuse{background:var(--gold)}
+footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--border);font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--gray)}
+</style></head>
+<body>
+<div class="eyebrow">PLAN · 计划 · project · runtime-token-usage v2 · Phase 1</div>
+<h1>usage-tabs-heatmap</h1>
+<div class="meta">
+  <span>DRI <b>曾振华</b></span>
+  <span>Layer <b>project</b></span>
+  <span>Branch <b>feat/usage-tabs-heatmap</b></span>
+  <span>Appetite <b>1 周（Shape Up 上限非估算）</b></span>
+  <span>Design <b>design_2026-06-05_usage-users-agents-heatmap.md</b></span>
+</div>
+
+<h2>目标</h2>
+<div class="field"><div class="field-label">Goal</div>
+为 Usage（用量）页把下方「Cost by agent」排行榜区域改造成 <b>👤 用户 | 🤖 智能体</b> 二分 tab，并为两侧引入 <b>GitHub 贡献图式热力图</b>——<b>全部基于 v1 已落的现有 hourly rollup</b>（<code>task_usage_hourly</code> / <code>ambient_usage_hourly</code>），<b>零 daemon / collector / migration / 新表</b> 改动。<b>用户 tab</b> = 仅 ambient（本地 CLI）用量，按人按<b>费用</b>排行 + 点开看该人 <b>26 周</b>热力图（费用/Token 可切）；<b>智能体 tab</b> = 复用现有 by-agent 榜 + 点开看该 agent 26 周 task 热力图。新增 <b>3 个只读端点</b>（都在现有表上 <code>GROUP BY</code>），沿用 <code>zod + parseWithFallback +</code> malformed 测试、<code>workspace_id</code> 多租户过滤、owner <code>NULL</code> → 未归属 语义。落地 design 文档的 <b>Phase 1</b>（D1–D6 已锁，不重开）。
+</div>
+
+<h2>完成标准</h2>
+<div class="field crit"><ul>
+<li><b>【tab 改造】</b>Usage 页下方原「Cost by agent」榜被 <code>👤 用户 | 🤖 智能体</code> tab 区块替换；v1 那个独立的 <code>PersonUsageList</code>（task+ambient 合并人总账）从页面消失、其语义并入「用户」tab（清洁二分 D2 的直接后果）。</li>
+<li><b>【用户 tab】</b>左侧人榜按 <b>ambient 费用</b>降序（头像+名+费用+token），点选某人 → 右侧渲染 ta 的 <b>26 周</b> <code>ActivityHeatmap</code>，<b>费用/Token</b> Segmented toggle 切换即重新着色；工具拆分条显示「Claude Code 100%」占位（Phase 2 接 Codex）。</li>
+<li><b>【未归属】</b>存在 <code>owner_id IS NULL</code> 的 ambient 时，人榜底部单列一行「未归属 / Unattributed」（沿用 v1 的 <code>""</code> wire 约定 + "?" 头像），可点开看其聚合热力图。</li>
+<li><b>【智能体 tab】</b>复用现有 by-agent 榜；点选某 agent → 右侧渲染该 agent 的 26 周 <b>task</b> 热力图，同一 费用/Token toggle。</li>
+<li><b>【3 个新只读端点】</b><code>ambient/by-person</code>、<code>ambient/daily</code>（按 owner）、<code>by-agent/daily</code>（按 agent）各自：<code>schemas.ts</code> 加 zod、<code>client.ts</code> 走 <code>parseWithFallback</code>、<code>schemas.test.ts</code> 各一个 malformed 测试（错类型/非数组 → 返回 <code>[]</code> 不抛）。</li>
+<li><b>【多租户 + tz】</b>3 个 query 全 <code>WHERE workspace_id = $1</code>；两个 per-day query 经 <code>DATE(bucket_hour AT TIME ZONE @tz)</code> 切天；owner_id / agent_id 查询参数过 <code>parseUUIDOrBadRequest</code>（owner <code>""</code>/缺省 → 未归属桶，不报 400）。</li>
+<li><b>【范围闸】</b><code>git diff</code> 只触及 <code>handler/dashboard.go</code> · <code>queries/task_usage.sql</code> · <code>router.go</code> · sqlc 生成物 · 前端 views/core；<b>无</b> migration、<b>无</b> daemon/collector、<b>无</b> 新表。</li>
+<li><b>【对账】</b><b>同一 days 窗口下</b>，用户 tab 人榜某人的 <b>token</b> 总额（四 token 求和、仅 ambient，<b>非</b>显示的费用）= v1 <code>/usage/by-person</code> 对该 <code>owner_id</code> 报的 <code>ambient_tokens</code>（含 <code>""</code> 未归属行）。证明二分未漏未重。</li>
+<li><b>【i18n】</b>新文案 key（用户/智能体/未归属/Last 26 weeks/费用/Token/工具/Claude Code）按 conventions.mdx 术语表登记进 <code>packages/views/locales/</code>（让「i18n 完成」可观测）。</li>
+<li><b>【绿管线】</b><code>make check</code> 通过（typecheck / TS test / Go test / E2E）。</li>
+</ul></div>
+
+<h2>分工</h2>
+<div class="field"><div class="field-label">Roles</div>
+DRI <code>曾振华</code> · EXEC <code>曾振华, Claude Code（Implement 会话）</code> · COLLAB <code>待定 —— 若 server/ 有独立负责人，邀其轻评 3 个只读 query（纯读、不写不迁移，风险显著低于 v1 的 ingest/rollup）</code> · REVIEW <code>第二个 Claude session（staff-engineer 角色，独立对码 + 核对 D1–D6 锁定项未被违反 + 4 个待决项裁决是否站得住）</code>
+</div>
+
+<h2>投入预算</h2>
+<div class="callout"><b>1 周（project 层，Shape Up appetite —— 上限非估算）。</b>本期是 Phase 1：纯前端为主 + 3 个简单只读 GROUP BY，<b>无不可逆</b>（无 schema/migration）。<b>真实工作量</b>集中在 ① <code>ActivityHeatmap</code> 的费用/Token 参数化（cost 写死于<b>四处</b>含 SVG <code>&lt;title&gt;</code>，要泛化，详 §5），② dashboard 页 tab 接线 + 选中态 + 懒查询。<b>减震器（吃紧先砍）</b>：工具拆分条保持静态占位；自动选中榜首的便利可省。（<b>未归属可点开热力图<u>不</u>进减震器</b>——其 query 已天然处理 NULL owner、前端守卫用 <code>null</code> 哨兵即可，几乎零额外成本，故保留为完成标准第 3 条的硬指标。）<b>核心不可砍</b>：二分 tab + ambient 人榜 + 点开热力图 + agent 热力图 + 3 端点 + malformed 测试。超时触发 <code>plan_upgrade</code>（升版强制重审）。
+</div>
+
+<h2>Research / Design 输入</h2>
+<div class="field">
+<code>docs/research/design_2026-06-05_usage-users-agents-heatmap.md</code>（已批准，commit 2c9cdf25）。<br>
+v1 plan：<code>docs/plans/plan_2026-06-03_runtime-token-usage.html</code>；v1 case issue <code>c1aae10e</code>；v1 已发 <b>v0.4.9</b>、生产可见。<br>
+<b>已锁定决策（不重开）</b>：D1 智能体=用户挂载的 Multica agent；D2 干净二分（用户=ambient / 智能体=task，不重叠）；D3 布局 B（紧凑榜单+点开大热力图）；D4 热力图费用/Token 切换、默认费用；D5 智能体 tab 沿用 B；D6 三期分解、本 plan 只做 Phase 1。
+</div>
+
+<h2>方案</h2>
+<div class="field">
+
+<h3>0. 现状对码（Implement 直接用的锚点）</h3>
+已实测确认的复用面与新增面：
+<ul>
+<li><b>前端 Usage 页</b> <code>packages/views/dashboard/components/dashboard-page.tsx</code>：自上而下 = PageHeader（project 过滤 + daily/weekly + days 选择器 1/7/30/90/180）→ 4 张 KPI 卡 → <code>TrendBlock</code> → <code>Leaderboard</code>（by-agent，~640–760 行）→ <code>PersonUsageList</code>（by-person 合并总账，~768–865 行）。本期改造 <code>Leaderboard</code>+<code>PersonUsageList</code> 这块。</li>
+<li><b>热力图</b> <code>packages/views/runtimes/components/charts/activity-heatmap.tsx</code>：props 现为 <code>{ usage: RuntimeUsage[]; tz }</code>，窗口写死 <code>HEATMAP_WEEKS = 26</code>，<b>仅按 cost 着色</b>（着色 25/26 行、分位 108–118 行、insights/ tooltip 全 <code>fmtMoney</code>）。现唯一调用点在 <code>runtimes/components/usage-section.tsx</code>（runtime 详情页），dashboard 尚未用。</li>
+<li><b>费用计算</b> <code>packages/views/runtimes/utils.ts</code> 的 <code>estimateCost(usage)</code>（按 <code>model</code> 查定价表，客户端算，含 custom-pricing store 覆盖）。沿用「model 上线 / cost 客户端算」约定。</li>
+<li><b>Segmented</b> 控件（费用/Token 切换的现成样式）已在 <code>usage-section.tsx</code>（78–112 行，<code>chartMetric: "cost"|"tokens"</code>）与 dashboard-page 各有一份；直接复用样式。</li>
+<li><b>shadcn Tabs</b> 已存在 <code>packages/ui/components/ui/tabs.tsx</code>（Base UI 版），dashboard 尚未用 —— 顶层「用户|智能体」用它（真 tab 面板语义），费用/Token 切换继续用 Segmented。</li>
+<li><b>后端读端</b> <code>server/internal/handler/dashboard.go</code> + <code>server/pkg/db/queries/task_usage.sql</code>。现有 <code>ListDashboardUsageByAgent</code>（按 agent×model、无日期）喂 by-agent 榜；<code>ListDashboardUsageByPerson</code>（UNION task+ambient、<b>按 owner 但塌掉 model</b>、含 <code>ambient_tokens</code> 拆分、<code>NULL→""→Unattributed</code>）喂 PersonUsageList。模板：<code>ListDashboardUsageDaily</code> 已示范 <code>DATE(bucket_hour AT TIME ZONE @tz)</code> 切天 + <code>parseSinceParamInTZ</code> 视图 tz 截断。</li>
+<li><b>表结构</b>：<code>ambient_usage_hourly</code> = (bucket_hour, workspace_id, runtime_id, provider, model, 四个 token, event_count) —— <b>无 owner_id（读时 LEFT JOIN agent_runtime）、无 source 列</b>。<code>task_usage_hourly</code> = (…, agent_id, project_id, …)，索引 <code>idx_task_usage_hourly_workspace_agent_time</code> 覆盖 (workspace_id, agent_id, bucket_hour)。</li>
+<li><b>API 层</b>：<code>packages/core/api/schemas.ts</code>（zod，<code>.loose()</code>+<code>.default()</code>）、<code>client.ts</code>（<code>parseWithFallback(raw, Schema, [], {endpoint})</code>）、<code>packages/core/dashboard/queries.ts</code>（<b>不</b>在 <code>api/</code> 下；queryKey 按 <code>wsId/days/tz</code>，<code>staleTime</code>）、<code>schemas.test.ts</code>（malformed → <code>[]</code> 范式现成）。Workspace 走 <code>X-Workspace-Slug</code> header，服务端解析。</li>
+</ul>
+
+<h3>1. 四个待决项的裁决（本 plan 拍板，交评审复核）</h3>
+<table>
+<tr><th>#</th><th>待决</th><th>裁决</th><th>依据</th></tr>
+<tr><td>Q1</td><td>未归属是否单列一行</td><td><b>是，单行 + 可点开</b></td><td>v1 <code>ListDashboardUsageByPerson</code> <b>已经</b>把 <code>NULL→""→"Unattributed"</code>（"?" 头像）露在 <code>PersonUsageList</code>；用户 tab 若隐藏它，tab 总额会与用户已看到的 v1 列表静默不一致。沿用 <code>""</code> wire 约定；点开时其热力图 = 该 workspace 全部 <code>owner_id IS NULL</code> 的 ambient 聚合。</td></tr>
+<tr><td>Q2</td><td>热力图窗口 26 周 vs 跟 days 选择器</td><td><b>固定 26 周</b>，与 days 解耦</td><td>这正是 D3 选的「GitHub 个人 profile 大图」语义；组件本就写死 <code>HEATMAP_WEEKS=26</code>；若跟 <code>days=1</code> 只剩一个亮格、无意义。<b>榜单总额仍跟页面 days</b>（与 by-agent/by-person 现行一致），热力图加「Last 26 weeks」标注让固定窗口显性、避免与左榜口径混淆。</td></tr>
+<tr><td>Q3</td><td>Phase 3 session 标签隐私取舍</td><td><b>只记方向</b></td><td>安全基线 = session UUID + 首/末 <code>event_at</code>（都已采、零新增隐私面）。延伸 = cwd/项目 <b>basename</b> 作人类可读标签（文件系统元数据，非 content）——但路径本身可能含敏感串，须在 Phase 3 自己的 plan 里写一条 <code>decisions/</code> doctrine 扩展再用。<b>硬线</b>：永不从 <code>message.content</code> 取名（违反 v1 隐私 doctrine <code>decisions/2026-06-03-local-log-privacy.md</code>）。</td></tr>
+<tr><td>Q4</td><td>agent per-day 读端：新增 vs 扩 <code>ListDashboardUsageByAgent</code></td><td><b>新增独立 query</b></td><td><code>ListDashboardUsageByAgent</code> 是「全 agent / 无日期」且有现存消费者（by-agent 榜）；给它加条件式日期分组 + 单 agent 过滤会分叉其代码路径或破坏榜单。仓库先例（<code>ListDashboardUsageDaily</code> 与 <code>ListDashboardUsageByAgent</code> 并排为两条单一职责 query）支持新增。索引已覆盖。</td></tr>
+</table>
+
+<h3>2. 范围后果：PersonUsageList 的去留（D2 直接推论，提请评审确认）</h3>
+D2 锁定「干净二分：用户 tab = ambient 仅此」。现有 <code>PersonUsageList</code> 展示的是 <b>task+ambient 合并的人总账</b>——既非用户 tab（ambient-only）也非智能体 tab，与二分心智模型冲突。故 <b>页面上移除 <code>PersonUsageList</code> 的渲染</b>，其「人」维度由新的 ambient-only 用户 tab 取代。
+<div class="callout"><b>API 边界保留</b>：<code>GET /api/dashboard/usage/by-person</code> 端点与 <code>dashboardUsageByPersonOptions</code> hook <b>保留不删</b>——老版本 desktop 安装仍渲染旧 <code>PersonUsageList</code>、会调它（API Response Compatibility：装机端比后端旧）。只在<b>当前 views 里停止渲染</b>该组件，不动端点。这是有意的「替换 UI、保边界」而非删 API。</div>
+
+<h3>3. 后端：3 个新只读 query + 3 个 handler（Go）</h3>
+全部加在 <code>queries/task_usage.sql</code>（与现有 dashboard 读端并排，<code>ListDashboardUsageByPerson</code> 就在那读 ambient），<code>make sqlc</code> 重生，handler 进 <code>dashboard.go</code>，路由进 <code>server/cmd/server/router.go</code>。
+<table>
+<tr><th>用途</th><th>新 query</th><th>形状 / 关键 SQL</th><th>路由</th></tr>
+<tr><td>用户榜（人均 ambient，<b>保留 model</b> 以便客户端按模型算费用）<span class="tag new">NEW</span></td><td><code>ListDashboardAmbientUsageByPerson</code></td><td><code>SELECT rt.owner_id, model, SUM(四 token) FROM ambient_usage_hourly auh LEFT JOIN agent_runtime rt ON rt.id=auh.runtime_id WHERE auh.workspace_id=$1 AND auh.bucket_hour>=@since GROUP BY rt.owner_id, model</code>。无 tz 切天（tz 仅用于 Go 算 since）。NULL owner 落「未归属」桶。<b>注</b>：现有 by-person 塌了 model 只能算 token、算不了 cost，故必须新写保 model 的版本。</td><td><code>GET /api/dashboard/usage/ambient/by-person?days=&amp;tz=</code></td></tr>
+<tr><td>用户热力图（某 owner 的 ambient/天）<span class="tag new">NEW</span></td><td><code>ListDashboardAmbientUsageDaily</code></td><td><code>SELECT DATE(bucket_hour AT TIME ZONE @tz) AS date, model, SUM(四 token) FROM ambient_usage_hourly auh LEFT JOIN agent_runtime rt ON rt.id=auh.runtime_id WHERE auh.workspace_id=$1 AND auh.bucket_hour>=@since AND ((sqlc.narg('owner_id')::uuid IS NOT NULL AND rt.owner_id=sqlc.narg('owner_id')) OR (sqlc.narg('owner_id') IS NULL AND rt.owner_id IS NULL)) GROUP BY DATE(...), model</code>。<b>narg owner_id 为 NULL ⇒ 未归属桶</b>（该端点恒按单一 owner 或未归属过滤）。</td><td><code>GET /api/dashboard/usage/ambient/daily?owner_id=&amp;days=&amp;tz=</code></td></tr>
+<tr><td>智能体热力图（某 agent 的 task/天）<span class="tag new">NEW</span></td><td><code>ListDashboardAgentUsageDaily</code></td><td><code>SELECT DATE(bucket_hour AT TIME ZONE @tz) AS date, model, SUM(四 token) FROM task_usage_hourly WHERE workspace_id=$1 AND agent_id=@agent_id AND bucket_hour>=@since GROUP BY DATE(...), model</code>。索引 <code>idx_task_usage_hourly_workspace_agent_time</code> 覆盖。</td><td><code>GET /api/dashboard/usage/by-agent/daily?agent_id=&amp;days=&amp;tz=</code></td></tr>
+<tr><td>智能体榜（agent 总额）<span class="tag reuse">已有</span></td><td><code>ListDashboardUsageByAgent</code></td><td>不动，直接喂智能体 tab 左榜。</td><td><code>GET /api/dashboard/usage/by-agent</code></td></tr>
+</table>
+<b>Handler 约定（硬约束）</b>：
+<ul>
+<li>三个 handler 都 <code>resolveWorkspaceID(r)</code> → <code>WHERE workspace_id=$1</code>（多租户）；<code>resolveViewingTZ(r)</code> + <code>parseSinceParamInTZ(r, default, tz)</code>（沿用现有 days/tz 截断）。</li>
+<li><b>UUID 边界</b>（CLAUDE.md #1661 约定；此为纯读 query、无 <code>Delete*/Update*</code>，#1661 的零-UUID 隐患本不适用，但实现细节须钉死）：<code>agent_id</code> 恒 UUID → <code>parseUUIDOrBadRequest(w,s,"agent_id")</code>，非法即 400 返回。<code>owner_id</code> <b>特例</b>：缺省/<code>""</code> ⇒ <b>直接构造 <code>pgtype.UUID{Valid:false}</code>（SQL NULL）传 narg</b>，<b>绝不</b>把 <code>""</code> 过任何 parse 函数（<code>util.ParseUUID("")</code> 会报错/产无效值），<b>不</b>当 400；非空才 <code>parseUUIDOrBadRequest</code>。<b>不变式</b>：该 daily 端点<b>无</b>「全 owner」模式（WHERE 只有 单 owner 或 未归属 两支），代码注释写明，否则 <code>""</code> 会在「未归属桶」与「不过滤」间二义。注意 <code>r.URL.Query().Get("owner_id")</code> 对 <code>?owner_id=</code> 与<b>整个 key 缺失</b>都返回 <code>""</code>，二者皆走未归属。</li>
+<li>两个热力图 handler 的响应同形（<code>{date, model, 四 token}</code>），共用一个 response struct。NULL owner 经 <code>row.OwnerID.Valid</code> 判定 → 上线 <code>""</code>（沿用 dashboard.go 现有 236–242 写法）。</li>
+<li>Go handler 测试（<code>server/internal/handler/</code>，自建 fixture）：① workspace 过滤（别的 ws 不串）；② tz 切天正确；③ <code>owner_id=""</code> → 未归属行；③b <b>整个 <code>owner_id</code> key 缺失</b>（非空串）→ 同样落未归属；④ 非法 <code>agent_id</code> → 400。</li>
+</ul>
+
+<h3>4. API 层（TS，沿用约定）</h3>
+<ul>
+<li><code>schemas.ts</code>：<code>DashboardAmbientUsageByPersonSchema</code>（owner_id/model/四 token，<code>.loose()</code>+<code>.default()</code>）+ <code>DashboardUsageDailyByModelSchema</code>（date/model/四 token，<b>两个热力图端点共用</b>）+ 各自 List 包装。</li>
+<li><code>types/api.ts</code>：<code>DashboardAmbientUsageByPerson</code>、<code>DashboardUsageDailyByModel</code>。</li>
+<li><code>client.ts</code>：<code>getDashboardAmbientUsageByPerson({days,tz})</code>、<code>getDashboardAmbientUsageDaily({owner_id,days,tz})</code>、<code>getDashboardAgentUsageDaily({agent_id,days,tz})</code> —— 全走 <code>parseWithFallback(raw, …ListSchema, [], {endpoint})</code>。</li>
+<li><code>packages/core/dashboard/queries.ts</code>（<b>不</b>在 <code>api/</code> 下）：加 3 个 queryKey + queryOptions。用户榜按页面 <code>days</code>；<b>两个热力图 options 懒触发</b> —— <b>守卫用显式「是否已选中」布尔，<u>勿用</u> <code>!!</code> 真值判断</b>：未归属 <code>owner_id</code> 是空串 <code>""</code>、而 <code>!!"" === false</code>，若写 <code>enabled: !!selectedOwnerId</code> 则点开未归属行时 query <b>永不触发</b>（直接违反完成标准第 3 条）。约定 <code>null</code>=未选中、<code>""</code>=选中未归属、UUID=选中某人，守卫写 <code>enabled: !!wsId &amp;&amp; selectedOwnerId !== null</code>。其 <code>days</code> 传<b>具名常量 <code>HEATMAP_DAYS = 182</code></b>（=26×7，与页面 days 选择器解耦，Q2），并<b>把该常量放进 queryKey</b>（仿 dashboard 现有 <code>ALL_PROJECTS</code> 哨兵纪律，该常量在 <code>dashboard-page.tsx</code>），免与未来某个 <code>days=182</code> 榜单 key 撞缓存。页面 days 上限仅 180，故热力图窗口本就比任何榜单可请求窗口更宽——有意解耦、各自独立缓存。</li>
+<li><code>schemas.test.ts</code>：3 个 malformed 测试（错类型字段 → <code>[]</code>、非数组 body → <code>[]</code>），照 <code>DashboardUsageByPersonListSchema</code> 现有范式。</li>
+</ul>
+
+<h3>5. 热力图组件参数化（最重的一块）</h3>
+<code>activity-heatmap.tsx</code>：
+<ul>
+<li><b>泛化 prop 形状</b>：<code>usage: RuntimeUsage[]</code> → <code>usage: HeatmapUsage[]</code>，<code>HeatmapUsage = {date, model, 四 token}</code>。<code>RuntimeUsage</code> 是其超集（多 runtime_id/provider），<b>结构子类型成立、现调用点（usage-section.tsx）零改动</b>。两个新端点返回的 <code>DashboardUsageDailyByModel</code> 正好满足此形状。</li>
+<li><b>加 <code>metric?: "cost" | "tokens"</code>（默认 cost，D4）</b>：cost 在组件里写死于<b>四处</b>（评审复核纠正，原写三处），全部泛化为「value」：① 每天聚合 <code>:68-71</code>（<code>cost</code>=<code>estimateCost(u)</code> vs <code>tokens</code>=四 token 求和）；② 分位着色 <code>:108-118</code>（在 value 上算）；③ <b>SVG 每格 <code>&lt;title&gt;</code> tooltip <code>:245</code></b>（<code>$${c.cost.toFixed(2)}</code> —— <b>独立内联、不过 <code>fmtMoney</code>，最易漏</b>，正是 R1 点名的失败态）；④ insights 区 <code>:272-301</code>（<code>fmtMoney</code> vs <code>formatTokens</code>）+ 图例文案。<b>同时把承载字段改名</b> <code>allCells[].cost</code>（<code>:90-95</code>）、<code>Insights.busiestDay.cost</code> / <code>totalCost</code>（<code>:43-51,142-189</code>）→ 泛化 <code>value</code>，否则半改会留「名为 cost 实装 token」的潜伏混淆。<code>useMemo</code> 依赖加 <code>metric</code>。</li>
+<li>加「Last 26 weeks」窗口标注（Q2 显性化）。</li>
+<li>组件测试（<code>packages/views/runtimes/</code>）：cost 路径 vs tokens 路径各跑一遍着色不报错（轻）。</li>
+</ul>
+
+<h3>6. Dashboard 页接线（布局 B）</h3>
+<code>dashboard-page.tsx</code>：把 <code>Leaderboard</code>+<code>PersonUsageList</code> 那块换成 <code>&lt;Tabs&gt;</code>（shadcn）：
+<ul>
+<li><b>TabsList</b>：<code>👤 用户</code> / <code>🤖 智能体</code>。</li>
+<li><b>用户 TabsContent → 新 <code>UserUsagePanel</code></b>（建议单独文件 <code>components/user-usage-panel.tsx</code>）：左 = ambient 人榜（头像+名+费用+token，按费用降序，含未归属行）。<b>排序口径（别当显然）</b>：后端返回 <code>(owner_id, model, 四 token)</code> 多行明细，前端须<b>按 owner 折叠多 model 行 → 逐 model <code>estimateCost</code> → 求和 → 按总费用降序</b>（直接仿现有 by-agent 的 <code>aggregateAgentTokens</code> 折叠模式 <code>packages/views/dashboard/utils.ts:158-174</code>，勿另造）。右 = 选中人的 <code>ActivityHeatmap metric={…}</code> + 费用/Token <code>Segmented</code> + 工具拆分占位条「Claude Code 100%」（<b>本期纯死文案</b>、不接数据）。<code>ambient_usage_hourly</code> 无 <code>source</code> 列，故真工具细分须 Phase 2 改 rollup 键（migration），本期只占位 —— 已对码确认，非偷懒。</li>
+<li><b>智能体 TabsContent → <code>AgentUsagePanel</code></b>：左 = 复用现有 <code>Leaderboard</code>（加可选 <code>selectedId</code>+<code>onSelect</code>；<b>点击目标是整行</b> <code>:711</code> 非仅名字 span，加选中态高亮；现有行 <code>ActorAvatar enableHoverCard</code> <code>:720</code> 与行点击别打架——点头像走 hovercard、点行其余处选中，写进实现）；右 = 选中 agent 的 <code>ActivityHeatmap</code> + 同 toggle。</li>
+<li><b>选中态</b>：<code>selectedOwnerId: string | null</code> / <code>selectedAgentId: string | null</code> —— <b><code>null</code>=未选中、<code>""</code>=选中未归属、UUID=选中某人/agent</b>（默认选榜首,免右侧空着；榜首恰是未归属时即 <code>""</code>，合法）；选中触发对应懒查询（26 周 per-day，<b>enabled 守卫见 §4，勿用 <code>!!</code></b>）。<b>空榜兜底</b>：榜为空时无榜首可选（<code>selectedOwnerId</code> 留 <code>null</code>）→ 右侧渲染空态（非空白/崩溃）；懒 query 走 <code>parseWithFallback→[]</code>，<code>ActivityHeatmap</code> 对 <code>[]</code> 全格 level 0 本就安全；加载态给骨架。</li>
+<li><b>all-empty 闸</b>：dashboard 现有 <code>hasNoData</code>（<code>:253-259</code>）把 <code>byPersonUsage.length</code> 计入「纯本地 CLI workspace 也算有数据」。移除 <code>PersonUsageList</code> 后，<b>让新 ambient-by-person feed 接进同一 <code>hasNoData</code> 判断</b>，保住「无 task、只有本地 CLI 的 workspace 仍显示数据」这一 v1 行为（<code>:250</code> 注释明示）。</li>
+<li>无新路由：dashboard 在 <code>packages/views</code>，web+desktop 共用、两端自动生效（端点经共享 api client）。</li>
+<li>面板测试（<code>packages/views/dashboard/</code>，jsdom，mock <code>@multica/core</code>）：榜渲染、点选切换、未归属行出现。</li>
+</ul>
+
+<h3>7. i18n / 命名约定</h3>
+新文案（用户/智能体/未归属/费用/Token/工具/Claude Code/Last 26 weeks）进 <code>packages/views/locales/</code> 前，<b>先读</b> <code>apps/docs/content/docs/developers/conventions.mdx</code>（命名 + i18n 术语表 + 中文口吻的唯一真源）。复用已有术语，新增项按术语表登记。
+
+<h3>8. 仓库硬约束遵守清单</h3>
+<ul>
+<li>多租户：3 个 query 全 <code>workspace_id</code> 过滤。</li>
+<li>Handler UUID（#1661）：<code>agent_id</code> 走 <code>parseUUIDOrBadRequest</code>；<code>owner_id</code> 空 ⇒ 未归属、非空 ⇒ 校验。纯读、无 <code>Delete*/Update*</code>，无 loader 需求。</li>
+<li>API Response Compatibility（#2143/2147/2192）：3 端点 zod + <code>parseWithFallback</code> + malformed 测试同 PR；保留 by-person 端点不删（装机端兼容）。</li>
+<li>包边界：UI 进 <code>views</code>、query/类型进 <code>core</code>、<code>views</code> 无 <code>next/*</code> / <code>react-router</code>；web+desktop 双端经 views 自动覆盖。</li>
+<li>复用优先：热力图/Segmented/Leaderboard/ActorAvatar/estimateCost 全复用，不造平行抽象。</li>
+<li>不加兼容层：内部新代码不写 fallback/shim（API 边界除外，即上面保留的 by-person）。</li>
+</ul>
+
+<h3>9. 本期实施顺序（建议）</h3>
+后端 3 query+handler+路由+sqlc+Go 测试 → API 层 zod/client/queries/malformed 测试 → 热力图参数化（含组件测试）→ dashboard tab 接线 + 两面板 + 选中态（含面板测试）→ i18n → <code>make check</code> 绿。每段过人眼再 commit（底线规则#5）。
+
+<h3>10. 不在 Phase 1（标记，留独立 spec/plan）</h3>
+<ul>
+<li><b>Phase 2</b>：Codex Collector adapter（<code>~/.codex</code>，<code>source="codex"</code>，token 记账差异 + 隐私审查）；<code>ambient_usage_hourly</code> 加 <code>source</code> 入 rollup 键（migration）→ 用户 tab 工具拆分变真数据。</li>
+<li><b>Phase 3</b>：更全上报（session 标签）—— 方向见 Q3，须 <code>decisions/</code> doctrine 扩展。</li>
+<li>Dead ends（design 已判，别走）：Claude Desktop 工具细分（audit.jsonl 无 token 数，做不了）；用户 tab 不含 task 用量（清洁二分，非人总账）。</li>
+</ul>
+
+<h3>11. 风险</h3>
+<ul>
+<li><b>R1 热力图参数化回归</b>：cost <b>四处</b>写死（含 SVG <code>&lt;title&gt;:245</code>），泛化时易漏（如 tooltip 仍显 <code>$</code>）。缓解：cost/tokens 两条路径各一个组件测试 + 现调用点回归。</li>
+<li><b>R2 二分口径漂移</b>：用户=ambient、智能体=task，若某 query 边界写错会与 by-person 对不上。缓解：完成标准里的「对账」硬指标（用户 tab 总额 = v1 by-person 的 ambient_tokens）。</li>
+<li><b>R3 owner 空串语义</b>：未归属用 <code>""</code> 既是「展示桶」又是「query 过滤值」，handler 若按 <code>parseUUIDOrBadRequest</code> 一刀切会 400。缓解：handler 显式特判 + Go 测试覆盖 <code>owner_id=""</code>。</li>
+<li><b>R4 左榜/右图窗口不一致引困惑</b>（左榜跟 days、右图固定 26 周）。缓解：右图「Last 26 weeks」标注显性化（Q2）。</li>
+<li><b>R5 ambient owner 过滤无专用索引</b>：ambient-daily 的 <code>owner_id</code> 过滤是 LEFT JOIN <code>agent_runtime</code> 后的后置过滤，<code>owner_id</code>（<code>032</code> 加、无索引）；但 join 目标是 PK 查、<code>agent_runtime</code> 仅数十行（2–10 人团队），<b>实测无需加索引</b> → 不加 = 守住 Phase 1 无 migration；仅当 <code>agent_runtime</code> 无界增长才重审。</li>
+</ul>
+
+</div>
+
+<h2>评审（Review）</h2>
+<div class="field">
+<b>Reviewer</b>：第二个 Claude session（staff-engineer 角色，独立对码，逐条 file:line 核验）。<br>
+<b>Reviewed</b>：2026-06-05。<br>
+<b>Verdict</b>：CHANGES-REQUESTED（3 阻断，均为 plan 文字收紧、非 scope 变更）→ 全数折入 → <b>APPROVED</b>。<br>
+<b>6 条代码声明</b>：评审独立对码，全部 TRUE —— ambient_usage_hourly 无 source/owner_id 列；by-person 塌 model（故须新 model-preserving query）；RuntimeUsage 是 HeatmapUsage 超集且 cost 写死多处；Leaderboard 可加 onSelect 且 agent 榜已客户端算 cost；parseSinceParamInTZ·resolveViewingTZ·parseUUIDOrBadRequest 存在；agent 日索引 <code>idx_task_usage_hourly_workspace_agent_time</code> 存在。<b>范围闸 HOLDS</b>：无任何东西暗逼 migration/daemon/新表。<br>
+<b>3 阻断 → 处置</b>：① 热力图 cost 实为<b>四</b>处写死（漏 SVG <code>&lt;title&gt;:245</code>）+ 字段须 cost→value 改名 → §5 已补。② <code>owner_id</code> 未归属须<b>直接构造 <code>pgtype.UUID{Valid:false}</code></b>、绝不 parse <code>""</code>，补「key 整个缺失」测试，写明「无全 owner 模式」不变式 → §3 已补。③ 对账标准钉死<b>同 days 窗口 + token（非 cost）</b> → 完成标准已改。<br>
+<b>非阻断已采纳</b>：ambient 索引「不加=守无 migration」入 R5；queryKey 用具名 <code>HEATMAP_DAYS</code> 哨兵；行点击=整行+选中态+hovercard 不打架；空榜/加载兜底 + 新 feed 接 <code>hasNoData</code> 闸；i18n key 进完成标准。<br>
+<b>Verified sound（勿再纠）</b>：Q4 新 query；PersonUsageList 移除 + 端点保留（API 兼容 doctrine）；Q1 未归属 <code>""</code> 约定（已有测试）；Q2 固定 26 周 + 「Last 26 weeks」标注；API 层复用；路由风格；appetite 1 周。<br>
+<b>第三次新鲜通读（独立 agent，抛开评审痕迹逐条对读）</b>：捕到一处会实际咬人、前两轮均漏的实现陷阱 —— 未归属 <code>owner_id=""</code> 撞前端 <code>enabled: !!selectedOwnerId</code> 真值守卫（<code>!!"" === false</code> ⇒ 未归属热力图永不加载、违反完成标准第 3 条）→ §4/§6 已改 <code>null</code> 哨兵守卫，并把未归属可点开移出减震器（≈零成本）。另把人榜「按 owner 折叠多 model 行再估价排序」隐含逻辑、工具条死文案写显（§6）。判定:无其它阻断、可执行。<br>
+<b>第四次·终版批准通读（独立 agent，收口核验 v1.2）</b>：逐条核验 5 处修补(四处 cost+<code>&lt;title&gt;</code> / owner <code>""</code> 特例 / 对账 token / 前端 <code>null</code> 哨兵守卫 / 人榜聚合口径)<b>全部到位且对码命中真源</b>；「三处/四处」全文扫净无残留矛盾；SOP 四字段齐、完成标准条条可观测；范围闸成立无暗逼破例；HTML 标签全配平。仅余 4 处文件路径锚点轻微不精确(函数名/行号均对)→ <b>已按 git 真源校正</b>(<code>server/cmd/server/router.go</code>、<code>packages/core/dashboard/queries.ts</code>、<code>packages/views/dashboard/utils.ts</code>、<code>ALL_PROJECTS</code> 在 dashboard-page.tsx)。<b>最终裁决：APPROVED,可交 Implement。</b>
+</div>
+
+<h2>Current State（handoff slot —— 见 tc-handoff skill）</h2>
+<div class="field">（首次 handoff 前为空）</div>
+
+<footer>team-context · RPI Plan phase · multica issue 内渲染 · plan_2026-06-05_usage-tabs-heatmap</footer>
+</body></html>
