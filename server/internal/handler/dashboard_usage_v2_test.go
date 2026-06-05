@@ -238,12 +238,27 @@ func TestDashboardAmbientUsageDailyUnattributed(t *testing.T) {
 	seedAmbientHourly(t, ctx, bucket, testWorkspaceID, orphanRT, orphanModel, 42, 4, 0, 0)
 	seedAmbientHourly(t, ctx, bucket, testWorkspaceID, ownedRT, ownedModel, 808, 80, 0, 0)
 
-	// hasModels returns which of (orphan, owned) appear in the response body.
-	hasModels := func(path string) (orphan bool, owned bool, code int) {
+	// Cross-workspace canary: an orphan ambient row in ANOTHER workspace must
+	// never surface in this workspace's unattributed bucket. The NULL-owner
+	// branch spans the whole workspace, so a missing workspace_id filter would
+	// fold every workspace's orphans into one global "unattributed" total.
+	const foreignModel = "v2-ambient-daily-unattr-foreign"
+	var wsB string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO workspace (name, slug, description, issue_prefix)
+		VALUES ('V2 Iso Daily', 'v2-iso-daily-' || gen_random_uuid()::text, '', 'V2D') RETURNING id`).Scan(&wsB); err != nil {
+		t.Fatalf("create iso workspace: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM workspace WHERE id = $1`, wsB) })
+	foreignRT := mkAmbientRuntime(t, ctx, wsB, "v2 unattr foreign orphan", "")
+	seedAmbientHourly(t, ctx, bucket, wsB, foreignRT, foreignModel, 7777, 777, 0, 0)
+
+	// hasModels reports which of (orphan, owned, foreign) appear in the response.
+	hasModels := func(path string) (orphan bool, owned bool, foreign bool, code int) {
 		w := httptest.NewRecorder()
 		testHandler.GetDashboardAmbientUsageDaily(w, newRequest("GET", path, nil))
 		if w.Code != http.StatusOK {
-			return false, false, w.Code
+			return false, false, false, w.Code
 		}
 		var rows []usageDailyByModelRow
 		_ = json.NewDecoder(w.Body).Decode(&rows)
@@ -253,13 +268,15 @@ func TestDashboardAmbientUsageDailyUnattributed(t *testing.T) {
 				orphan = true
 			case ownedModel:
 				owned = true
+			case foreignModel:
+				foreign = true
 			}
 		}
-		return orphan, owned, w.Code
+		return orphan, owned, foreign, w.Code
 	}
 
 	// owner_id="" (empty value) → unattributed bucket, not a 400.
-	orphan, owned, code := hasModels("/api/dashboard/usage/ambient/daily?owner_id=&days=7&tz=UTC")
+	orphan, owned, foreign, code := hasModels("/api/dashboard/usage/ambient/daily?owner_id=&days=7&tz=UTC")
 	if code != http.StatusOK {
 		t.Fatalf("owner_id=\"\": expected 200, got %d", code)
 	}
@@ -269,9 +286,12 @@ func TestDashboardAmbientUsageDailyUnattributed(t *testing.T) {
 	if owned {
 		t.Errorf("owner_id=\"\" must NOT behave as \"all owners\": owned runtime's row leaked in")
 	}
+	if foreign {
+		t.Errorf("owner_id=\"\": cross-workspace orphan leaked into this workspace's unattributed bucket")
+	}
 
 	// owner_id key entirely absent → same unattributed bucket.
-	orphan, owned, code = hasModels("/api/dashboard/usage/ambient/daily?days=7&tz=UTC")
+	orphan, owned, foreign, code = hasModels("/api/dashboard/usage/ambient/daily?days=7&tz=UTC")
 	if code != http.StatusOK {
 		t.Fatalf("owner_id absent: expected 200, got %d", code)
 	}
@@ -280,6 +300,9 @@ func TestDashboardAmbientUsageDailyUnattributed(t *testing.T) {
 	}
 	if owned {
 		t.Errorf("owner_id absent must NOT behave as \"all owners\": owned runtime's row leaked in")
+	}
+	if foreign {
+		t.Errorf("owner_id absent: cross-workspace orphan leaked into this workspace's unattributed bucket")
 	}
 
 	// A non-empty, malformed owner_id is still a 400 (the only error branch).
@@ -358,6 +381,46 @@ func TestDashboardAgentUsageDaily(t *testing.T) {
 	}
 	if date, _ := readRow("America/Los_Angeles"); date != laDate {
 		t.Errorf("LA viewer: got date=%s, want %s", date, laDate)
+	}
+
+	// Cross-workspace isolation: a task row for an agent in ANOTHER workspace
+	// must be unreadable from here even when its exact agent_id is supplied. The
+	// WHERE workspace_id=$1 filter — not agent_id alone — is the load-bearing
+	// guard. task_usage_hourly has no FKs, so synthetic ids model the foreign
+	// workspace cheaply.
+	const foreignModel = "v2-agent-daily-foreign"
+	var foreignAgentID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO task_usage_hourly (
+			bucket_hour, workspace_id, runtime_id, agent_id, project_id,
+			provider, model,
+			input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, task_count, event_count
+		)
+		VALUES (
+			date_trunc('hour', now() - interval '1 day'),
+			gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), NULL, 'claude', $1,
+			5555, 55, 0, 0, 1, 1
+		)
+		RETURNING agent_id::text`, foreignModel).Scan(&foreignAgentID); err != nil {
+		t.Fatalf("seed foreign task_usage_hourly: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(ctx, `DELETE FROM task_usage_hourly WHERE model = $1`, foreignModel)
+	})
+	{
+		w := httptest.NewRecorder()
+		testHandler.GetDashboardAgentUsageDaily(w, newRequest("GET",
+			"/api/dashboard/usage/by-agent/daily?agent_id="+foreignAgentID+"&days=10&tz=UTC", nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("foreign agent request: expected 200, got %d", w.Code)
+		}
+		var rows []usageDailyByModelRow
+		_ = json.NewDecoder(w.Body).Decode(&rows)
+		for _, r := range rows {
+			if r.Model == foreignModel {
+				t.Errorf("cross-workspace leak: another workspace's agent usage was readable via its agent_id")
+			}
+		}
 	}
 
 	// agent_id is a required UUID boundary: malformed → 400.

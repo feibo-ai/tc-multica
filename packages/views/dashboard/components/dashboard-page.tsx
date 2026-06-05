@@ -914,8 +914,19 @@ export function UserUsagePanel({
     [rows],
   );
   // null = nothing selected, "" = unattributed selected, UUID = a person.
-  // Coalesce against null only so "" survives (the dead-end the plan calls out).
-  const effectiveOwnerId = selectedOwnerId ?? ownerRows[0]?.ownerId ?? null;
+  // Validate the pick against the current rows (same defensive derivation as the
+  // page-top project filter): if the selected owner dropped out on a refetch,
+  // fall back to the top spender rather than fetching a stale id's heatmap.
+  // Membership test, NOT truthiness — "" (unattributed) is a real selection.
+  const effectiveOwnerId = useMemo(() => {
+    if (
+      selectedOwnerId !== null &&
+      ownerRows.some((r) => r.ownerId === selectedOwnerId)
+    ) {
+      return selectedOwnerId;
+    }
+    return ownerRows[0]?.ownerId ?? null;
+  }, [selectedOwnerId, ownerRows]);
 
   const heatmapQuery = useQuery(
     dashboardAmbientUsageDailyOptions(wsId, effectiveOwnerId, viewTZ),
@@ -1035,7 +1046,14 @@ export function AgentUsagePanel({
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
   // rows arrive sorted cost-desc, so the top spender is the default selection.
-  const effectiveAgentId = selectedAgentId ?? rows[0]?.agentId ?? null;
+  // Validate against the current rows so a selected agent that dropped out on a
+  // refetch falls back to the top instead of fetching a stale id's heatmap.
+  const effectiveAgentId = useMemo(() => {
+    if (selectedAgentId !== null && rows.some((r) => r.agentId === selectedAgentId)) {
+      return selectedAgentId;
+    }
+    return rows[0]?.agentId ?? null;
+  }, [selectedAgentId, rows]);
 
   const heatmapQuery = useQuery(
     dashboardAgentUsageDailyOptions(wsId, effectiveAgentId, viewTZ),
