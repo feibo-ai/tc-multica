@@ -66,26 +66,20 @@ Multica manages the full agent lifecycle: from task assignment to execution moni
 
 ## Quick Install
 
-### macOS / Linux (Homebrew - recommended)
+### macOS / Linux
 
 ```bash
-brew install multica-ai/tap/multica
+curl -fsSL https://raw.githubusercontent.com/feibo-ai/tc-multica/main/scripts/install.sh | bash
 ```
 
-Use `brew upgrade multica-ai/tap/multica` to keep the CLI current.
+The script downloads the latest CLI binary from GitHub Releases and puts it on your `PATH`. Re-run it any time to upgrade, or run `multica update`.
 
-### macOS / Linux (install script)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
-```
-
-Use this if Homebrew is not available. The script installs the Multica CLI on macOS and Linux by using Homebrew when it is on `PATH`, otherwise it downloads the binary directly.
+> **Do NOT use Homebrew** (`brew install multica-ai/tap/multica`): that tap belongs to the upstream open-source project and is not updated for this deployment's releases — it installs a stale, different version.
 
 ### Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/feibo-ai/tc-multica/main/scripts/install.ps1 | iex
 ```
 
 Then configure, authenticate, and start the daemon in one command:
@@ -97,7 +91,7 @@ multica setup          # Connect to Multica Cloud, log in, start daemon
 > **Self-hosting?** Add `--with-server` to deploy a full Multica server on your machine:
 >
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash -s -- --with-server
+> curl -fsSL https://raw.githubusercontent.com/feibo-ai/tc-multica/main/scripts/install.sh | bash -s -- --with-server
 > multica setup self-host
 > ```
 >

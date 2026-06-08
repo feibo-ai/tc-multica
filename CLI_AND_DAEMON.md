@@ -4,17 +4,29 @@ The `multica` CLI connects your local machine to Multica. It handles authenticat
 
 ## Installation
 
-### Homebrew (macOS/Linux)
+### Install script (recommended)
+
+macOS / Linux:
 
 ```bash
-brew install multica-ai/tap/multica
+curl -fsSL https://raw.githubusercontent.com/feibo-ai/tc-multica/main/scripts/install.sh | bash
 ```
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/feibo-ai/tc-multica/main/scripts/install.ps1 | iex
+```
+
+The installer downloads the latest release binary from GitHub Releases and puts it on your PATH. Re-run it any time to upgrade.
+
+> **Do NOT use Homebrew.** The `multica-ai/tap` formula belongs to the upstream open-source project and is not updated for this deployment's releases (which live on `feibo-ai/tc-multica`) — `brew install` / `brew upgrade` would install a stale, different version.
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/multica-ai/multica.git
-cd multica
+git clone https://github.com/feibo-ai/tc-multica.git
+cd tc-multica
 make build
 cp server/bin/multica /usr/local/bin/multica
 ```
@@ -22,16 +34,10 @@ cp server/bin/multica /usr/local/bin/multica
 ### Update
 
 ```bash
-brew upgrade multica-ai/tap/multica
-```
-
-For install script or manual installs, use:
-
-```bash
 multica update
 ```
 
-`multica update` auto-detects your installation method and upgrades accordingly.
+`multica update` self-updates from the latest GitHub Release. (Or re-run the install script above.)
 
 ## Quick Start
 
