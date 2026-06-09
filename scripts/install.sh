@@ -346,6 +346,61 @@ setup_server() {
 
 
 # ---------------------------------------------------------------------------
+# Onboarding — one-command configuration (token + workspace auto-discovery)
+# ---------------------------------------------------------------------------
+# Goal: a new member goes from zero to fully-configured in a single command,
+# with no manual config.json editing. `multica login --token` already
+# auto-discovers and selects a default workspace, so once a token is supplied
+# the config is complete (server_url + token + workspace_id).
+#
+#   Non-interactive (CI / scripted / curl | bash):
+#     MULTICA_SERVER_URL=https://api.team.co MULTICA_TOKEN=mul_... \
+#       curl -fsSL .../install.sh | bash
+#   Interactive terminal: chains straight into `multica setup`.
+onboard() {
+  command_exists multica || return 0
+
+  # Returning user: a workspace is already configured → leave it untouched.
+  # Match a real UUID value, not just "non-whitespace" — `config show` prints the
+  # literal `(not set)` sentinel when unconfigured, whose `(` would otherwise
+  # read as "configured" and silently skip onboarding on a fresh machine.
+  if multica config show 2>/dev/null | grep -qiE 'workspace_id:[[:space:]]*[0-9a-f]{8}-[0-9a-f]{4}'; then
+    ok "Already configured — skipping onboarding (run 'multica setup' to reconfigure)."
+    return 0
+  fi
+
+  # Non-interactive: configure straight from env — zero prompts, zero hand-editing.
+  if [ -n "${MULTICA_TOKEN:-}" ]; then
+    info "Configuring from environment (non-interactive)..."
+    [ -n "${MULTICA_SERVER_URL:-}" ] && multica config set server_url "$MULTICA_SERVER_URL" >/dev/null 2>&1
+    [ -n "${MULTICA_APP_URL:-}" ]    && multica config set app_url    "$MULTICA_APP_URL"    >/dev/null 2>&1
+    # Pipe the token via stdin (the `--token` no-value form reads it from a
+    # scanner), NOT as a flag value — keeps the secret out of argv / `ps`,
+    # matching the project's token-out-of-argv baseline (red-team ⑦).
+    if printf '%s\n' "$MULTICA_TOKEN" | multica login --token; then
+      # login auto-discovers + selects a default workspace; honor an explicit override.
+      [ -n "${MULTICA_WORKSPACE_ID:-}" ] && multica config set workspace_id "$MULTICA_WORKSPACE_ID" >/dev/null 2>&1
+      ok "Configured — token set, workspace auto-discovered. Onboarding complete."
+    else
+      warn "Token login failed. Run 'multica setup' to finish onboarding."
+    fi
+    return 0
+  fi
+
+  # Interactive terminal: chain straight into guided setup (one command total).
+  if [ -t 0 ]; then
+    info "Finishing onboarding with 'multica setup'..."
+    multica setup || warn "Setup did not complete. Re-run 'multica setup' any time."
+    return 0
+  fi
+
+  # Piped (curl | bash) with no env: the interactive browser login can't run
+  # through a pipe, so print the single command to finish.
+  printf "\n  ${BOLD}One more step:${RESET} run ${CYAN}multica setup${RESET} (or ${CYAN}multica setup self-host${RESET})\n"
+  printf "  Non-interactive? Re-run with ${CYAN}MULTICA_TOKEN=mul_... [MULTICA_SERVER_URL=...]${RESET} to configure in one command.\n"
+}
+
+# ---------------------------------------------------------------------------
 # Main: Default mode (install / upgrade CLI only)
 # ---------------------------------------------------------------------------
 run_default() {
@@ -360,13 +415,12 @@ run_default() {
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
   printf "${BOLD}${GREEN}  ✓ Multica CLI is ready!${RESET}\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-  printf "\n"
-  printf "  ${BOLD}Next: configure your environment${RESET}\n"
-  printf "\n"
-  printf "     ${CYAN}multica setup${RESET}                # Connect to Multica Cloud (multica.ai)\n"
-  printf "     ${CYAN}multica setup self-host${RESET}       # Connect to a self-hosted server\n"
-  printf "\n"
-  printf "  ${BOLD}Self-hosting?${RESET} Install the server first:\n"
+
+  # One-command onboarding: configure from env, chain into setup, or print the
+  # single next step — never leave a new member hand-editing config.json.
+  onboard
+
+  printf "\n  ${BOLD}Self-hosting?${RESET} Provision the server first:\n"
   printf "     curl -fsSL https://raw.githubusercontent.com/feibo-ai/tc-multica/main/scripts/install.sh | bash -s -- --with-server\n"
   printf "\n"
 }
