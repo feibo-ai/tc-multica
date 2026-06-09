@@ -430,9 +430,24 @@ multica issue comment add <issue-id> --content "Looks good, merging now"
 # Reply to a specific comment
 multica issue comment add <issue-id> --parent <comment-id> --content "Thanks!"
 
+# Publish a local HTML doc INLINE under a comment (方案A · 命门B). Uploads the
+# file BOUND to the issue and embeds `!file[name](url)` in the comment body so it
+# renders inline (the upload→comment dance in one call). --content becomes the
+# caption above the rendered doc; omit it and a generic caption is used.
+multica issue comment add <issue-id> --inline ./docs/plans/plan_2026-06-09.html \
+    --content "Plan v1 — 请评审"
+
 # Delete a comment
 multica issue comment delete <comment-id>
 ```
+
+`--inline <doc.html>` is the CLI form of 方案A inline rendering: it reads the
+local HTML, uploads it as an attachment **bound to the issue** (so it appears in
+the issue's attachment list), then appends `!file[<filename>](<url>)` to the
+comment body using the URL that only exists *after* upload. `--attachment` alone
+can't do this — it can't inject that post-upload URL — which is why `--inline`
+exists. Pair it with the `tc-render` publish flow for RPI plan / research / case
+/ handoff docs.
 
 **`--before` / `--before-id` semantics depend on the paging mode**, by
 design — same flag, different scope:
@@ -523,6 +538,106 @@ multica issue run-messages <task-id> --since 42 --output json
 ```
 
 The `runs` command shows all past and current executions for an issue, including running tasks. Table output uses short task UUID prefixes by default; pass `--full-id` to print canonical task UUIDs. The `run-messages` command accepts full task UUIDs directly; copied short task prefixes must be scoped with `--issue <issue-id>` so the CLI only checks that issue's runs. It shows the detailed message log (tool calls, thinking, text, errors) for a single run. Use `--since` for efficient polling of in-progress runs.
+
+## Skills
+
+Skills are reusable instruction bundles (a `SKILL.md` plus optional bundled files
+— scripts, assets) stored in the workspace registry. The registry is the source
+of truth; agents pull skills down to a local directory (default
+`~/.claude/skills`) and lint them there.
+
+### List / Get Skills
+
+```bash
+multica skill list
+multica skill list --stale            # only skills not reviewed in 90 days
+multica skill list --output json
+
+multica skill get <id>                # includes the skill's files; defaults to JSON
+```
+
+### Pull Skills (registry → local)
+
+```bash
+# Pull one skill by name or id into ~/.claude/skills
+multica skill pull <name-or-id>
+
+# Pull every skill in the workspace
+multica skill pull --all
+
+# Pull into a specific directory
+multica skill pull <name-or-id> --dir ~/.claude/skills
+```
+
+`skill pull` downloads a skill (or `--all`) from the workspace registry and
+rebuilds `<dir>/<name>/SKILL.md` (YAML frontmatter + body) plus every bundled
+file at its stored path (e.g. `scripts/`, `assets/`). This is the **self-update
+channel for skills**, mirroring what `multica update` does for the CLI binary —
+run it to refresh your local skills after the registry changes. A `<name>` is
+resolved to its id via the workspace skill list; unsafe or empty skill names are
+rejected, and bundled-file paths that escape the skill dir (absolute or `..`) are
+skipped. Default output is JSON (`--output table` prints nothing but the stderr
+`Pulled … -> …` lines).
+
+### Lint Local Skills
+
+```bash
+multica skill lint                    # lint ~/.claude/skills
+multica skill lint --dir ~/.claude/skills
+multica skill lint --output json
+```
+
+`skill lint` validates every `<dir>/<name>/SKILL.md` locally (no server call) and
+mirrors the MCP `skill_lint` check:
+
+- **ERROR** (exits non-zero): missing `name` or `description` frontmatter, or a
+  body over the **2000-token** budget (estimated as `floor(words × 1.3)`).
+- **WARN**: missing `owner` or `last_reviewed_at` frontmatter, or a
+  `last_reviewed_at` older than **90 days**.
+
+It follows symlinked skill dirs (the team installs skills as symlinks), so it
+lints the real `SKILL.md` behind each link. Use it before shipping a skill or in
+CI to keep the registry healthy.
+
+### Create / Update / Delete
+
+```bash
+multica skill create --name "my-skill" --description "..." --content "<SKILL.md body>"
+multica skill create --name "my-skill" --owner <user-uuid>     # set owner (SOP ❌5)
+
+multica skill update <id> --description "New description"
+multica skill update <id> --content "New body"
+multica skill update <id> --owner ""                           # clear the owner
+
+multica skill delete <id>
+multica skill delete <id> --yes                                # skip confirmation
+```
+
+`create` requires `--name`; `--config` takes a JSON string. `update` only sends
+the flags you pass (use `--owner ""` to explicitly clear the owner). `delete`
+prompts for confirmation unless `--yes` is given.
+
+### Import / Mark Reviewed
+
+```bash
+# Import a skill from a URL (clawhub.ai, skills.sh, or github.com)
+multica skill import --url https://github.com/owner/repo
+
+# Reset the 90-day stale clock (sets last_reviewed_at to today)
+multica skill touch-reviewed <id>
+```
+
+### Skill Files
+
+```bash
+multica skill files list <skill-id>
+multica skill files upsert <skill-id> --path scripts/run.sh --content "..."
+multica skill files delete <skill-id> <file-id>
+```
+
+Skill files are the bundled, non-`SKILL.md` assets (scripts, data, etc.). `upsert`
+requires both `--path` (skill-relative) and `--content`; these files are exactly
+what `skill pull` reconstructs alongside `SKILL.md`.
 
 ## Projects
 

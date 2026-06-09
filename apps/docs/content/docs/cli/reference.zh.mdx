@@ -305,9 +305,18 @@ multica issue comment add <issue-id> --content "Looks good, merging now"
 # Reply to a specific comment
 multica issue comment add <issue-id> --parent <comment-id> --content "Thanks!"
 
+# 将本地 HTML 文档以内联方式发布到评论下方（方案A · 命门B）
+multica issue comment add <issue-id> --inline ./docs/plans/plan_2026-06-09.html \
+    --content "Plan v1 — 请评审"
+
 # Delete a comment
 multica issue comment delete <comment-id>
 ```
+
+`--inline <doc.html>` 把本地 HTML 上传为**绑定到该 issue** 的附件，再把
+`!file[<文件名>](<url>)` 追加到评论正文，从而在评论下方内联渲染（方案A）——
+即上传与发评论一步完成。`--content` 作为渲染文档上方的 caption；省略时使用默认
+caption。配合 `tc-render` 发布流程用于 RPI 的 plan / research / case / handoff 文档。
 
 ### Execution History
 
@@ -327,6 +336,101 @@ multica issue run-messages <task-id> --since 42 --output json
 ```
 
 `runs` 的表格输出默认显示 task UUID 短前缀；需要完整 task UUID 时使用 `--full-id`。`run-messages` 可直接接受完整 task UUID；从 `runs` 表格复制短前缀时需要同时传 `--issue <issue-id>`，CLI 只会在该 issue 的 runs 内解析。
+
+## Skills
+
+Skills 是存放在 workspace registry 里的可复用指令包（一个 `SKILL.md` 加可选的
+bundled 文件——脚本、资产）。registry 是真相源；agent 把 skill 拉到本地目录
+（默认 `~/.claude/skills`）使用，并在本地做校验。
+
+### List / Get Skills
+
+```bash
+multica skill list
+multica skill list --stale            # 只看 90 天未 review 的 skill
+multica skill list --output json
+
+multica skill get <id>                # 含 skill 的文件；默认 JSON 输出
+```
+
+### Pull Skills（registry → 本地）
+
+```bash
+# 按 name 或 id 拉一个 skill 到 ~/.claude/skills
+multica skill pull <name-or-id>
+
+# 拉 workspace 里的全部 skill
+multica skill pull --all
+
+# 拉到指定目录
+multica skill pull <name-or-id> --dir ~/.claude/skills
+```
+
+`skill pull` 从 workspace registry 下载 skill（或 `--all`），重建
+`<dir>/<name>/SKILL.md`（YAML frontmatter + 正文）以及每个 bundled 文件
+（脚本、资产等，按其存储路径还原）。这是 **skill 的自更新通道**，对标
+`multica update` 之于 CLI 二进制——registry 变更后跑它刷新本地 skill。传 `<name>`
+时会经 skill list 解析成 id；不安全或空的 skill name 会被拒绝，逃逸 skill 目录的
+bundled 文件路径（绝对路径或 `..`）会被跳过。默认 JSON 输出（`--output table`
+仅打印 stderr 上的 `Pulled … -> …` 行）。
+
+### Lint Local Skills
+
+```bash
+multica skill lint                    # 校验 ~/.claude/skills
+multica skill lint --dir ~/.claude/skills
+multica skill lint --output json
+```
+
+`skill lint` 在本地校验每个 `<dir>/<name>/SKILL.md`（不发服务器请求），对标 MCP
+的 `skill_lint`：
+
+- **ERROR**（退出码非零）：缺 `name` 或 `description` frontmatter，或正文超过
+  **2000 token** 预算（按 `floor(words × 1.3)` 估算）。
+- **WARN**：缺 `owner` 或 `last_reviewed_at` frontmatter，或 `last_reviewed_at`
+  早于 **90 天**。
+
+它会跟随 symlink 的 skill 目录（团队以软链方式安装 skill），校验软链背后真正的
+`SKILL.md`。发布 skill 前或在 CI 里跑它，保持 registry 健康。
+
+### Create / Update / Delete
+
+```bash
+multica skill create --name "my-skill" --description "..." --content "<SKILL.md 正文>"
+multica skill create --name "my-skill" --owner <user-uuid>     # 设 owner（SOP ❌5）
+
+multica skill update <id> --description "新描述"
+multica skill update <id> --content "新正文"
+multica skill update <id> --owner ""                           # 清空 owner
+
+multica skill delete <id>
+multica skill delete <id> --yes                                # 跳过确认
+```
+
+`create` 必填 `--name`；`--config` 接受 JSON 字符串。`update` 只发送你传入的字段
+（用 `--owner ""` 显式清空 owner）。`delete` 默认会提示确认，除非加 `--yes`。
+
+### Import / Mark Reviewed
+
+```bash
+# 从 URL 导入 skill（clawhub.ai、skills.sh 或 github.com）
+multica skill import --url https://github.com/owner/repo
+
+# 重置 90 天 stale 时钟（把 last_reviewed_at 设为今天）
+multica skill touch-reviewed <id>
+```
+
+### Skill Files
+
+```bash
+multica skill files list <skill-id>
+multica skill files upsert <skill-id> --path scripts/run.sh --content "..."
+multica skill files delete <skill-id> <file-id>
+```
+
+Skill files 是 `SKILL.md` 之外的 bundled 资产（脚本、数据等）。`upsert` 必填
+`--path`（skill 相对路径）与 `--content`；这些文件正是 `skill pull` 会随
+`SKILL.md` 一起重建的内容。
 
 ## Projects
 

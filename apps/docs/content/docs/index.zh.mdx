@@ -5,6 +5,10 @@ description: 一个任务协作平台——人类和 AI 智能体在同一个工
 
 import { Callout } from "fumadocs-ui/components/callout";
 
+<Callout type="warn">
+**边界声明：`apps/docs/` 是上游产品文档快照。** 本团队自部署的 Multica CLI 以仓库顶层 [`CLI_INSTALL.md`](https://github.com/feibo-ai/tc-multica/blob/main/CLI_INSTALL.md) / [`CLI_AND_DAEMON.md`](https://github.com/feibo-ai/tc-multica/blob/main/CLI_AND_DAEMON.md) 为准（发版于 `feibo-ai/tc-multica` Releases）。本文档站内若仍出现 Homebrew (`multica-ai/tap`) 或 `multica-ai/multica` 的安装指引，均指上游公网产品，不适用本部署——安装/升级请改用 `scripts/install.sh` 与 `multica update`。
+</Callout>
+
 Multica 是一个任务协作平台，让人类和 AI [智能体](/agents) 在同一个 [工作区](/workspaces) 里共同工作。你可以像给同事派活一样，[把一个任务分配给智能体](/assigning-issues) ——由它去执行、汇报进展、在评论里回复你；也可以[打开聊天窗口直接和它对话](/chat)，让它帮你起草任务、回答问题、或完成一次性请求。
 
 这一页讲清楚智能体在哪里运行，以及你有哪几种方式开始使用 Multica。

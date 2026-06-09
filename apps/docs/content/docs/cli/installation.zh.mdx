@@ -3,26 +3,38 @@ title: CLI Installation
 description: Install the Multica CLI and start the agent daemon.
 ---
 
+> **本部署 CLI 安装真相以仓库顶层 [`CLI_INSTALL.md`](https://github.com/feibo-ai/tc-multica/blob/main/CLI_INSTALL.md) / [`CLI_AND_DAEMON.md`](https://github.com/feibo-ai/tc-multica/blob/main/CLI_AND_DAEMON.md) 为准。** `apps/docs/` 是上游产品文档快照；本团队自部署 CLI（发版于 `feibo-ai/tc-multica` Releases）一律以这两份顶层文档为准——本页其余 quickstart / self-host / getting-started 等若仍引用 Homebrew 或 `multica-ai`，均指上游公网产品，不适用本部署。
+
 ## Installation
 
-### Homebrew (macOS/Linux)
+> **不要使用 Homebrew。** `multica-ai/tap` Homebrew formula 属于上游开源项目，**不会**为本部署的版本（发布在 `feibo-ai/tc-multica`）更新；`brew install` / `brew upgrade` 会装上一个够不到本部署的过期版本。请使用下面的安装脚本，并用 `multica update` 升级。
+
+### Install script (macOS / Linux)
+
+安装脚本会探测你的 OS/架构，下载最新发布的二进制并放到 PATH 上。随时重跑即可升级。
 
 ```bash
-brew install multica-ai/tap/multica
+curl -fsSL https://raw.githubusercontent.com/feibo-ai/tc-multica/main/scripts/install.sh | bash
+```
+
+Windows（PowerShell）：
+
+```powershell
+irm https://raw.githubusercontent.com/feibo-ai/tc-multica/main/scripts/install.ps1 | iex
 ```
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/multica-ai/multica.git
-cd multica
+git clone https://github.com/feibo-ai/tc-multica.git
+cd tc-multica
 make build
 cp server/bin/multica /usr/local/bin/multica
 ```
 
 ### Download from GitHub Releases
 
-If Homebrew is not available, download the binary directly:
+如果不方便把脚本管道给 `bash`，直接下载归档：
 
 ```bash
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')   # "darwin" or "linux"
@@ -34,11 +46,12 @@ if [ "$ARCH" = "x86_64" ]; then
 fi
 
 # Get the latest release tag from GitHub
-LATEST=$(curl -sI https://github.com/multica-ai/multica/releases/latest \
+LATEST=$(curl -sI https://github.com/feibo-ai/tc-multica/releases/latest \
   | grep -i '^location:' | sed 's/.*tag\///' | tr -d '\r\n')
 
 # Download and extract
-curl -sL "https://github.com/multica-ai/multica/releases/download/${LATEST}/multica_${OS}_${ARCH}.tar.gz" \
+VERSION="${LATEST#v}"
+curl -sL "https://github.com/feibo-ai/tc-multica/releases/download/${LATEST}/multica-cli-${VERSION}-${OS}-${ARCH}.tar.gz" \
   -o /tmp/multica.tar.gz
 tar -xzf /tmp/multica.tar.gz -C /tmp multica
 sudo mv /tmp/multica /usr/local/bin/multica
@@ -48,16 +61,10 @@ rm /tmp/multica.tar.gz
 ### Update
 
 ```bash
-brew upgrade multica-ai/tap/multica
-```
-
-For install script or manual installs, use:
-
-```bash
 multica update
 ```
 
-`multica update` auto-detects your installation method and upgrades accordingly.
+`multica update` 从 GitHub Releases 自更新，自动探测你的安装方式并相应升级。
 
 ## Quick Start
 
