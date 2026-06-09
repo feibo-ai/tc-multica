@@ -744,6 +744,10 @@ func (d *Daemon) registerRuntimesForWorkspace(ctx context.Context, workspaceID s
 		"cli_version":       d.cfg.CLIVersion,
 		"launched_by":       d.cfg.LaunchedBy,
 		"runtimes":          runtimes,
+		// Structured counts-only telemetry (⑪): skill hygiene + 命门B success
+		// rate, alongside cli_version. No content/token/source — see telemetry.go.
+		"skill_health": localSkillHealth(),
+		"gate_counts":  readGateCounts(d.cfg.Profile),
 	}
 
 	resp, err := d.client.Register(ctx, req)

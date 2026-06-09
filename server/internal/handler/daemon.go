@@ -168,6 +168,24 @@ type DaemonRegisterRequest struct {
 		Version string `json:"version"` // agent CLI version (claude/codex)
 		Status  string `json:"status"`
 	} `json:"runtimes"`
+	// Structured counts-only telemetry (⑪): skill hygiene + 命门B publish
+	// success rate. Typed so only integers land in runtime metadata — never
+	// document content, tokens, or source. omitempty: older daemons just omit.
+	SkillHealth *DaemonSkillHealth `json:"skill_health,omitempty"`
+	GateCounts  *DaemonGateCounts  `json:"gate_counts,omitempty"`
+}
+
+// DaemonSkillHealth is the counts-only local-skill hygiene snapshot (SOP ❌5).
+type DaemonSkillHealth struct {
+	Total        int `json:"total"`
+	MissingOwner int `json:"missing_owner"`
+	Stale        int `json:"stale"`
+}
+
+// DaemonGateCounts is the bare 命门B pass/fail publish tally (counts only).
+type DaemonGateCounts struct {
+	Pass int `json:"pass"`
+	Fail int `json:"fail"`
 }
 
 type daemonWorkspaceReposResponse struct {
@@ -321,9 +339,11 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 			status = "offline"
 		}
 		metadata, _ := json.Marshal(map[string]any{
-			"version":     runtime.Version,
-			"cli_version": req.CLIVersion,
-			"launched_by": req.LaunchedBy,
+			"version":      runtime.Version,
+			"cli_version":  req.CLIVersion,
+			"launched_by":  req.LaunchedBy,
+			"skill_health": req.SkillHealth, // ⑪ counts-only; nil for older daemons
+			"gate_counts":  req.GateCounts,  // ⑪ counts-only 命门B success rate
 		})
 
 		row, err := h.Queries.UpsertAgentRuntime(r.Context(), db.UpsertAgentRuntimeParams{

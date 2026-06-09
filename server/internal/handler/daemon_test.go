@@ -459,6 +459,66 @@ func TestDaemonRegister_WithDaemonToken(t *testing.T) {
 	testPool.Exec(context.Background(), `DELETE FROM agent_runtime WHERE id = $1`, runtimeID)
 }
 
+// ⑪ structured telemetry: skill_health + gate_counts ride the register payload
+// into the runtime's metadata JSON column (the same channel as cli_version), so
+// the server can see "who's on what version / skill health / 命门B success rate"
+// — counts only, no content/token/source.
+func TestDaemonRegister_StoresTelemetryInMetadata(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+
+	w := httptest.NewRecorder()
+	req := newDaemonTokenRequest("POST", "/api/daemon/register", map[string]any{
+		"workspace_id": testWorkspaceID,
+		"daemon_id":    "test-daemon-telemetry",
+		"device_name":  "test-device",
+		"cli_version":  "v9.9.9",
+		"runtimes": []map[string]any{
+			{"name": "test-runtime", "type": "claude", "version": "1.0.0", "status": "online"},
+		},
+		"skill_health": map[string]any{"total": 2, "missing_owner": 1, "stale": 0},
+		"gate_counts":  map[string]any{"pass": 5, "fail": 2},
+	}, testWorkspaceID, "test-daemon-telemetry")
+
+	testHandler.DaemonRegister(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	runtimeID := resp["runtimes"].([]any)[0].(map[string]any)["id"].(string)
+	defer testPool.Exec(context.Background(), `DELETE FROM agent_runtime WHERE id = $1`, runtimeID)
+
+	var metadata []byte
+	if err := testPool.QueryRow(context.Background(),
+		`SELECT metadata FROM agent_runtime WHERE id = $1`, runtimeID).Scan(&metadata); err != nil {
+		t.Fatalf("query metadata: %v", err)
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(metadata, &meta); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+
+	sh, ok := meta["skill_health"].(map[string]any)
+	if !ok {
+		t.Fatalf("metadata missing skill_health: %s", metadata)
+	}
+	if sh["total"].(float64) != 2 || sh["missing_owner"].(float64) != 1 {
+		t.Errorf("skill_health = %v, want total=2 missing_owner=1", sh)
+	}
+	gc, ok := meta["gate_counts"].(map[string]any)
+	if !ok {
+		t.Fatalf("metadata missing gate_counts: %s", metadata)
+	}
+	if gc["pass"].(float64) != 5 || gc["fail"].(float64) != 2 {
+		t.Errorf("gate_counts = %v, want pass=5 fail=2", gc)
+	}
+	if meta["cli_version"] != "v9.9.9" {
+		t.Errorf("cli_version = %v, want v9.9.9 (version visibility)", meta["cli_version"])
+	}
+}
+
 func TestDaemonRegister_WithDaemonToken_WorkspaceMismatch(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
