@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -65,6 +66,16 @@ var skillTouchReviewedCmd = &cobra.Command{
 	RunE:  runSkillTouchReviewed,
 }
 
+var skillPullCmd = &cobra.Command{
+	Use:   "pull [<name-or-id>]",
+	Short: "Pull skill(s) from the registry to a local dir (reconstructs SKILL.md + bundled files)",
+	Long: "Download a skill (or --all) from the workspace registry into a local skills directory " +
+		"(default ~/.claude/skills). Each skill becomes <dir>/<name>/SKILL.md plus its bundled files " +
+		"(e.g. scripts, assets) at their stored paths — so agents get the executable skill, not just the doc. " +
+		"This is the self-update path for skills, mirroring `multica update` for the CLI binary.",
+	RunE: runSkillPull,
+}
+
 // Skill file subcommands.
 
 var skillFilesCmd = &cobra.Command{
@@ -101,6 +112,7 @@ func init() {
 	skillCmd.AddCommand(skillDeleteCmd)
 	skillCmd.AddCommand(skillImportCmd)
 	skillCmd.AddCommand(skillTouchReviewedCmd)
+	skillCmd.AddCommand(skillPullCmd)
 	skillCmd.AddCommand(skillFilesCmd)
 
 	skillFilesCmd.AddCommand(skillFilesListCmd)
@@ -113,6 +125,11 @@ func init() {
 
 	// skill get
 	skillGetCmd.Flags().String("output", "json", "Output format: table or json")
+
+	// skill pull
+	skillPullCmd.Flags().Bool("all", false, "Pull every skill in the workspace")
+	skillPullCmd.Flags().String("dir", "", "Target skills directory (default ~/.claude/skills)")
+	skillPullCmd.Flags().String("output", "json", "Output format: table or json")
 
 	// skill create
 	skillCreateCmd.Flags().String("name", "", "Skill name (required)")
@@ -219,6 +236,136 @@ func runSkillGet(cmd *cobra.Command, args []string) error {
 	}}
 	cli.PrintTable(os.Stdout, headers, rows)
 	return nil
+}
+
+// buildSkillMd reconstructs a SKILL.md (YAML frontmatter + body) from a skill
+// record's name/description/last_reviewed_at + content. The registry stores the
+// body in `content`; the frontmatter is rebuilt so the pulled file is a valid,
+// discoverable skill.
+func buildSkillMd(skill map[string]any) string {
+	desc := strVal(skill, "description")
+	desc = strings.ReplaceAll(desc, "\\", "\\\\")
+	desc = strings.ReplaceAll(desc, "\"", "\\\"")
+	var b strings.Builder
+	b.WriteString("---\n")
+	b.WriteString("name: " + strVal(skill, "name") + "\n")
+	b.WriteString("description: \"" + desc + "\"\n")
+	if v := strVal(skill, "last_reviewed_at"); v != "" {
+		b.WriteString("last_reviewed_at: " + v + "\n")
+	}
+	b.WriteString("---\n")
+	content := strVal(skill, "content")
+	if !strings.HasPrefix(content, "\n") {
+		b.WriteString("\n")
+	}
+	b.WriteString(content)
+	if !strings.HasSuffix(content, "\n") {
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func runSkillPull(cmd *cobra.Command, args []string) error {
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	dir, _ := cmd.Flags().GetString("dir")
+	if dir == "" {
+		home, herr := os.UserHomeDir()
+		if herr != nil {
+			return fmt.Errorf("resolve home dir: %w", herr)
+		}
+		dir = filepath.Join(home, ".claude", "skills")
+	}
+
+	all, _ := cmd.Flags().GetBool("all")
+	var ids []string
+	switch {
+	case all:
+		var skills []map[string]any
+		if err := client.GetJSON(ctx, "/api/skills", &skills); err != nil {
+			return fmt.Errorf("list skills: %w", err)
+		}
+		for _, s := range skills {
+			if id := strVal(s, "id"); id != "" {
+				ids = append(ids, id)
+			}
+		}
+	case len(args) == 1:
+		id := args[0]
+		if !looksLikeUUID(id) {
+			var skills []map[string]any
+			if err := client.GetJSON(ctx, "/api/skills", &skills); err != nil {
+				return fmt.Errorf("list skills to resolve name: %w", err)
+			}
+			found := ""
+			for _, s := range skills {
+				if strVal(s, "name") == id {
+					found = strVal(s, "id")
+					break
+				}
+			}
+			if found == "" {
+				return fmt.Errorf("no skill with id or name %q in workspace", id)
+			}
+			id = found
+		}
+		ids = []string{id}
+	default:
+		return fmt.Errorf("provide a skill <name-or-id>, or --all")
+	}
+
+	pulled := make([]map[string]any, 0, len(ids))
+	for _, id := range ids {
+		var skill map[string]any
+		if err := client.GetJSON(ctx, "/api/skills/"+id, &skill); err != nil {
+			return fmt.Errorf("get skill %s: %w", id, err)
+		}
+		name := strVal(skill, "name")
+		if name == "" || strings.ContainsAny(name, "/\\") || strings.Contains(name, "..") {
+			return fmt.Errorf("skill %s has an unsafe or empty name %q", id, name)
+		}
+		skillDir := filepath.Join(dir, name)
+		if err := os.MkdirAll(skillDir, 0o755); err != nil {
+			return fmt.Errorf("create %s: %w", skillDir, err)
+		}
+		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(buildSkillMd(skill)), 0o644); err != nil {
+			return fmt.Errorf("write SKILL.md: %w", err)
+		}
+		nfiles := 0
+		if raw, ok := skill["files"].([]any); ok {
+			for _, fa := range raw {
+				f, ok := fa.(map[string]any)
+				if !ok {
+					continue
+				}
+				p := strVal(f, "path")
+				// Path safety: stored paths are skill-relative; reject traversal/absolute.
+				if p == "" || p == "SKILL.md" || strings.Contains(p, "..") || strings.HasPrefix(p, "/") {
+					continue
+				}
+				fp := filepath.Join(skillDir, filepath.FromSlash(p))
+				if err := os.MkdirAll(filepath.Dir(fp), 0o755); err != nil {
+					return fmt.Errorf("create dir for %s: %w", p, err)
+				}
+				if err := os.WriteFile(fp, []byte(strVal(f, "content")), 0o644); err != nil {
+					return fmt.Errorf("write %s: %w", p, err)
+				}
+				nfiles++
+			}
+		}
+		fmt.Fprintf(os.Stderr, "Pulled %s -> %s (SKILL.md + %d file(s))\n", name, skillDir, nfiles)
+		pulled = append(pulled, map[string]any{"name": name, "dir": skillDir, "files": nfiles})
+	}
+
+	if output, _ := cmd.Flags().GetString("output"); output == "table" {
+		return nil
+	}
+	return cli.PrintJSON(os.Stdout, pulled)
 }
 
 func runSkillCreate(cmd *cobra.Command, _ []string) error {
