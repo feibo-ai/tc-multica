@@ -35,6 +35,41 @@ func TestBuildSkillMd(t_ *testing.T) {
 	}
 }
 
+func TestEstimateSkillTokens(t_ *testing.T) {
+	cases := map[string]int{
+		"":                 0,
+		"one two three":    3, // 3 words * 1.3 = 3.9 -> 3
+		"a b c d e f g h i j": 13, // 10 * 1.3 = 13
+	}
+	for body, want := range cases {
+		if got := estimateSkillTokens(body); got != want {
+			t_.Errorf("estimateSkillTokens(%q) = %d, want %d", body, got, want)
+		}
+	}
+}
+
+func TestParseSkillFrontmatter(t_ *testing.T) {
+	md := "---\nname: tc-x\ndescription: \"Use when: do a thing\"\nlast_reviewed_at: 2026-06-09\n---\n\n# Heading\nbody\n"
+	fm, body := parseSkillFrontmatter(md)
+	if fm["name"] != "tc-x" {
+		t_.Errorf("name = %q", fm["name"])
+	}
+	// value keeps text after the first colon (internal colons preserved), quotes trimmed
+	if fm["description"] != "Use when: do a thing" {
+		t_.Errorf("description = %q", fm["description"])
+	}
+	if fm["last_reviewed_at"] != "2026-06-09" {
+		t_.Errorf("last_reviewed_at = %q", fm["last_reviewed_at"])
+	}
+	if !strings.HasPrefix(body, "\n# Heading") {
+		t_.Errorf("body = %q", body)
+	}
+	// no frontmatter -> empty map, full text as body
+	if fm2, b2 := parseSkillFrontmatter("# plain\nno fm\n"); len(fm2) != 0 || b2 != "# plain\nno fm\n" {
+		t_.Errorf("no-frontmatter case: fm=%v body=%q", fm2, b2)
+	}
+}
+
 func TestBuildSkillMd_NoOptionalFields(t_ *testing.T) {
 	skill := map[string]any{
 		"name":        "x",

@@ -76,6 +76,15 @@ var skillPullCmd = &cobra.Command{
 	RunE: runSkillPull,
 }
 
+var skillLintCmd = &cobra.Command{
+	Use:   "lint",
+	Short: "Lint local skills (frontmatter + body token budget)",
+	Long: "Check every <dir>/<name>/SKILL.md: ERROR on missing name/description or body over the " +
+		"2000-token budget; WARN on missing owner/last_reviewed_at or a review older than 90 days. " +
+		"Exits non-zero if any skill has an error. Mirrors the MCP skill_lint as a local CLI check.",
+	RunE: runSkillLint,
+}
+
 // Skill file subcommands.
 
 var skillFilesCmd = &cobra.Command{
@@ -113,6 +122,7 @@ func init() {
 	skillCmd.AddCommand(skillImportCmd)
 	skillCmd.AddCommand(skillTouchReviewedCmd)
 	skillCmd.AddCommand(skillPullCmd)
+	skillCmd.AddCommand(skillLintCmd)
 	skillCmd.AddCommand(skillFilesCmd)
 
 	skillFilesCmd.AddCommand(skillFilesListCmd)
@@ -130,6 +140,10 @@ func init() {
 	skillPullCmd.Flags().Bool("all", false, "Pull every skill in the workspace")
 	skillPullCmd.Flags().String("dir", "", "Target skills directory (default ~/.claude/skills)")
 	skillPullCmd.Flags().String("output", "json", "Output format: table or json")
+
+	// skill lint
+	skillLintCmd.Flags().String("dir", "", "Skills directory to lint (default ~/.claude/skills)")
+	skillLintCmd.Flags().String("output", "table", "Output format: table or json")
 
 	// skill create
 	skillCreateCmd.Flags().String("name", "", "Skill name (required)")
@@ -366,6 +380,132 @@ func runSkillPull(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	return cli.PrintJSON(os.Stdout, pulled)
+}
+
+// estimateSkillTokens mirrors the MCP estimateTokens: floor(words * 1.3), where
+// words is the whitespace-split, non-empty token count of the SKILL.md body.
+func estimateSkillTokens(body string) int {
+	return len(strings.Fields(body)) * 13 / 10
+}
+
+// parseSkillFrontmatter splits a SKILL.md into its YAML frontmatter (as a flat
+// key→value map; values have surrounding quotes trimmed) and the body after the
+// closing fence. Missing/malformed frontmatter yields an empty map + full text.
+func parseSkillFrontmatter(md string) (map[string]string, string) {
+	data := map[string]string{}
+	if !strings.HasPrefix(md, "---\n") {
+		return data, md
+	}
+	rest := md[len("---\n"):]
+	end := strings.Index(rest, "\n---")
+	if end < 0 {
+		return data, md
+	}
+	block := rest[:end]
+	body := rest[end+len("\n---"):]
+	if nl := strings.IndexByte(body, '\n'); nl >= 0 {
+		body = body[nl+1:]
+	} else {
+		body = ""
+	}
+	for _, line := range strings.Split(block, "\n") {
+		c := strings.IndexByte(line, ':')
+		if c <= 0 {
+			continue
+		}
+		k := strings.TrimSpace(line[:c])
+		v := strings.TrimSpace(line[c+1:])
+		v = strings.Trim(v, "\"")
+		if k != "" {
+			data[k] = v
+		}
+	}
+	return data, body
+}
+
+func runSkillLint(cmd *cobra.Command, _ []string) error {
+	dir, _ := cmd.Flags().GetString("dir")
+	if dir == "" {
+		home, herr := os.UserHomeDir()
+		if herr != nil {
+			return fmt.Errorf("resolve home dir: %w", herr)
+		}
+		dir = filepath.Join(home, ".claude", "skills")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("read skills dir %s: %w", dir, err)
+	}
+
+	type finding struct {
+		Skill    string   `json:"skill"`
+		Tokens   int      `json:"tokens"`
+		Errors   []string `json:"errors"`
+		Warnings []string `json:"warnings"`
+	}
+	findings := make([]finding, 0, len(entries))
+	anyError := false
+
+	for _, e := range entries {
+		name := e.Name()
+		// follow symlinked skill dirs (the team installs skills as symlinks)
+		info, statErr := os.Stat(filepath.Join(dir, name))
+		if statErr != nil || !info.IsDir() {
+			continue
+		}
+		text, readErr := os.ReadFile(filepath.Join(dir, name, "SKILL.md"))
+		if readErr != nil {
+			continue
+		}
+		fm, body := parseSkillFrontmatter(string(text))
+		var errs, warns []string
+		if fm["name"] == "" {
+			errs = append(errs, "missing frontmatter: name")
+		}
+		if fm["description"] == "" {
+			errs = append(errs, "missing frontmatter: description")
+		}
+		if fm["owner"] == "" {
+			warns = append(warns, "missing frontmatter: owner (SOP ❌5)")
+		}
+		if fm["last_reviewed_at"] == "" {
+			warns = append(warns, "missing frontmatter: last_reviewed_at (SOP ❌5)")
+		} else if t, perr := time.Parse("2006-01-02", fm["last_reviewed_at"]); perr == nil {
+			if days := int(time.Since(t).Hours() / 24); days > 90 {
+				warns = append(warns, fmt.Sprintf("last_reviewed_at is %d days old (>90)", days))
+			}
+		}
+		tokens := estimateSkillTokens(body)
+		if tokens > 2000 {
+			errs = append(errs, fmt.Sprintf("body ~%d tokens (hard limit 2000)", tokens))
+		}
+		if len(errs) > 0 {
+			anyError = true
+		}
+		findings = append(findings, finding{Skill: name, Tokens: tokens, Errors: errs, Warnings: warns})
+	}
+
+	if output, _ := cmd.Flags().GetString("output"); output == "json" {
+		if err := cli.PrintJSON(os.Stdout, findings); err != nil {
+			return err
+		}
+	} else {
+		headers := []string{"SKILL", "TOKENS", "ERRORS", "WARNINGS"}
+		rows := make([][]string, 0, len(findings))
+		for _, f := range findings {
+			rows = append(rows, []string{
+				f.Skill,
+				fmt.Sprintf("%d", f.Tokens),
+				strings.Join(f.Errors, "; "),
+				strings.Join(f.Warnings, "; "),
+			})
+		}
+		cli.PrintTable(os.Stdout, headers, rows)
+	}
+	if anyError {
+		return fmt.Errorf("skill lint found errors")
+	}
+	return nil
 }
 
 func runSkillCreate(cmd *cobra.Command, _ []string) error {
