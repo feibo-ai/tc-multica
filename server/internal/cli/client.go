@@ -387,10 +387,12 @@ func (c *APIClient) UploadFile(ctx context.Context, fileData []byte, filename st
 	return id, nil
 }
 
-// UploadFileWithURL uploads a file via multipart form to /api/upload-file
-// without associating it with an issue or comment. It decodes the full
-// AttachmentResponse and returns the attachment ID and URL.
-func (c *APIClient) UploadFileWithURL(ctx context.Context, fileData []byte, filename string) (string, string, error) {
+// UploadFileWithURL uploads a file via multipart form to /api/upload-file and
+// returns the full AttachmentResponse's ID and URL. When issueID is non-empty
+// the upload is bound to that issue (issue_id form field), which is what lets a
+// subsequent comment embed it as `!file[name](url)` and render inline; pass ""
+// to upload without associating it with an issue (e.g. agent avatars).
+func (c *APIClient) UploadFileWithURL(ctx context.Context, fileData []byte, filename string, issueID string) (string, string, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
@@ -400,6 +402,12 @@ func (c *APIClient) UploadFileWithURL(ctx context.Context, fileData []byte, file
 	}
 	if _, err := part.Write(fileData); err != nil {
 		return "", "", fmt.Errorf("write file data: %w", err)
+	}
+
+	if issueID != "" {
+		if err := writer.WriteField("issue_id", issueID); err != nil {
+			return "", "", fmt.Errorf("write issue_id field: %w", err)
+		}
 	}
 
 	if err := writer.Close(); err != nil {

@@ -770,7 +770,7 @@ func runAgentAvatar(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get agent: %w", err)
 	}
 
-	id, url, err := client.UploadFileWithURL(ctx, fileData, filePath)
+	id, url, err := client.UploadFileWithURL(ctx, fileData, filePath, "")
 	if err != nil {
 		return fmt.Errorf("upload avatar: %w", err)
 	}

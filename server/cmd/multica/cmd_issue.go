@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -341,6 +342,7 @@ func init() {
 	issueCommentAddCmd.Flags().String("content-file", "", "Read comment content from a UTF-8 file (preserves multi-line content verbatim; use this on Windows when stdin piping mangles non-ASCII bytes)")
 	issueCommentAddCmd.Flags().String("parent", "", "Parent comment ID (reply to a specific comment)")
 	issueCommentAddCmd.Flags().StringSlice("attachment", nil, "File path(s) to attach (can be specified multiple times)")
+	issueCommentAddCmd.Flags().String("inline", "", "Path to a local HTML doc to PUBLISH INLINE: upload it bound to the issue and embed it as `!file[name](url)` so it renders inline under the comment (方案A). --content becomes the caption above it (defaults to a generic line when omitted).")
 	issueCommentAddCmd.Flags().String("output", "json", "Output format: table or json")
 
 	// issue search
@@ -1072,8 +1074,16 @@ func runIssueCommentAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	inlineDoc, _ := cmd.Flags().GetString("inline")
 	if !hasContent {
-		return fmt.Errorf("--content, --content-stdin, or --content-file is required")
+		if inlineDoc != "" {
+			// With --inline the comment body is just a caption above the rendered
+			// doc, so default it (matches the MCP publishDoc caption) rather than
+			// forcing the caller to pass --content.
+			content = "文档(方案A · 下方渲染)"
+		} else {
+			return fmt.Errorf("--content, --content-stdin, or --content-file is required")
+		}
 	}
 
 	client, err := newAPIClient(cmd)
@@ -1084,7 +1094,7 @@ func runIssueCommentAdd(cmd *cobra.Command, args []string) error {
 	// Use a longer timeout when attachments are present (file uploads can be slow).
 	timeout := 15 * time.Second
 	attachments, _ := cmd.Flags().GetStringSlice("attachment")
-	if len(attachments) > 0 {
+	if len(attachments) > 0 || inlineDoc != "" {
 		timeout = 60 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -1118,6 +1128,34 @@ func runIssueCommentAdd(cmd *cobra.Command, args []string) error {
 		}
 		attachmentIDs = append(attachmentIDs, id)
 		fmt.Fprintf(os.Stderr, "Uploaded %s\n", filePath)
+	}
+
+	// --inline: publish a local HTML doc as an INLINE render (方案A). Upload it
+	// BOUND to the issue (issue_id), embed `!file[name](url)` in the comment body,
+	// and bind the attachment — together that is what makes it render inline. This
+	// is 命门B: one CLI call replaces the raw upload→comment HTTP dance, since
+	// `--attachment` alone can't inject the url that only exists post-upload.
+	if inlineDoc != "" {
+		data, readErr := os.ReadFile(inlineDoc)
+		if readErr != nil {
+			return fmt.Errorf("read inline doc %s: %w", inlineDoc, readErr)
+		}
+		filename := filepath.Base(inlineDoc)
+		id, url, uploadErr := client.UploadFileWithURL(ctx, data, filename, issueID)
+		if uploadErr != nil {
+			return fmt.Errorf("upload inline doc %s: %w", inlineDoc, uploadErr)
+		}
+		if url != "" {
+			content = content + "\n\n!file[" + filename + "](" + url + ")"
+		} else {
+			// S3 upload succeeded but the attachment DB record didn't (server
+			// returns id="" too in that path): no usable url, so it can't render.
+			content = content + fmt.Sprintf("\n\n(⚠️ 附件已上传 id=%s,但响应无 url,无法内联渲染)", id)
+		}
+		if id != "" {
+			attachmentIDs = append(attachmentIDs, id)
+		}
+		fmt.Fprintf(os.Stderr, "Inlined %s\n", inlineDoc)
 	}
 
 	body := map[string]any{"content": content}

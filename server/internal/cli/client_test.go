@@ -278,7 +278,7 @@ func TestUploadFileWithURL(t *testing.T) {
 		defer srv.Close()
 
 		client := NewAPIClient(srv.URL, "ws-1", "test-token")
-		id, url, err := client.UploadFileWithURL(context.Background(), []byte("hello"), "test.txt")
+		id, url, err := client.UploadFileWithURL(context.Background(), []byte("hello"), "test.txt", "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -290,6 +290,28 @@ func TestUploadFileWithURL(t *testing.T) {
 		}
 	})
 
+	t.Run("issue binding sends issue_id", func(t *testing.T) {
+		var gotIssueID string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotIssueID = r.FormValue("issue_id")
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(AttachmentResponse{ID: "att-9", URL: "/uploads/workspaces/ws/att-9.html"})
+		}))
+		defer srv.Close()
+
+		client := NewAPIClient(srv.URL, "ws-1", "test-token")
+		id, url, err := client.UploadFileWithURL(context.Background(), []byte("<html>"), "doc.html", "issue-42")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if gotIssueID != "issue-42" {
+			t.Errorf("expected issue_id issue-42 to be sent, got %q", gotIssueID)
+		}
+		if id != "att-9" || url != "/uploads/workspaces/ws/att-9.html" {
+			t.Errorf("unexpected id/url: %s %s", id, url)
+		}
+	})
+
 	t.Run("error status", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
@@ -298,7 +320,7 @@ func TestUploadFileWithURL(t *testing.T) {
 		defer srv.Close()
 
 		client := NewAPIClient(srv.URL, "", "")
-		_, _, err := client.UploadFileWithURL(context.Background(), []byte("x"), "x.txt")
+		_, _, err := client.UploadFileWithURL(context.Background(), []byte("x"), "x.txt", "")
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -315,7 +337,7 @@ func TestUploadFileWithURL(t *testing.T) {
 		defer srv.Close()
 
 		client := NewAPIClient(srv.URL, "", "")
-		id, url, err := client.UploadFileWithURL(context.Background(), []byte("x"), "x.txt")
+		id, url, err := client.UploadFileWithURL(context.Background(), []byte("x"), "x.txt", "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -337,7 +359,7 @@ func TestUploadFileWithURL(t *testing.T) {
 		defer srv.Close()
 
 		client := NewAPIClient(srv.URL, "ws-abc", "test-token")
-		_, _, err := client.UploadFileWithURL(context.Background(), []byte("x"), "x.txt")
+		_, _, err := client.UploadFileWithURL(context.Background(), []byte("x"), "x.txt", "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -354,7 +376,7 @@ func TestUploadFileWithURL(t *testing.T) {
 		defer srv.Close()
 
 		client := NewAPIClient(srv.URL, "", "")
-		_, _, err := client.UploadFileWithURL(context.Background(), []byte("x"), "x.txt")
+		_, _, err := client.UploadFileWithURL(context.Background(), []byte("x"), "x.txt", "")
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
