@@ -9,6 +9,7 @@ func TestBuildSkillMd(t_ *testing.T) {
 	skill := map[string]any{
 		"name":             "tc-render",
 		"description":      `He said "hi" and used a \ backslash`,
+		"owner_user_id":    "11111111-1111-1111-1111-111111111111",
 		"last_reviewed_at": "2026-06-09",
 		"content":          "\n# tc-render\n\nbody line\n",
 	}
@@ -19,6 +20,7 @@ func TestBuildSkillMd(t_ *testing.T) {
 		"---\n",
 		"name: tc-render\n",
 		`description: "He said \"hi\" and used a \\ backslash"`,
+		"owner: 11111111-1111-1111-1111-111111111111\n",
 		"last_reviewed_at: 2026-06-09\n",
 	} {
 		if !strings.Contains(md, want) {
@@ -37,8 +39,8 @@ func TestBuildSkillMd(t_ *testing.T) {
 
 func TestEstimateSkillTokens(t_ *testing.T) {
 	cases := map[string]int{
-		"":                 0,
-		"one two three":    3, // 3 words * 1.3 = 3.9 -> 3
+		"":                    0,
+		"one two three":       3,  // 3 words * 1.3 = 3.9 -> 3
 		"a b c d e f g h i j": 13, // 10 * 1.3 = 13
 	}
 	for body, want := range cases {
@@ -80,6 +82,10 @@ func TestBuildSkillMd_NoOptionalFields(t_ *testing.T) {
 	// last_reviewed_at omitted when absent
 	if strings.Contains(md, "last_reviewed_at") {
 		t_.Errorf("should omit last_reviewed_at when absent:\n%s", md)
+	}
+	// owner omitted when absent
+	if strings.Contains(md, "owner:") {
+		t_.Errorf("should omit owner when absent:\n%s", md)
 	}
 	// a blank line is inserted between frontmatter and a body lacking a leading newline
 	if !strings.Contains(md, "---\n\nno leading newline body\n") {

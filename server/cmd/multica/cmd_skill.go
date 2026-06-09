@@ -264,6 +264,11 @@ func buildSkillMd(skill map[string]any) string {
 	b.WriteString("---\n")
 	b.WriteString("name: " + strVal(skill, "name") + "\n")
 	b.WriteString("description: \"" + desc + "\"\n")
+	// owner:把 skill 记录的关系字段 owner_user_id 写进 frontmatter,
+	// 使 `skill pull` 后 `skill lint` 不再警告缺 owner(SOP ❌5)。
+	if v := strVal(skill, "owner_user_id"); v != "" {
+		b.WriteString("owner: " + v + "\n")
+	}
 	if v := strVal(skill, "last_reviewed_at"); v != "" {
 		b.WriteString("last_reviewed_at: " + v + "\n")
 	}

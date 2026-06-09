@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"text/tabwriter"
 	"time"
@@ -47,6 +48,15 @@ var userCreateCmd = &cobra.Command{
 	RunE: runUserCreate,
 }
 
+var userListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List workspace users with id / name / email / role",
+	Long: "List the users in the current workspace with their UUIDs. This is the " +
+		"resolution source for turning a human owner name into the user UUID that " +
+		"`skill create/update --owner` and frontmatter `owner:` require (SOP ❌5).",
+	RunE: runUserList,
+}
+
 var userProfileUpdateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Update your user profile (currently: profile description)",
@@ -62,8 +72,11 @@ var userProfileUpdateCmd = &cobra.Command{
 func init() {
 	userCmd.AddCommand(userProfileCmd)
 	userCmd.AddCommand(userCreateCmd)
+	userCmd.AddCommand(userListCmd)
 	userProfileCmd.AddCommand(userProfileGetCmd)
 	userProfileCmd.AddCommand(userProfileUpdateCmd)
+
+	userListCmd.Flags().String("output", "table", "Output format: table or json")
 
 	userCreateCmd.Flags().String("email", "", "Service-user email address (required)")
 	userCreateCmd.Flags().String("name", "", "Display name (defaults to local-part of email)")
@@ -194,4 +207,46 @@ func runUserCreate(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 	return cli.PrintJSON(os.Stdout, resp)
+}
+
+func runUserList(cmd *cobra.Command, _ []string) error {
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+	wsID, err := requireWorkspaceID(cmd)
+	if err != nil {
+		return err
+	}
+	output, _ := cmd.Flags().GetString("output")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return listWorkspaceUsers(ctx, client, wsID, output, os.Stdout)
+}
+
+// listWorkspaceUsers fetches workspace members (id/name/email/role) and writes
+// them as a table or JSON. Split from runUserList so it can be tested against an
+// httptest server without going through CLI config resolution.
+func listWorkspaceUsers(ctx context.Context, client *cli.APIClient, wsID, output string, out io.Writer) error {
+	var members []map[string]any
+	if err := client.GetJSON(ctx, "/api/workspaces/"+wsID+"/members", &members); err != nil {
+		return fmt.Errorf("list users: %w", err)
+	}
+	if output == "json" {
+		return cli.PrintJSON(out, members)
+	}
+	cli.PrintTable(out, []string{"USER ID", "NAME", "EMAIL", "ROLE"}, userRows(members))
+	return nil
+}
+
+// userRows maps workspace-member records to table rows (pure; unit-tested).
+func userRows(members []map[string]any) [][]string {
+	rows := make([][]string, 0, len(members))
+	for _, m := range members {
+		rows = append(rows, []string{
+			strVal(m, "user_id"), strVal(m, "name"),
+			strVal(m, "email"), strVal(m, "role"),
+		})
+	}
+	return rows
 }
