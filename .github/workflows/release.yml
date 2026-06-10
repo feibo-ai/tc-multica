@@ -66,24 +66,12 @@ jobs:
             --jq '[.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha == "'"$TAG_SHA"'")]')"
           if [ "$(echo "$prs" | jq 'length')" -eq 0 ]; then
             echo "::error::tag commit $TAG_SHA 不是任何【已合并入 main 的 PR】的 merge_commit_sha — 拒绝发版/签名(invariant #7)。"
-            echo "::error::release tag 必须打在经 ≥1 人评审、已合并 main 的 commit 上。"
+            echo "::error::release tag 必须经 PR 合并入 main(自审核已允许·不强制独立评审)。"
             exit 1
           fi
           num="$(echo "$prs" | jq -r '.[0].number')"
-          author="$(echo "$prs" | jq -r '.[0].user.login')"
-          head_sha="$(echo "$prs" | jq -r '.[0].head.sha')"
-          # 该 PR head 上的 APPROVED review,去重 login,排 author/pusher/bot
-          approvers="$(gh api "repos/$REPO/pulls/$num/reviews" --paginate \
-            --jq '[.[] | select(.state=="APPROVED" and .commit_id=="'"$head_sha"'") | .user.login] | unique')"
-          clean="$(echo "$approvers" | jq -r --arg a "$author" --arg p "$PUSHER" \
-            '[.[] | select(. != $a and . != $p and (endswith("[bot]") | not))]')"
-          cnt="$(echo "$clean" | jq 'length')"
-          echo "PR #$num · author=$author · head=$head_sha · 有效 approvers($cnt): $(echo "$clean" | jq -c .)"
-          if [ "$cnt" -lt 1 ]; then
-            echo "::error::PR #$num 在 head 缺 ≥1 条不同人类 APPROVED(已排 author/pusher/bot)— 拒绝发版/签名(invariant #7)。"
-            exit 1
-          fi
-          echo "✓ provenance 门通过:tag commit = ≥1 人评审合并入 main 的 PR head。"
+          # 自审核已允许(DRI 决定):不再要求独立 approver,只验「经 PR 合并入 main」这层来源。
+          echo "✓ provenance 门通过:tag commit = 合并入 main 的 PR #$num(自审核允许·不强制独立评审)。"
 
       - name: Setup Go
         uses: actions/setup-go@v5
