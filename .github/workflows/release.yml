@@ -103,7 +103,7 @@ jobs:
     # see .goreleaser.yml `brews.skip_upload`), so a fork release no longer 401s.
     runs-on: ubuntu-latest
     permissions:
-      contents: write # GoReleaser 上传 release 资产
+      contents: write # GoReleaser 上传 release 资产 + gh release upload 吊销表
       packages: write
       id-token: write # OIDC — attest-build-provenance keyless 签名(无长期私钥)
       attestations: write # 写 provenance attestation
@@ -131,11 +131,20 @@ jobs:
           # forks build the CLI + GitHub Release but skip the tap upload.
           PUBLISH_HOMEBREW: ${{ github.repository_owner == 'multica-ai' }}
 
+      # mini-ADR v4 invariant #8 stage-4 — 吊销表 revocations.json(仓根)是 daemon
+      # 应用任何二进制 / skill bundle 前必查的 CI 签吊销表。把它复制进 dist/ 以便和
+      # release 工件用【同一个】Attest build provenance 签(二进制锚 = feibo-ai/
+      # tc-multica + release.yml + refs/tags/v*),daemon 用内置 sigstore 信任根离线
+      # 验签该表本身后才信任其内容(绝不信未签的吊销表)。
+      - name: Stage revocations.json into dist for attestation
+        run: cp revocations.json dist/revocations.json
+
       # mini-ADR v4 ⑨ stage-2a — keyless OIDC build-provenance attestation:
-      # 给 release 工件签 provenance(GitHub OIDC,无长期私钥)。下游(stage-2b)
-      # update.go / daemon 用内置 sigstore 信任根离线验:OIDC subject 三元组
+      # 给 release 工件签 provenance(GitHub OIDC,无长期私钥)。下游(stage-2b/⑩c/
+      # stage-4)update.go / daemon 用内置 sigstore 信任根离线验:OIDC subject 三元组
       # (repo==feibo-ai/tc-multica AND workflow==release.yml AND ref=~refs/tags/v*)
       # 全等才放行(invariant #2),拒 upstream 同名工件 + 未签/降级 fail-closed(invariant #3)。
+      # revocations.json 与 dist/* 同锚(stage-4 吊销表也由本 workflow 签)。
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
         with:
@@ -143,6 +152,15 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/checksums.txt
+            dist/revocations.json
+
+      # 把吊销表上传为 release 资产(daemon 的 CheckArtifactRevocation 从 latest
+      # release 拉 revocations.json)。--clobber 让重跑覆盖既有同名资产。
+      - name: Upload revocations.json to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.verify.outputs.tag_name }}
+        run: gh release upload "$TAG" dist/revocations.json --clobber
 
   # Multi-arch images are built natively per platform on dedicated runners
   # (amd64 on ubuntu-latest, arm64 on ubuntu-24.04-arm) and merged into a

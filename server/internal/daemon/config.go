@@ -75,6 +75,8 @@ type Config struct {
 	GCArtifactPatterns             []string              // basename patterns whose subtrees are removed during artifact cleanup (default: node_modules, .next, .turbo)
 	AutoUpdateEnabled              bool                  // periodically check for a newer CLI release and self-update when idle (default: true on Multica Cloud, false on self-host)
 	AutoUpdateCheckInterval        time.Duration         // how often the auto-update loop polls for a new release (default: 6h)
+	SkillWriteEnabled              bool                  // periodically pull + verify + write the team skill bundle into ~/.claude (mini-ADR v4 ⑩c). New write capability — default OFF everywhere, opt-in only via MULTICA_DAEMON_SKILL_WRITE.
+	SkillSyncCheckInterval         time.Duration         // how often the skill-sync loop polls team-context for a newer skill bundle (default: 6h)
 	AmbientUsageEnabled            bool                  // periodically collect token usage from local CLI transcripts (ad-hoc sessions never dispatched as tasks) and report it per-runtime (default: true)
 	AmbientUsageInterval           time.Duration         // how often the ambient-usage collector scans transcripts (default: 1m)
 	PollInterval                   time.Duration
@@ -398,6 +400,25 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		autoUpdateInterval = overrides.AutoUpdateCheckInterval
 	}
 
+	// Skill-write config: this is a brand-new *write* capability (the daemon
+	// drops verified files into ~/.claude on the consumer machine), so it is
+	// default-OFF everywhere — no cloud/self-host split. Pure opt-in via
+	// MULTICA_DAEMON_SKILL_WRITE. The interval reuses the auto-update default
+	// (6h) and can be tuned with MULTICA_DAEMON_SKILL_SYNC_INTERVAL.
+	skillWriteEnabled := false
+	if v := strings.TrimSpace(os.Getenv("MULTICA_DAEMON_SKILL_WRITE")); v != "" {
+		switch strings.ToLower(v) {
+		case "false", "0", "no", "off":
+			skillWriteEnabled = false
+		case "true", "1", "yes", "on":
+			skillWriteEnabled = true
+		}
+	}
+	skillSyncInterval, err := durationFromEnv("MULTICA_DAEMON_SKILL_SYNC_INTERVAL", DefaultAutoUpdateCheckInterval)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		ServerBaseURL:                  serverBaseURL,
 		DaemonID:                       daemonID,
@@ -418,6 +439,8 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		AmbientUsageInterval:           ambientUsageInterval,
 		AutoUpdateEnabled:              autoUpdateEnabled,
 		AutoUpdateCheckInterval:        autoUpdateInterval,
+		SkillWriteEnabled:              skillWriteEnabled,
+		SkillSyncCheckInterval:         skillSyncInterval,
 		HealthPort:                     healthPort,
 		MaxConcurrentTasks:             maxConcurrentTasks,
 		PollInterval:                   pollInterval,
