@@ -407,6 +407,14 @@ func UpdateViaDownloadWithTimeout(targetVersion string, downloadTimeout time.Dur
 		return "", fmt.Errorf("attestation verification failed (fail-closed, no fallback): %w", err)
 	}
 
+	// mini-ADR v4 invariant #8 —— 吊销门:attestation 验过【之后】、替换二进制【之前】,
+	// 查最新已签吊销表。被应用工件的内容 digest 或 target 版本若命中 revoked 集 →
+	// 拒换(fail-closed),绝不安装被吊销的二进制。fetch 失败时 CheckArtifactRevocation
+	// 内部 fail-open 用 persisted 最后已知表(离线机不砖)。
+	if err := CheckArtifactRevocation(sha256HexOf(archiveData), tag, timeout); err != nil {
+		return "", fmt.Errorf("revocation check refused this binary (fail-closed): %w", err)
+	}
+
 	if err := verifyAssetSHA256(archiveData, expectedSum, assetName); err != nil {
 		// Do NOT extract or replace; the next poll tick will retry. A
 		// corrupted asset is rare enough that retrying through the same

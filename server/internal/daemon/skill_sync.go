@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +22,21 @@ var (
 	verifySkillBundleAttestation = cli.VerifySkillBundleAttestation
 	extractSkillBundleSafely     = cli.ExtractSkillBundleSafely
 	skillBundleIsNewerVersion    = cli.IsNewerVersion
+	// checkArtifactRevocation is the stage-4 revocation gate (invariant #8),
+	// injected as a var so tests can exercise the loop's revoked-bundle refusal
+	// without reaching out to GitHub. Mirrors the indirection pattern above.
+	checkArtifactRevocation = cli.CheckArtifactRevocation
 )
+
+// skillBundleSHA256Hex computes the sha256 hex of the (verified) skill bundle
+// bytes so the revocation gate can match a "digest" revocation entry against
+// the exact bytes that the attestation already bound to. Kept local to the
+// daemon package so skill_sync.go has a single small helper rather than reaching
+// into an unexported cli symbol.
+func skillBundleSHA256Hex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
 
 // skillSyncTimeout bounds each outbound call the loop makes (releases fetch +
 // bundle download in FetchLatestSkillBundle, and the attestation fetch in
@@ -124,6 +140,18 @@ func (d *Daemon) trySkillSync(ctx context.Context) {
 	// if the attestation does not verify, refuse and do NOT write.
 	if err := verifySkillBundleAttestation(bundleBytes, skillSyncTimeout); err != nil {
 		d.logger.Error("skill-sync: attestation verification failed — refusing (fail-closed)", "error", err)
+		return
+	}
+
+	// Stage-4 revocation gate (invariant #8): attestation verified the bundle's
+	// provenance, but a known-bad bundle can still be revoked after the fact. Check
+	// the CI-signed revocation list before writing anything. The check matches on
+	// the bundle's content digest (the exact bytes the attestation bound) or its
+	// version tag. A revoked bundle is refused with no write (fail-closed); a fetch
+	// failure inside the check falls open to the last-known persisted list so an
+	// offline box is not bricked.
+	if err := checkArtifactRevocation(skillBundleSHA256Hex(bundleBytes), tag, skillSyncTimeout); err != nil {
+		d.logger.Error("skill-sync: bundle revoked — refusing", "tag", tag, "error", err)
 		return
 	}
 
