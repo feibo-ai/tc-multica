@@ -1,0 +1,19 @@
+# CODEOWNERS — mini-ADR v4 invariant #10:保护「信任根制造者」。
+#
+# 改这些路径必须经【安全 owner】评审。配合 main ruleset 的 require_code_owner_review==true
+# + bypass actors 为空(admin 不绕),否则单成员/失陷账号可 PR 改 release.yml 把 attestation
+# 断言改成认 upstream、或把 provenance verify 门改成 no-op —— 绕过整个签名信任根。
+#
+# 【DRI 待办 · 本文件是模板】
+#   1) 把 @feibo-ai/security-owners 换成真实 GitHub 团队/账号(或先建该团队,成员=可审安全变更的人,≥2 人)。
+#   2) GitHub repo Settings → Rulesets:给 main 开 require_code_owner_review + required approvals ≥2
+#      + dismiss stale + require non-author + bypass actors 为空;给 v* tag 开 create 受限 + bypass 空。
+#   3) 跑 scripts/verify-trust-root-config.sh 断言上述配置已落(invariant #10 / §1.5)。
+
+# 发布信任根 + 自更/分发安全代码路径
+/.github/                                     @feibo-ai/security-owners
+/.goreleaser.yml                              @feibo-ai/security-owners
+/scripts/install.sh                           @feibo-ai/security-owners
+/server/internal/cli/update.go                @feibo-ai/security-owners
+# ⑩ daemon 写循环 + sigstore 验证栈(实现时落此路径,先占位)
+# /server/internal/daemon/skillsync/          @feibo-ai/security-owners

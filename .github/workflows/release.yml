@@ -11,6 +11,7 @@ on:
 permissions:
   contents: write
   packages: write
+  pull-requests: read # mini-ADR v4 invariant #7: verify job 查 PR 合并/评审态做 release 门
 
 jobs:
   verify:
@@ -44,6 +45,45 @@ jobs:
           else
             echo "is_stable=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # mini-ADR v4 invariant #7 / §1.4 — provenance 合并门:
+      # tag 指向的 commit 必须是【合并入 main 的 PR 的 merge_commit_sha】,且该 PR 在其 head
+      # 有 ≥2 条不同【人类】APPROVED review(排除 PR author / 本次 pusher / 任何 bot)。
+      # 把「签名/发版只在 2 人评审的真合并态发生」从约定变成 CI 硬门(堵单成员 push tag 投毒)。
+      # 注:这是发布流程变更——release tag 必须打在已评审合并的 main commit 上。
+      - name: Enforce 2-review-merged-main provenance gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_SHA: ${{ github.sha }}
+          PUSHER: ${{ github.actor }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 找 merge_commit_sha == tag commit 且已合并入 main 的 PR
+          prs="$(gh api "repos/$REPO/commits/$TAG_SHA/pulls" \
+            -H 'Accept: application/vnd.github+json' \
+            --jq '[.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha == "'"$TAG_SHA"'")]')"
+          if [ "$(echo "$prs" | jq 'length')" -eq 0 ]; then
+            echo "::error::tag commit $TAG_SHA 不是任何【已合并入 main 的 PR】的 merge_commit_sha — 拒绝发版/签名(invariant #7)。"
+            echo "::error::release tag 必须打在经 ≥2 人评审、已合并 main 的 commit 上。"
+            exit 1
+          fi
+          num="$(echo "$prs" | jq -r '.[0].number')"
+          author="$(echo "$prs" | jq -r '.[0].user.login')"
+          head_sha="$(echo "$prs" | jq -r '.[0].head.sha')"
+          # 该 PR head 上的 APPROVED review,去重 login,排 author/pusher/bot
+          approvers="$(gh api "repos/$REPO/pulls/$num/reviews" --paginate \
+            --jq '[.[] | select(.state=="APPROVED" and .commit_id=="'"$head_sha"'") | .user.login] | unique')"
+          clean="$(echo "$approvers" | jq -r --arg a "$author" --arg p "$PUSHER" \
+            '[.[] | select(. != $a and . != $p and (endswith("[bot]") | not))]')"
+          cnt="$(echo "$clean" | jq 'length')"
+          echo "PR #$num · author=$author · head=$head_sha · 有效 approvers($cnt): $(echo "$clean" | jq -c .)"
+          if [ "$cnt" -lt 2 ]; then
+            echo "::error::PR #$num 在 head 缺 ≥2 条不同人类 APPROVED(已排 author/pusher/bot)— 拒绝发版/签名(invariant #7)。"
+            exit 1
+          fi
+          echo "✓ provenance 门通过:tag commit = ≥2 人评审合并入 main 的 PR head。"
 
       - name: Setup Go
         uses: actions/setup-go@v5
