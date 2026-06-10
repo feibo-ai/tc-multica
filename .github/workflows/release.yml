@@ -102,6 +102,11 @@ jobs:
     # to the canonical upstream via PUBLISH_HOMEBREW (forks lack the tap token;
     # see .goreleaser.yml `brews.skip_upload`), so a fork release no longer 401s.
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # GoReleaser 上传 release 资产
+      packages: write
+      id-token: write # OIDC — attest-build-provenance keyless 签名(无长期私钥)
+      attestations: write # 写 provenance attestation
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -125,6 +130,19 @@ jobs:
           # Publish the Homebrew formula only from the canonical upstream;
           # forks build the CLI + GitHub Release but skip the tap upload.
           PUBLISH_HOMEBREW: ${{ github.repository_owner == 'multica-ai' }}
+
+      # mini-ADR v4 ⑨ stage-2a — keyless OIDC build-provenance attestation:
+      # 给 release 工件签 provenance(GitHub OIDC,无长期私钥)。下游(stage-2b)
+      # update.go / daemon 用内置 sigstore 信任根离线验:OIDC subject 三元组
+      # (repo==feibo-ai/tc-multica AND workflow==release.yml AND ref=~refs/tags/v*)
+      # 全等才放行(invariant #2),拒 upstream 同名工件 + 未签/降级 fail-closed(invariant #3)。
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
 
   # Multi-arch images are built natively per platform on dedicated runners
   # (amd64 on ubuntu-latest, arm64 on ubuntu-24.04-arm) and merged into a
