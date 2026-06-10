@@ -14,15 +14,136 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // skillsSubdir 是 bundle 内 skills/ 顶层路径,映射到 <claudeDir>/skills/。
 const skillsSubdir = "skills"
+
+// skillBundleTagPrefix 是 skill bundle release 的 tag 前缀(语义版本跟在其后)。
+const skillBundleTagPrefix = "skills-v"
+
+// skillBundleAssetName 是 skill bundle release 里要下载的 asset 固定文件名。
+const skillBundleAssetName = "skill-bundle.tar.gz"
+
+// skillReleasesAPIURL 是 team-context 的 releases 列表 API。skill bundle 是
+// prerelease,所以**不能**用 /releases/latest(它会排除 prerelease);必须拉整张
+// 列表自己滤选最新的 skills-v* tag。
+const skillReleasesAPIURL = "https://api.github.com/repos/feibo-ai/team-context/releases"
+
+// FetchLatestSkillBundle 列出 team-context 的 releases,滤出 tag 前缀为
+// `skills-v` 的 release,按语义版本取最新一个,下载其 `skill-bundle.tar.gz` asset
+// 的字节并返回 (tag, bundleBytes)。
+//
+// 无 skills-v* release / 该 release 无目标 asset / 网络失败 → 返回 error
+// (调用方 fail-closed:fetch 失败不应用,下一 tick 重试)。
+func FetchLatestSkillBundle(timeout time.Duration) (tag string, bundleBytes []byte, err error) {
+	releases, err := fetchSkillReleases(timeout)
+	if err != nil {
+		return "", nil, fmt.Errorf("fetch skill releases: %w", err)
+	}
+
+	latest := selectLatestSkillRelease(releases)
+	if latest == nil {
+		return "", nil, fmt.Errorf("no %s* release found in team-context releases", skillBundleTagPrefix)
+	}
+
+	var asset *GitHubReleaseAsset
+	for i := range latest.Assets {
+		if latest.Assets[i].Name == skillBundleAssetName {
+			asset = &latest.Assets[i]
+			break
+		}
+	}
+	if asset == nil {
+		return "", nil, fmt.Errorf("release %q has no %q asset", latest.TagName, skillBundleAssetName)
+	}
+
+	data, err := fetchURLBytes(asset.BrowserDownloadURL, timeout)
+	if err != nil {
+		return "", nil, fmt.Errorf("download %q: %w", skillBundleAssetName, err)
+	}
+	return latest.TagName, data, nil
+}
+
+// fetchSkillReleases GETs the team-context releases list and decodes it. Split
+// out so selectLatestSkillRelease can be unit-tested offline against canned
+// JSON without any network.
+func fetchSkillReleases(timeout time.Duration) ([]GitHubRelease, error) {
+	to := timeout
+	if to <= 0 {
+		to = 10 * time.Second
+	}
+	client := &http.Client{Timeout: to}
+	req, err := http.NewRequest(http.MethodGet, skillReleasesAPIURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API returned %d", resp.StatusCode)
+	}
+
+	var releases []GitHubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, err
+	}
+	return releases, nil
+}
+
+// selectLatestSkillRelease picks the release with the highest semantic version
+// among those whose tag carries the `skills-v` prefix. Returns nil when none
+// match. Pure (no I/O) so the filter + version-comparison logic is unit-testable
+// offline. Uses IsNewerVersion (after stripping the prefix) so the comparator is
+// the same one the daemon's anti-rollback check relies on.
+func selectLatestSkillRelease(releases []GitHubRelease) *GitHubRelease {
+	var best *GitHubRelease
+	for i := range releases {
+		r := &releases[i]
+		ver, ok := skillBundleVersion(r.TagName)
+		if !ok {
+			continue
+		}
+		if best == nil {
+			best = r
+			continue
+		}
+		bestVer, _ := skillBundleVersion(best.TagName)
+		if IsNewerVersion(ver, bestVer) {
+			best = r
+		}
+	}
+	return best
+}
+
+// skillBundleVersion strips the `skills-v` prefix off a tag and returns the
+// remaining semantic-version string. Returns ("", false) when the tag lacks the
+// prefix or the remainder isn't a parseable x.y.z release version — both are
+// "not a skill bundle tag" and excluded from selection.
+func skillBundleVersion(tag string) (string, bool) {
+	t := strings.TrimSpace(tag)
+	if !strings.HasPrefix(t, skillBundleTagPrefix) {
+		return "", false
+	}
+	ver := strings.TrimPrefix(t, skillBundleTagPrefix)
+	if !IsReleaseVersion(ver) {
+		return "", false
+	}
+	return ver, true
+}
 
 // claudeMDBundleName 是 bundle 内团队全局 CLAUDE.md 的固定文件名(顶层)。
 const claudeMDBundleEntry = "claude_md_team_global.md"
