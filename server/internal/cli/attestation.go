@@ -40,11 +40,25 @@ const (
 	// 任何 upstream multica-ai/multica、其它 repo、其它 workflow、非 tag ref 的
 	// 同名 attestation 都被拒。
 	attestationSANRegex = `^https://github\.com/feibo-ai/tc-multica/\.github/workflows/release\.yml@refs/tags/v[0-9][0-9A-Za-z.\-]*$`
+
+	// skillBundleSANRegex 是 skill 分发的第二信任锚 (mini-ADR v4 ⑩c)。它把
+	// 三元组同样绑死,但锚定 team-context 仓 + skill-bundle-release.yml workflow
+	// + skills-v* tag:
+	//   repo     == feibo-ai/team-context
+	//   workflow == .github/workflows/skill-bundle-release.yml
+	//   ref      =~ refs/tags/skills-v<版本>
+	// 它与 attestationSANRegex 互不相交 —— 二进制锚不能验 skill bundle、skill
+	// 锚也不能验二进制(T/S2 客观断言这点)。fail-closed,无 fallback。
+	skillBundleSANRegex = `^https://github\.com/feibo-ai/team-context/\.github/workflows/skill-bundle-release\.yml@refs/tags/skills-v[0-9][0-9A-Za-z.\-]*$`
 )
 
-// attestationsAPIBase 是 GitHub artifact attestations 的查询端点前缀。
+// attestationsAPIBase 是二进制(⑨)的 GitHub artifact attestations 查询端点前缀。
 // 完整 URL: <base>/sha256:<digestHex>
 const attestationsAPIBase = "https://api.github.com/repos/feibo-ai/tc-multica/attestations/"
+
+// skillAttestationsAPIBase 是 skill bundle(⑩c)的第二信任锚查询端点前缀,
+// 锚定 feibo-ai/team-context 仓。完整 URL: <base>/sha256:<digestHex>
+const skillAttestationsAPIBase = "https://api.github.com/repos/feibo-ai/team-context/attestations/"
 
 // loadEmbeddedTrustedMaterial 把内嵌的 trusted root 解析成可供 verifier 使用的
 // TrustedMaterial。embedded_trusted_root.json 是 JSONL —— 每行一份独立的
@@ -157,10 +171,19 @@ type githubAttestationsResponse struct {
 	} `json:"attestations"`
 }
 
-// fetchAttestationBundles 从 GitHub attestations API 拉取某 artifact digest 的
-// 全部 attestation bundle(原始 JSON 列表)。fail-closed:404 / 空列表 → error。
+// fetchAttestationBundles 从二进制(⑨)信任锚的 GitHub attestations API 拉取某
+// artifact digest 的全部 attestation bundle。保持 ⑨ 二进制路径行为不变 —— 它只是
+// 用 attestationsAPIBase 调用通用的 fetchAttestationBundlesFor。
 func fetchAttestationBundles(digestHex string, timeout time.Duration) ([][]byte, error) {
-	url := attestationsAPIBase + "sha256:" + digestHex
+	return fetchAttestationBundlesFor(attestationsAPIBase, digestHex, timeout)
+}
+
+// fetchAttestationBundlesFor 从给定信任锚 API base 拉取某 artifact digest 的全部
+// attestation bundle(原始 JSON 列表)。apiBase 决定信任锚仓(⑨ 二进制用
+// attestationsAPIBase;⑩c skill 用 skillAttestationsAPIBase)。
+// fail-closed:404 / 空列表 → error。
+func fetchAttestationBundlesFor(apiBase, digestHex string, timeout time.Duration) ([][]byte, error) {
+	url := apiBase + "sha256:" + digestHex
 
 	// 复用 update.go 的 fetchURLBytes 不够 —— attestations API 需要
 	// Accept header(与 fetchReleaseByTag 同款),且我们要区分 404。这里用同款
@@ -213,4 +236,23 @@ func VerifyArtifactAttestation(artifactBytes []byte, timeout time.Duration) erro
 		return fmt.Errorf("fetch attestation bundles: %w", err)
 	}
 	return verifyProvenanceBundles(artifactBytes, bundles)
+}
+
+// VerifySkillBundleAttestation 是 skill 分发(⑩c)的第二信任锚验证入口:计算
+// skill bundle(tar.gz)的 sha256,从 feibo-ai/team-context 的 attestations API
+// 拉取其 bundle,再用 skillBundleSANRegex(三元组绑死 team-context +
+// skill-bundle-release.yml + skills-v* tag)做纯离线密码学验证。
+//
+// fail-closed,无 fallback(mini-ADR v4 invariant #3):fetch 失败、无 attestation、
+// 身份/digest/透明日志任一不满足 → 非 nil error。调用方(daemon 写循环)只有在本
+// 函数返回 nil 时才得把 bundle 交给 ExtractSkillBundleSafely 落盘。
+func VerifySkillBundleAttestation(bundleBytes []byte, timeout time.Duration) error {
+	sum := sha256.Sum256(bundleBytes)
+	digestHex := hex.EncodeToString(sum[:])
+
+	bundles, err := fetchAttestationBundlesFor(skillAttestationsAPIBase, digestHex, timeout)
+	if err != nil {
+		return fmt.Errorf("fetch skill attestation bundles: %w", err)
+	}
+	return verifyProvenanceBundlesWithSAN(bundleBytes, bundles, skillBundleSANRegex)
 }
