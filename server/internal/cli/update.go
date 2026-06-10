@@ -399,6 +399,14 @@ func UpdateViaDownloadWithTimeout(targetVersion string, downloadTimeout time.Dur
 		return "", fmt.Errorf("download failed: %w", err)
 	}
 
+	// mini-ADR v4 invariant #2/#3 —— attestation 验签先于 SHA-256,fail-closed
+	// 无 fallback。keyless OIDC attestation 把 artifact 绑死在
+	// feibo-ai/tc-multica 的 release.yml workflow(三元组断言),issuer 精确为
+	// GitHub Actions OIDC;验不过直接拒绝,绝不退回仅 SHA-256 的弱校验。
+	if err := VerifyArtifactAttestation(archiveData, timeout); err != nil {
+		return "", fmt.Errorf("attestation verification failed (fail-closed, no fallback): %w", err)
+	}
+
 	if err := verifyAssetSHA256(archiveData, expectedSum, assetName); err != nil {
 		// Do NOT extract or replace; the next poll tick will retry. A
 		// corrupted asset is rare enough that retrying through the same
