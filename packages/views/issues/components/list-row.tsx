@@ -19,6 +19,7 @@ import { ProgressRing } from "./progress-ring";
 import { IssueActionsContextMenu } from "../actions";
 import { LabelChip } from "../../labels/label-chip";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
+import { useIssuePane } from "./issue-pane";
 
 export interface ChildProgress {
   done: number;
@@ -51,6 +52,8 @@ function ListRowContent({
 }) {
   const selected = useIssueSelectionStore((s) => s.selectedIds.has(issue.id));
   const toggle = useIssueSelectionStore((s) => s.toggle);
+  const pane = useIssuePane();
+  const isActive = pane?.activeIssueId === issue.id;
   const p = useWorkspacePaths();
   const storeProperties = useViewStore((s) => s.cardProperties);
   const wsId = useWorkspaceId();
@@ -68,6 +71,63 @@ function ListRowContent({
   const showDueDate = storeProperties.dueDate && issue.due_date;
   const showLabels = storeProperties.labels && labels.length > 0;
 
+  const rowInner = (
+    <>
+      <span className="w-16 shrink-0 text-xs text-muted-foreground">
+        {issue.identifier}
+      </span>
+      <IssueAgentActivityIndicator issueId={issue.id} />
+
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        <span className="truncate">{issue.title}</span>
+        {showChildProgress && (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5">
+            <ProgressRing done={childProgress!.done} total={childProgress!.total} size={14} />
+            <span className="text-[11px] text-muted-foreground tabular-nums font-medium">
+              {childProgress!.done}/{childProgress!.total}
+            </span>
+          </span>
+        )}
+        {showLabels && (
+          <span className="ml-1.5 hidden md:inline-flex shrink-0 items-center gap-1 max-w-[260px] overflow-hidden">
+            {labels.slice(0, 3).map((label) => (
+              <LabelChip key={label.id} label={label} />
+            ))}
+            {labels.length > 3 && (
+              <span className="text-[11px] text-muted-foreground">
+                +{labels.length - 3}
+              </span>
+            )}
+          </span>
+        )}
+      </span>
+      {showProject && (
+        <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground max-w-[140px]">
+          <ProjectIcon project={project} size="sm" />
+          <span className="truncate">{project!.title}</span>
+        </span>
+      )}
+      {showStartDate && (
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {formatDate(issue.start_date!)}
+        </span>
+      )}
+      {showDueDate && (
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {formatDate(issue.due_date!)}
+        </span>
+      )}
+      {showAssignee && (
+        <ActorAvatar
+          actorType={issue.assignee_type!}
+          actorId={issue.assignee_id!}
+          size={20}
+          enableHoverCard
+        />
+      )}
+    </>
+  );
+
   return (
     <IssueActionsContextMenu issue={issue}>
       <div
@@ -76,7 +136,7 @@ function ListRowContent({
         {...containerProps}
         className={`group/row flex h-9 items-center gap-2 px-4 text-sm transition-colors hover:not-data-[popup-open]:bg-accent/60 data-[popup-open]:bg-accent ${
           selected ? "bg-accent/30" : ""
-        } ${isDragging ? "opacity-30" : ""}`}
+        } ${isActive ? "bg-accent" : ""} ${isDragging ? "opacity-30" : ""}`}
       >
         <div
           className="relative flex shrink-0 items-center justify-center w-4 h-4"
@@ -95,63 +155,33 @@ function ListRowContent({
             }`}
           />
         </div>
-        <AppLink
-          href={p.issueDetail(issue.id)}
-          className={`flex flex-1 items-center gap-2 min-w-0 ${isDragging ? "pointer-events-none" : ""}`}
-        >
-          <span className="w-16 shrink-0 text-xs text-muted-foreground">
-            {issue.identifier}
-          </span>
-          <IssueAgentActivityIndicator issueId={issue.id} />
-
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="truncate">{issue.title}</span>
-            {showChildProgress && (
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5">
-                <ProgressRing done={childProgress!.done} total={childProgress!.total} size={14} />
-                <span className="text-[11px] text-muted-foreground tabular-nums font-medium">
-                  {childProgress!.done}/{childProgress!.total}
-                </span>
-              </span>
-            )}
-            {showLabels && (
-              <span className="ml-1.5 hidden md:inline-flex shrink-0 items-center gap-1 max-w-[260px] overflow-hidden">
-                {labels.slice(0, 3).map((label) => (
-                  <LabelChip key={label.id} label={label} />
-                ))}
-                {labels.length > 3 && (
-                  <span className="text-[11px] text-muted-foreground">
-                    +{labels.length - 3}
-                  </span>
-                )}
-              </span>
-            )}
-          </span>
-          {showProject && (
-            <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground max-w-[140px]">
-              <ProjectIcon project={project} size="sm" />
-              <span className="truncate">{project!.title}</span>
-            </span>
-          )}
-          {showStartDate && (
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {formatDate(issue.start_date!)}
-            </span>
-          )}
-          {showDueDate && (
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {formatDate(issue.due_date!)}
-            </span>
-          )}
-          {showAssignee && (
-            <ActorAvatar
-              actorType={issue.assignee_type!}
-              actorId={issue.assignee_id!}
-              size={20}
-              enableHoverCard
-            />
-          )}
-        </AppLink>
+        {pane ? (
+          // Master-detail: open the issue in the project side pane instead of
+          // routing the whole window away. Keeps the list visible. A role=button
+          // div (not a <button>) so nested interactive content stays valid.
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => pane.openIssue(issue.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                pane.openIssue(issue.id);
+              }
+            }}
+            aria-current={isActive ? "true" : undefined}
+            className={`flex flex-1 items-center gap-2 min-w-0 cursor-pointer text-left ${isDragging ? "pointer-events-none" : ""}`}
+          >
+            {rowInner}
+          </div>
+        ) : (
+          <AppLink
+            href={p.issueDetail(issue.id)}
+            className={`flex flex-1 items-center gap-2 min-w-0 ${isDragging ? "pointer-events-none" : ""}`}
+          >
+            {rowInner}
+          </AppLink>
+        )}
       </div>
     </IssueActionsContextMenu>
   );

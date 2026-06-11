@@ -25,6 +25,7 @@ import type { ChildProgress } from "./list-row";
 import { IssueActionsContextMenu } from "../actions";
 import { LabelChip } from "../../labels/label-chip";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
+import { useIssuePane } from "./issue-pane";
 import { useT } from "../../i18n";
 
 function formatDate(date: string): string {
@@ -314,6 +315,8 @@ const animateLayoutChanges: AnimateLayoutChanges = (args) => {
 
 export const DraggableBoardCard = memo(function DraggableBoardCard({ issue, childProgress, disableSorting }: { issue: Issue; childProgress?: ChildProgress; disableSorting?: boolean }) {
   const p = useWorkspacePaths();
+  const pane = useIssuePane();
+  const isActive = pane?.activeIssueId === issue.id;
   const {
     attributes,
     listeners,
@@ -342,12 +345,34 @@ export const DraggableBoardCard = memo(function DraggableBoardCard({ issue, chil
         {...listeners}
         className={`group/card ${isDragging ? "opacity-30" : ""}`}
       >
-        <AppLink
-          href={p.issueDetail(issue.id)}
-          className={`group block transition-colors ${isDragging ? "pointer-events-none" : ""}`}
-        >
-          <BoardCardContent issue={issue} editable childProgress={childProgress} />
-        </AppLink>
+        {pane ? (
+          // Master-detail: open the issue in the project's side pane instead of
+          // navigating the whole window away. Keeps the board visible. A
+          // role=button div (not a <button>) so the inline pickers nested in
+          // the card stay valid interactive content.
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => pane.openIssue(issue.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                pane.openIssue(issue.id);
+              }
+            }}
+            aria-current={isActive ? "true" : undefined}
+            className={`group block w-full cursor-pointer text-left transition-colors ${isDragging ? "pointer-events-none" : ""} ${isActive ? "rounded-lg ring-2 ring-primary ring-offset-1 ring-offset-background" : ""}`}
+          >
+            <BoardCardContent issue={issue} editable childProgress={childProgress} />
+          </div>
+        ) : (
+          <AppLink
+            href={p.issueDetail(issue.id)}
+            className={`group block transition-colors ${isDragging ? "pointer-events-none" : ""}`}
+          >
+            <BoardCardContent issue={issue} editable childProgress={childProgress} />
+          </AppLink>
+        )}
       </div>
     </IssueActionsContextMenu>
   );
