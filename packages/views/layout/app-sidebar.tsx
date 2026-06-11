@@ -426,7 +426,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
         ? list.find((w) => w.id === invitation.workspace_id)
         : null;
       if (joined) {
-        push(paths.workspace(joined.slug).projects());
+        push(paths.workspace(joined.slug).root());
       }
     },
   });
@@ -520,7 +520,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                       <DropdownMenuItem
                         key={ws.id}
                         render={
-                          <AppLink href={paths.workspace(ws.slug).projects()} />
+                          <AppLink href={paths.workspace(ws.slug).root()} />
                         }
                       >
                         <WorkspaceAvatar name={ws.name} size="sm" />

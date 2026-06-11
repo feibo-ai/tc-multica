@@ -121,7 +121,7 @@ export const appRoutes: RouteObject[] = [
           // are rewritten by the tab-store v3→v4 migration, so no in-app or
           // persisted path lands here; an escaped one auto-heals via
           // WorkspaceRouteLayout (desktop has no URL bar, so no deep links).
-          { index: true, element: <Navigate to="projects" replace /> },
+          { index: true, element: <Navigate to="team" replace /> },
           {
             path: "issues/:id",
             element: <IssueDetailPage />,

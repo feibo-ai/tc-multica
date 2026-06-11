@@ -36,7 +36,7 @@ export function resolvePostAuthDestination(
   }
   const first = workspaces[0];
   if (first) {
-    return paths.workspace(first.slug).projects();
+    return paths.workspace(first.slug).root();
   }
   return paths.newWorkspace();
 }
