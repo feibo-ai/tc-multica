@@ -1,0 +1,31 @@
+{
+  "tab": "Team",
+  "projects_tab": "Projects",
+  "you": "You",
+  "empty": "No team members yet",
+  "agents_running": "{{n}} agents running",
+  "agents_idle": "No agents running",
+  "metrics": {
+    "projects": "Projects led / in",
+    "agents": "Agents (running)",
+    "autopilots": "Automations",
+    "ai_usage": "AI usage (week / month)"
+  },
+  "metrics_help": {
+    "projects": "Projects this person leads (or is DRI of) / takes part in",
+    "agents": "Agents this person owns, and how many are running right now — agent activity, not whether the person is online",
+    "autopilots": "Scheduled automations (daily/weekly digests, patrols) this person owns",
+    "ai_usage": "AI tokens used this week / this month, which is roughly the cost"
+  },
+  "distribution": "Tasks",
+  "blocked_help": "Tasks stuck in the blocked status",
+  "status": {
+    "backlog": "Backlog",
+    "todo": "To do",
+    "in_progress": "In progress",
+    "in_review": "In review",
+    "done": "Done",
+    "blocked": "Stuck",
+    "cancelled": "Cancelled"
+  }
+}

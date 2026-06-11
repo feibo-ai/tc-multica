@@ -1,5 +1,26 @@
 # Releases
 
+## v0.4.16
+
+团队总览页 + 侧边栏底部化/折叠 + 项目主从布局（TEA-104 · 前端三波次）。
+
+### 团队总览页（新「团队」tab · 默认落地）
+- 新 `GET /api/team/overview` 单聚合端点（7 个 GROUP-BY，query 数与成员数无关 · N2），多租户 `workspace_id` 全隔离、UUID 走 `parseUUIDOrBadRequest`，zod + `parseWithFallback` 抗漂移。
+- 前端 `/{ws}/team` 全员大卡（web + desktop 双端）：负责/参与项目 · 智能体运行中 · 自动化任务 · AI 用量 · 任务状态分布——全通俗中文指标名 + hover 解释、a11y dot+文字、零 emoji。
+- 工作区默认落地从项目页翻到 `/team`，侧边栏新增「团队」入口。
+
+### 侧边栏
+- 「搜索 / 新建issue」从顶部移到底部 footer，新增可持久化的 icon 折叠（复用 shadcn SidebarProvider）。
+
+### 项目主从布局
+- 点 issue 在右栏内嵌 issue 详情（`?issue=` URL 驱动 · web + desktop），保留「侧边栏 + 项目栏 + issue详情」三栏不再整页跳走；My Issues / issues 页 / actor 面板导航零回归。
+
+### 修复
+- `CountRunningAgentsByOwner` 队列状态过滤修正为 `('queued','dispatched','running')`（原误用 `'claimed'`/`'in_progress'` 非队列枚举、漏 `queued`，致「智能体运行中」少报）。
+
+### 升级
+- 自更：daemon 设 `MULTICA_DAEMON_AUTO_UPDATE=true` 后自动升级；手动 `multica update` 或重跑 `scripts/install.sh`。
+
 ## v0.4.15
 
 真无感自更安全子系统(⑨⑩)+ stage-4 吊销 + Phase-1 收敛。

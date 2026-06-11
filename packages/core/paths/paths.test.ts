@@ -9,8 +9,9 @@ describe("paths.workspace(slug)", () => {
     expect(ws.issues()).toBe("/acme/issues");
     expect(ws.issueDetail("abc-123")).toBe("/acme/issues/abc-123");
     expect(ws.projects()).toBe("/acme/projects");
-    // Workspace home merged onto the unified project tab (was /acme/issues).
-    expect(ws.root()).toBe("/acme/projects");
+    expect(ws.team()).toBe("/acme/team");
+    // Workspace home = the team overview (TEA-104); was the project tab.
+    expect(ws.root()).toBe("/acme/team");
     expect(ws.projectDetail("p1")).toBe("/acme/projects/p1");
     expect(ws.autopilots()).toBe("/acme/autopilots");
     expect(ws.autopilotDetail("a1")).toBe("/acme/autopilots/a1");

@@ -844,3 +844,41 @@ export const EMPTY_INTEGRATION_STATUS: import("../types").IntegrationStatusSumma
   config_version: 0,
   active_deployment: null,
 };
+
+// Team overview — one card per workspace member for the /{slug}/team page
+// (GET /api/team/overview). Every field is defaulted so a future backend that
+// drops or renames one degrades to a safe zero rather than white-screening the
+// boss's whole team view (API Response Compatibility).
+export const TeamOverviewMemberSchema = z.object({
+  member_id: z.string().default(""),
+  user_id: z.string().default(""),
+  name: z.string().default(""),
+  email: z.string().default(""),
+  avatar_url: z.string().default(""),
+  role: z.string().default(""),
+  is_self: z.boolean().default(false),
+  squad_name: z.string().default(""),
+  projects_led: z.number().default(0),
+  projects_dri: z.number().default(0),
+  issues_by_status: z.record(z.string(), z.number()).default({}),
+  issues_total: z.number().default(0),
+  issues_blocked: z.number().default(0),
+  agents_total: z.number().default(0),
+  agents_running: z.number().default(0),
+  autopilots: z.number().default(0),
+  tokens_week: z.number().default(0),
+  tokens_month: z.number().default(0),
+}).loose();
+
+export const TeamOverviewSchema = z.object({
+  viewer_member_id: z.string().default(""),
+  members: z.array(TeamOverviewMemberSchema).default([]),
+}).loose();
+
+export type TeamOverviewMember = z.infer<typeof TeamOverviewMemberSchema>;
+export type TeamOverview = z.infer<typeof TeamOverviewSchema>;
+
+export const EMPTY_TEAM_OVERVIEW: TeamOverview = {
+  viewer_member_id: "",
+  members: [],
+};

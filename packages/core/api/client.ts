@@ -178,6 +178,9 @@ import {
   SecretValueSchema,
   EMPTY_INTEGRATION,
   EMPTY_INTEGRATION_STATUS,
+  TeamOverviewSchema,
+  EMPTY_TEAM_OVERVIEW,
+  type TeamOverview,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -1035,6 +1038,18 @@ export class ApiClient {
       DashboardAmbientUsageByPersonListSchema,
       [],
       { endpoint: "GET /api/dashboard/usage/ambient/by-person" },
+    );
+  }
+
+  // Team overview — one card per workspace member for the /{slug}/team page.
+  // Workspace scope rides on the X-Workspace-ID header like the dashboard reads.
+  async getTeamOverview(): Promise<TeamOverview> {
+    const raw = await this.fetch<unknown>("/api/team/overview");
+    return parseWithFallback<TeamOverview>(
+      raw,
+      TeamOverviewSchema,
+      EMPTY_TEAM_OVERVIEW,
+      { endpoint: "GET /api/team/overview" },
     );
   }
 

@@ -663,6 +663,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Get("/runtime/daily", h.GetDashboardRunTimeDaily)
 			})
 
+			// Team overview — one card per workspace member (projects, issues by
+			// status, agents, autopilots, token usage) for the "/{slug}/team" page.
+			r.Route("/api/team", func(r chi.Router) {
+				r.Get("/overview", h.GetTeamOverview)
+			})
+
 			// Runtimes
 			r.Route("/api/runtimes", func(r chi.Router) {
 				r.Get("/", h.ListAgentRuntimes)

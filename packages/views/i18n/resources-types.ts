@@ -27,6 +27,7 @@ import type layout from "../locales/en/layout.json";
 import type usage from "../locales/en/usage.json";
 import type squads from "../locales/en/squads.json";
 import type integrations from "../locales/en/integrations.json";
+import type team from "../locales/en/team.json";
 
 // Module augmentation enables i18next v26 selector API across the monorepo:
 // `t($ => $.signin.title)` resolves to the value in en/auth.json.
@@ -68,6 +69,7 @@ declare global {
     usage: typeof usage;
     squads: typeof squads;
     integrations: typeof integrations;
+    team: typeof team;
   }
 }
 

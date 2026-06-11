@@ -16,6 +16,7 @@ import { RuntimeDetailPage } from "./pages/runtime-detail-page";
 import { AttachmentPreviewRoute } from "./pages/attachment-preview-page";
 import { ProjectsPage } from "@multica/views/projects/components";
 import { DashboardPage } from "@multica/views/dashboard";
+import { TeamOverviewPage } from "@multica/views/team";
 import { AutopilotsPage } from "@multica/views/autopilots/components";
 import { MyIssuesPage } from "@multica/views/my-issues";
 import { SkillsPage } from "@multica/views/skills";
@@ -120,7 +121,7 @@ export const appRoutes: RouteObject[] = [
           // are rewritten by the tab-store v3→v4 migration, so no in-app or
           // persisted path lands here; an escaped one auto-heals via
           // WorkspaceRouteLayout (desktop has no URL bar, so no deep links).
-          { index: true, element: <Navigate to="projects" replace /> },
+          { index: true, element: <Navigate to="team" replace /> },
           {
             path: "issues/:id",
             element: <IssueDetailPage />,
@@ -139,6 +140,15 @@ export const appRoutes: RouteObject[] = [
             path: "projects/:id",
             element: <ProjectDetailPage />,
             handle: { title: "Project" },
+          },
+          {
+            path: "team",
+            element: (
+              <ErrorBoundary>
+                <TeamOverviewPage />
+              </ErrorBoundary>
+            ),
+            handle: { title: "Team" },
           },
           {
             path: "autopilots",

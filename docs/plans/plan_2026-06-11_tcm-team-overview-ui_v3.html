@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tcm-team-overview-ui</title>
+<style>
+:root{--ink:#1A1A1A;--ink2:#2D2D2D;--paper:#F5F2EB;--paper2:#EDE8DC;--accent:#C73E1D;--gray:#8B8680;--border:#D4CFC4;--green:#4A6B3A;--gold:#B8862E}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Songti SC","Noto Serif SC",Georgia,serif;background:var(--paper);color:var(--ink);line-height:1.8;font-size:15px;padding:48px 40px;max-width:760px;margin:0 auto}
+.eyebrow{font-family:"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+h1{font-weight:900;font-size:40px;line-height:1.15;letter-spacing:-1px;margin-bottom:18px;border-bottom:3px double var(--ink);padding-bottom:20px}
+.meta{display:flex;gap:32px;flex-wrap:wrap;font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--gray);margin-bottom:36px}
+.meta b{color:var(--ink);font-weight:600}
+h2{font-weight:700;font-size:22px;margin:36px 0 14px;padding-left:14px;border-left:4px solid var(--accent)}
+.field{background:#fff;border:1px solid var(--border);padding:18px 22px;margin-bottom:14px}
+.field-label{font-family:"SF Mono",Menlo,monospace;font-size:10px;letter-spacing:1.5px;color:var(--gray);text-transform:uppercase;margin-bottom:6px}
+ul{list-style:none;margin:8px 0}
+li{padding:6px 0 6px 24px;position:relative}
+li::before{content:"▸";position:absolute;left:4px;color:var(--accent)}
+.crit li::before{content:"☐";color:var(--green)}
+code{font-family:"SF Mono",Menlo,monospace;background:var(--paper2);padding:1px 6px;border-radius:2px;font-size:13px}
+.callout{background:var(--paper2);border-left:4px solid var(--gold);padding:14px 18px;margin:18px 0;font-size:14px}
+footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--border);font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--gray)}
+</style></head>
+<body>
+<div class="eyebrow">PLAN · 计划 · project</div>
+<h1>tcm-team-overview-ui</h1>
+<div class="meta"><span>DRI <b>待 kickoff 认领（建议:发起人本人）</b></span><span>Layer <b>project</b></span><span>Appetite <b>约 2–2.5 周。波次1 团队总览页（后端单聚合端点 + 前端页/卡 + 默认落地改 /team 全 callsite）≈1–1.5 周 → 波次2 侧边栏 ≈1 天 → 波次3 项目主从布局 ≈2–3 天。计划评审 v1 changes-requested(B1/B2/B3)、设计评审 v1 changes-requested(B-D1/2/3) 均已折入。任一波次超时触发 plan-upgrade。</b></span></div>
+<h2>目标</h2><div class="field"><div class="field-label">Goal</div>tc-multica 前端三块改造，一个 plan 分 3 波次：① 新增「团队」顶部 tab 总览页——全员默认落地、全员可见全员，每个成员一张高密度信息卡（封闭清单维度，全通俗中文命名 + 关键含义常显，无英文行话），让 boss 一眼看清每个人在干什么、当前状态如何；② 侧边栏「搜索 / 新建issue」从顶部移到底部 + 新增可持久化的收缩功能；③ 项目页主从布局——点 issue 后保留「侧边栏 + 项目栏 + issue详情」三栏，不再整页跳走丢失列表栏。</div>
+<h2>完成标准</h2><div class="field crit"><ul><li>波次1·后端：GET /api/team/overview 端点活、挂 RequireWorkspaceMember 受保护组、所有 query 过 workspace_id，一次返回全员卡数据；【N2】端点 query 数与成员数无关——GROUP BY 一次聚合、handler 内不循环 N 次（落一条 review 检查项）；卡数据含默认排序键（卡住 &gt; 满负荷 &gt; 活跃，后端给）；make sqlc 无 drift；go test ./internal/handler/ 绿；端点配 zod + parseWithFallback + ≥1 喂坏数据测试。</li><li>波次1·前端：新路由 /[workspaceSlug]/team；顶部「团队 | 项目」tab；成员卡网格 web + desktop 双端渲染；落 packages/views/team/（core 零 react-dom/next，views 零 next）；【N-D1】视觉与数据复用既有 profile card 体系（member-profile-card 的 ActorAvatar/RoleBadge/min-w-0 模式）+ sparkline.tsx + chart token 堆叠条，不另造；当前用户自己的卡视觉置顶/高亮。</li><li>波次1·设计·a11y（B-D2·硬约束）：健康徽章/角色 pill/状态一律 dot(bg-success/warning/destructive token) + text-foreground 文字标签，禁用彩色文字 / 禁用 Badge destructive variant / 禁照抄 squad-profile-card leader chip（均违 case TEA-70）；任务分布堆叠条图例 = 彩点 + 文字标签 + 数字 三件套，「卡住」段用 --warning/--destructive 跳出蓝阶（chart-1..5 是同色相明度阶、色盲不可辨）；无硬编码 Tailwind 色（走 OKLCH token）；零 emoji。</li><li>波次1·设计·状态口径（B-D1·硬约束）：头部「当前状态」落 agent 口径——「智能体 N 运行中 / 空闲」（基于 AgentTaskQueue active + squad LastActiveAt 代理），不假装人 online presence（团队无真人 presence 后端，member-profile-card:22 已拒绝伪造）；tooltip 写清「按最近任务派发估算」。</li><li>波次1·设计·信息层级（B-D3）：8 指标的单位/含义常显（副标题或常驻小字），hover tooltip 仅作补充、不作唯一载体（触屏可达）；数字块分主次——关键信号（卡住/满负荷/在跑）显著上浮，AI用量/提交数次要弱化，不 4×2 等权平铺。</li><li>波次2·侧边栏（B3·复用 shadcn）：搜索 + 新建issue 移到 SidebarFooter 仍可触发；收缩复用既有 SidebarProvider 折叠态（collapsible=&#x27;icon&#x27; + cookie sidebar_state 持久化），dashboard-layout 透传 defaultOpen，不新建 Zustand store；折叠态下「新建issue」保留可识别图标 + tooltip（高频动作不藏死）。</li><li>波次3·主从布局（B2·可选回调）：board-card/list-row 加可选 onSelect/onIssueClick 回调、默认 fallback AppLink；仅 project-detail 传 select → 受控 selectedIssueId（store + ?issue= URL 同步）→ 内嵌 IssueDetail（复用 onDelete/onDone）；选中行有高亮、有显式返回入口（关闭/Esc）；my-issues/issues-page/actor-issues-panel 三共享面导航不受影响；深链 /issues/[id] 仍全屏直达；desktop 经 URL param 同步对齐 Route categories/Tab isolation。</li><li>全程：make check 全绿；原子 Conventional 提交；每段 AI diff commit 前过人眼；严守包边界（页放 views 双端挂载不复制、UI 用 packages/ui Base UI/shadcn）。</li></ul></div>
+<h2>分工</h2><div class="field"><div class="field-label">Roles</div>DRI <code>待 kickoff 认领（建议:发起人本人）</code> · EXEC <code>Claude Code（Implement 会话）</code> · COLLAB <code>(无)</code> · REVIEW <code>第二个 Claude session（staff-eng:计划可行性 lens + 设计 lens 两轮）</code></div>
+<h2>投入预算</h2><div class="callout"><b>约 2–2.5 周。波次1 团队总览页（后端单聚合端点 + 前端页/卡 + 默认落地改 /team 全 callsite）≈1–1.5 周 → 波次2 侧边栏 ≈1 天 → 波次3 项目主从布局 ≈2–3 天。计划评审 v1 changes-requested(B1/B2/B3)、设计评审 v1 changes-requested(B-D1/2/3) 均已折入。任一波次超时触发 plan-upgrade。</b> · 超时触发升版强制重审。</div>
+<h2>方案</h2><div class="field">## 来源 + 两轮评审
+设计经 brainstorming 与用户对齐并批准（两版团队卡 mockup）。① 计划可行性评审 v1→changes-requested(B1 默认落地 blast radius / B2 卡片点击波及 4 面 / B3 侧栏折叠重复造)→v2 approved。② 设计评审 v1→changes-requested(B-D1 活跃语义误导 / B-D2 徽章 a11y 违规继承 / B-D3 含义只挂 hover+数字块无主次)→本 v3 折入。
+
+## 仓库角色与数据地基
+tc-multica 是平台本体。关键洞察：团队卡的「平均交付天数 / 复盘覆盖率 / 本周完成 / AI 用量」恰是 cap-hardening P0 交付度量层的指标按【人】切——与 TEA-55 共享数据地基，是交付度量的「按人视图」。
+
+## 波次1 · 团队总览页（最重，含后端）
+后端聚合 query（只补只读聚合，镜像 task_usage.sql，绝不手改 generated；【N2】GROUP BY 一次聚合不循环）：项目 lead/DRI/参与数、issue 按 assignee+status 分组、agents by owner + 运行中、autopilot by created_by、squad、项目进度、活动 feed、默认排序键。成员列表(ListMembersWithUser)+token(ListDashboardUsageByPerson，已全员可见)复用。平均交付天数走 issue.FirstExecutedAt→CompletedAt 代理（精确依赖未建的 issue_event 表）。新 handler server/internal/handler/team.go，单聚合端点 GET /api/team/overview。前端 packages/views/team/ + packages/core/team/，web+desktop 双端。
+
+## 波次1 · 默认落地改 /team（B1·全 callsite）
+改 packages/core/paths/paths.ts root() 单点真相 + 扫所有 callsite（paths/resolve、app-sidebar 切ws、create-workspace、onboarding、workspaces/new、issues/page、desktop window-overlay ×2、desktop routes index Navigate），grep 验残留=0。
+
+## 波次1 · 设计折入（设计评审 changes-requested）
+- **B-D1 状态口径**：无真人 presence 后端（member-profile-card:22-26 刻意拒绝伪造）→ 头部状态落 agent 口径「智能体 N 运行中/空闲」（AgentTaskQueue active + squad.go LastActiveAt 代理），不假装人 online，tooltip 注明估算。
+- **B-D2 a11y**：badge.tsx destructive(彩字浅tint) 与 squad-profile-card:173(硬编码 amber 彩字) 均违 TEA-70 → 徽章/pill/状态走 dot(bg-token)+text-foreground，复用 presence.ts / member-profile-card RoleBadge(bg-muted text-muted-foreground) 合规范本；堆叠条图例彩点+文字+数字、卡住段 --warning/--destructive 跳蓝阶。
+- **B-D3 信息层级**：含义常显非纯 hover（触屏可达），数字块分主次（卡住/满负荷/在跑上浮）。
+- **N-D1/N-D2 复用**：复用 member/agent/squad profile-card 三件套的视觉语言 + sparkline.tsx + daily-tasks-chart 的 var(--chart-1..5) 堆叠模式，不另造。
+- **N-D5/N-D6 boss 视角**：卡片默认按 卡住&gt;满负荷&gt;活跃 排序，当前用户卡置顶高亮。
+
+## 波次2 · 侧边栏（B3·复用 shadcn）
+app-sidebar.tsx：搜索/新建issue 从 SidebarHeader 移 SidebarFooter；收缩复用 SidebarProvider(collapsible=&#x27;icon&#x27; + cookie sidebar_state)，dashboard-layout 透传 defaultOpen，不建 Zustand store；折叠态新建保留图标+tooltip。
+
+## 波次3 · 项目主从布局（B2·可选回调 + 落点纠错）
+board-card.tsx/list-row.tsx 在 packages/views/ISSUES/components/（非 projects），被 4 处复用 → 加可选 onSelect 回调、默认 fallback AppLink；仅 project-detail 传 select → selectedIssueId(store+?issue= URL) → 内嵌 IssueDetail(onDelete/onDone 清选中)；选中行高亮 + Esc/关闭返回；desktop ?issue= 挂 projects/:id 对齐 Tab isolation；深链 /issues/[id] 保留。
+
+## 三技术决策（已定）
+独立路由 /team · 单聚合端点 /api/team/overview · 受控 selectedIssueId+URL 同步。
+
+## 已决策记录
+- 隐私：团队页全员可见全员 per 用户明确选择，与现状 /api/dashboard/usage/by-person 已全员可见一致，非回归。
+- 默认落地：per 用户要求保留 /team 默认，按全 callsite 正确实施。
+
+## 硬约束
+包边界（core 零 react-dom/next、views 零 next、整页放 views 双端挂载、UI 用 packages/ui）· TDD（测试放对包）· drift-defense（zod+parseWithFallback+malformed 测试，不裸 as）· 多租户（workspace_id + parseUUIDOrBadRequest + X-Workspace-ID）· sqlc 工作流 · 原子提交 · diff 过人眼 · 每波次 case 收尾。
+
+## 通俗命名（封闭清单 · 无行话 · 含义常显+hover 补充）
+平均交付天数 · 代码提交/已合并(对无代码活动成员隐藏不显 0) · 自动化任务 · 复盘覆盖率(去掉歧义的「达标率」) · AI 用量 · 智能体/运行中 · 角色 负责人/管理员/成员 · 任务分布 · 卡住。</div>
+<footer>team-context · RPI Plan phase · multica issue 内渲染</footer>
+</body></html>

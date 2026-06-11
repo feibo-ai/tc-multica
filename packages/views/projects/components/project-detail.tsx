@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
-import { Check, ChevronRight, Link2, ListTodo, MoreHorizontal, PanelRight, Pin, PinOff, Plus, Trash2, UserMinus } from "lucide-react";
+import { Check, ChevronRight, Link2, ListTodo, MoreHorizontal, PanelRight, Pin, PinOff, Plus, Trash2, UserMinus, X } from "lucide-react";
 import { useQuery, type QueryKey } from "@tanstack/react-query";
 import { cn } from "@multica/ui/lib/utils";
 import { toast } from "sonner";
@@ -46,6 +46,8 @@ import { ListView } from "../../issues/components/list-view";
 import { GanttView } from "../../issues/components/gantt-view";
 import { SwimLaneView } from "../../issues/components/swimlane-view";
 import { BatchActionToolbar } from "../../issues/components/batch-action-toolbar";
+import { IssueDetail } from "../../issues/components/issue-detail";
+import { IssuePaneProvider } from "../../issues/components/issue-pane";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Button } from "@multica/ui/components/ui/button";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@multica/ui/components/ui/resizable";
@@ -427,6 +429,65 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   // properties stays one click away via the PanelRight toggle.
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // Master-detail: clicking an issue in the board/list opens it in the right
+  // pane (reusing the properties-panel slot) instead of routing the window
+  // away, so the project's issue list stays visible. The selection lives in
+  // the URL (`?issue=<id>`) so it survives reloads and shared links. We use
+  // `replace` (not `push`) so previewing issues doesn't spam the history
+  // stack — closing returns to wherever the user was before the project,
+  // not back through each previewed issue.
+  const selectedIssueId = router.searchParams.get("issue") || null;
+  const revealRightPane = useCallback(() => {
+    if (isMobile) {
+      setMobileSidebarOpen(true);
+    } else {
+      sidebarRef.current?.expand();
+      setDesktopSidebarOpen(true);
+    }
+  }, [isMobile, sidebarRef]);
+  // Preserve any other query params on the project URL — only the `issue`
+  // key is ours to add / remove.
+  const issueUrl = useCallback(
+    (nextIssueId: string | null) => {
+      const params = new URLSearchParams(router.searchParams);
+      if (nextIssueId) params.set("issue", nextIssueId);
+      else params.delete("issue");
+      const qs = params.toString();
+      const base = wsPaths.projectDetail(projectId);
+      return qs ? `${base}?${qs}` : base;
+    },
+    [router, wsPaths, projectId],
+  );
+  const openIssue = useCallback(
+    (issueId: string) => {
+      router.replace(issueUrl(issueId));
+      revealRightPane();
+    },
+    [router, issueUrl, revealRightPane],
+  );
+  const closeIssue = useCallback(() => {
+    router.replace(issueUrl(null));
+  }, [router, issueUrl]);
+  const issuePane = useMemo(
+    () => ({ activeIssueId: selectedIssueId, openIssue }),
+    [selectedIssueId, openIssue],
+  );
+  // Esc closes the detail pane unless an inner field/popover already handled it.
+  useEffect(() => {
+    if (!selectedIssueId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented) closeIssue();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedIssueId, closeIssue]);
+  // A deep-link / reload arriving with `?issue=` must reveal the pane, which
+  // otherwise defaults to collapsed. Fires only when the id changes, so a user
+  // who manually collapses the pane mid-view is not fought.
+  useEffect(() => {
+    if (selectedIssueId) revealRightPane();
+  }, [selectedIssueId, revealRightPane]);
   const sidebarOpen = isMobile ? mobileSidebarOpen : desktopSidebarOpen;
 
   useEffect(() => {
@@ -795,11 +856,13 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           </PageHeader>
 
           <ViewStoreProvider store={projectViewStore}>
-              <ProjectIssuesSurface
-                projectId={projectId}
-                scope={projectScope}
-                filter={projectFilter}
-              />
+              <IssuePaneProvider value={issuePane}>
+                <ProjectIssuesSurface
+                  projectId={projectId}
+                  scope={projectScope}
+                  filter={projectFilter}
+                />
+              </IssuePaneProvider>
             </ViewStoreProvider>
           </div>
         </ResizablePanel>
@@ -815,17 +878,68 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           panelRef={sidebarRef}
           onResize={(size) => setDesktopSidebarOpen(size.inPixels > 0)}
         >
-          <div className="overflow-y-auto border-l h-full">
-            <div className="p-4">
-              {sidebarContent}
+          {selectedIssueId ? (
+            <div className="flex h-full flex-col border-l">
+              <div className="flex h-9 shrink-0 items-center justify-end border-b px-2">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground"
+                  title={t(($) => $.detail.issue_pane_close)}
+                  onClick={closeIssue}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="min-h-0 flex-1">
+                <IssueDetail
+                  key={selectedIssueId}
+                  issueId={selectedIssueId}
+                  onDone={closeIssue}
+                  onDelete={closeIssue}
+                  defaultSidebarOpen={false}
+                  layoutId="multica_project_issue_pane_layout"
+                />
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="overflow-y-auto border-l h-full">
+              <div className="p-4">
+                {sidebarContent}
+              </div>
+            </div>
+          )}
         </ResizablePanel>
         )}
         {isMobile && (
-          <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-            <SheetContent side="right" showCloseButton={false} className="w-[320px] overflow-y-auto p-4">
-              {sidebarContent}
+          <Sheet
+            open={mobileSidebarOpen || !!selectedIssueId}
+            onOpenChange={(open) => {
+              setMobileSidebarOpen(open);
+              if (!open && selectedIssueId) closeIssue();
+            }}
+          >
+            <SheetContent
+              side="right"
+              showCloseButton={false}
+              className={
+                selectedIssueId
+                  ? "w-[92vw] max-w-[460px] overflow-y-auto"
+                  : "w-[320px] overflow-y-auto p-4"
+              }
+            >
+              {selectedIssueId ? (
+                <IssueDetail
+                  key={selectedIssueId}
+                  issueId={selectedIssueId}
+                  onDone={closeIssue}
+                  onDelete={closeIssue}
+                  defaultSidebarOpen={false}
+                  layoutId="multica_project_issue_pane_layout"
+                />
+              ) : (
+                sidebarContent
+              )}
             </SheetContent>
           </Sheet>
         )}

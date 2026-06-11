@@ -17,16 +17,17 @@ const encode = (id: string) => encodeURIComponent(id);
 function workspaceScoped(slug: string) {
   const ws = `/${encode(slug)}`;
   return {
-    // Workspace home = the unified project tab (was `/issues`). The Issues and
-    // Projects top-level tabs merged into `/projects`; `issues()` /
-    // `issueDetail()` stay as the legacy list route (now redirected on web)
-    // and the still-live individual issue pages respectively.
-    root: () => `${ws}/projects`,
+    // Workspace home = the team overview (TEA-104). `projects()` is still the
+    // projects page, just no longer the default landing. The legacy `/issues`
+    // route still redirects to `projects()` (issues merged into the projects
+    // tab); `issueDetail()` stays as the still-live individual issue page.
+    root: () => `${ws}/team`,
     usage: () => `${ws}/usage`,
     issues: () => `${ws}/issues`,
     issueDetail: (id: string) => `${ws}/issues/${encode(id)}`,
     projects: () => `${ws}/projects`,
     projectDetail: (id: string) => `${ws}/projects/${encode(id)}`,
+    team: () => `${ws}/team`,
     autopilots: () => `${ws}/autopilots`,
     autopilotDetail: (id: string) => `${ws}/autopilots/${encode(id)}`,
     agents: () => `${ws}/agents`,
