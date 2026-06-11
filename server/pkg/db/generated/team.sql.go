@@ -208,7 +208,7 @@ JOIN agent_task_queue q ON q.agent_id = a.id
 WHERE a.workspace_id = $1
   AND a.owner_id IS NOT NULL
   AND a.archived_at IS NULL
-  AND q.status IN ('claimed', 'dispatched', 'in_progress', 'running')
+  AND q.status IN ('queued', 'dispatched', 'running')
 GROUP BY a.owner_id
 `
 
@@ -217,9 +217,13 @@ type CountRunningAgentsByOwnerRow struct {
 	Count   int64       `json:"count"`
 }
 
-// Agents per owner that currently have an in-flight task (queue in a running
-// state). Powers the "智能体 N 运行中" signal — this is AGENT presence, not human
-// presence (there is deliberately no member-presence backbone; TEA-104 B-D1).
+// Agents per owner that currently have an in-flight task. Powers the
+// "智能体 N 运行中" signal — this is AGENT presence, not human presence
+// (there is deliberately no member-presence backbone; TEA-104 B-D1).
+// The active set matches the rest of the codebase (agent.sql / runtime.sql):
+// queued (claimed, awaiting pickup) + dispatched + running. The real
+// agent_task_queue.status domain is queued/dispatched/running/completed/
+// failed/cancelled — 'claimed'/'in_progress' are not queue states.
 func (q *Queries) CountRunningAgentsByOwner(ctx context.Context, workspaceID pgtype.UUID) ([]CountRunningAgentsByOwnerRow, error) {
 	rows, err := q.db.Query(ctx, countRunningAgentsByOwner, workspaceID)
 	if err != nil {

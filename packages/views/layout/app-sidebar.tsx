@@ -33,6 +33,7 @@ import {
   X,
   Zap,
   Users,
+  UsersRound,
   Plug,
 } from "lucide-react";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
@@ -107,6 +108,7 @@ type NavKey =
   | "inbox"
   | "myIssues"
   | "issues"
+  | "team"
   | "projects"
   | "autopilots"
   | "agents"
@@ -122,6 +124,7 @@ type NavLabelKey =
   | "inbox"
   | "my_issues"
   | "issues"
+  | "team"
   | "projects"
   | "autopilots"
   | "agents"
@@ -138,6 +141,7 @@ const personalNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] 
 ];
 
 const workspaceNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] = [
+  { key: "team", labelKey: "team", icon: UsersRound },
   // The Issues and Projects tabs merged into one unified entry at /projects.
   // Its in-tab toggle exposes the cross-project "All issues" flat view, so a
   // separate Issues nav entry would be a duplicate destination.

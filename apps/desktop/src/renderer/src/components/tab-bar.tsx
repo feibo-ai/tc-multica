@@ -7,6 +7,7 @@ import {
   Monitor,
   BookOpenText,
   Settings,
+  UsersRound,
   X,
   Plus,
   Pin,
@@ -55,6 +56,7 @@ const TAB_ICONS: Record<string, LucideIcon> = {
   Monitor,
   BookOpenText,
   Settings,
+  UsersRound,
 };
 
 function SortableTabItem({

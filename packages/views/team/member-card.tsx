@@ -9,12 +9,18 @@ import { useT } from "../i18n";
 // token so it breaks out of the chart-1..5 single-hue blue ramp (which is
 // colourblind-ambiguous on its own); the legend below always carries a text
 // label + count as well, so meaning never rides on colour alone (TEA-104 N-D3).
+// All seven issue statuses, in workflow order, so the bar + legend sum to
+// `issues_total` shown alongside (no header-number vs legend-sum mismatch).
+// Backlog / cancelled get muted tones; the legend carries text labels too, so
+// colour is never the sole signal (a11y).
 const STATUS_SEGMENTS = [
+  { key: "backlog", color: "var(--chart-5)" },
   { key: "todo", color: "var(--chart-1)" },
   { key: "in_progress", color: "var(--chart-2)" },
   { key: "in_review", color: "var(--chart-3)" },
   { key: "done", color: "var(--chart-4)" },
   { key: "blocked", color: "var(--destructive)" },
+  { key: "cancelled", color: "var(--muted-foreground)" },
 ] as const;
 
 type StatusKey = (typeof STATUS_SEGMENTS)[number]["key"];
@@ -47,6 +53,8 @@ export function TeamMemberCard({ member }: { member: TeamOverviewMember }) {
 
   const statusLabel = (key: StatusKey): string => {
     switch (key) {
+      case "backlog":
+        return t(($) => $.status.backlog);
       case "todo":
         return t(($) => $.status.todo);
       case "in_progress":
@@ -57,6 +65,8 @@ export function TeamMemberCard({ member }: { member: TeamOverviewMember }) {
         return t(($) => $.status.done);
       case "blocked":
         return t(($) => $.status.blocked);
+      case "cancelled":
+        return t(($) => $.status.cancelled);
     }
   };
 

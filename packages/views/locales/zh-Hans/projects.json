@@ -64,6 +64,7 @@
     "pin_tooltip": "固定到侧边栏",
     "unpin_tooltip": "从侧边栏取消固定",
     "sidebar_tooltip": "切换侧边栏",
+    "issue_pane_close": "关闭 issue",
     "copy_link": "复制链接",
     "delete_action": "删除项目",
     "section_properties": "属性",

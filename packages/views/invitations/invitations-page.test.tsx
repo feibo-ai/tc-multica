@@ -159,7 +159,7 @@ describe("InvitationsPage", () => {
         workspace_id: "ws-1",
       });
       expect(refreshMe).toHaveBeenCalled();
-      expect(navigate).toHaveBeenCalledWith("/acme/projects");
+      expect(navigate).toHaveBeenCalledWith("/acme/team");
     });
   });
 
