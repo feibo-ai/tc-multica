@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/jackc/pgx/v5/pgtype"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 // TeamOverviewMember is one member card for the team overview page (TEA-104).
@@ -35,6 +35,13 @@ type TeamOverviewMember struct {
 	IssuesByStatus map[string]int64 `json:"issues_by_status"`
 	IssuesTotal    int64            `json:"issues_total"`
 	IssuesBlocked  int64            `json:"issues_blocked"`
+
+	// AgentIssuesByStatus is the same status breakdown for issues assigned to
+	// this person's AGENTS (delegated work). Keyed by the same status enum. The
+	// card folds this into the task distribution so an AI-native team — which
+	// assigns issues to agents, not members — still sees real activity.
+	AgentIssuesByStatus map[string]int64 `json:"agent_issues_by_status"`
+	AgentIssuesTotal    int64            `json:"agent_issues_total"`
 
 	AgentsTotal   int64 `json:"agents_total"`
 	AgentsRunning int64 `json:"agents_running"`
@@ -99,6 +106,20 @@ func (h *Handler) buildTeamOverview(
 				issuesByMember[id] = map[string]int64{}
 			}
 			issuesByMember[id][row.Status] = row.Count
+		}
+	}
+
+	// Issues assigned to a member's agents (delegated work), keyed by user.id.
+	agentIssuesByUser := map[string]map[string]int64{}
+	if rows, err := h.Queries.CountAgentIssuesByOwnerStatus(ctx, workspaceID); err != nil {
+		return out, err
+	} else {
+		for _, row := range rows {
+			id := uuidToString(row.OwnerID)
+			if agentIssuesByUser[id] == nil {
+				agentIssuesByUser[id] = map[string]int64{}
+			}
+			agentIssuesByUser[id][row.Status] = row.Count
 		}
 	}
 
@@ -182,25 +203,36 @@ func (h *Handler) buildTeamOverview(
 			total += c
 		}
 
+		agentByStatus := agentIssuesByUser[userID]
+		if agentByStatus == nil {
+			agentByStatus = map[string]int64{}
+		}
+		var agentTotal int64
+		for _, c := range agentByStatus {
+			agentTotal += c
+		}
+
 		out.Members = append(out.Members, TeamOverviewMember{
-			MemberID:       memberID,
-			UserID:         userID,
-			Name:           m.UserName,
-			Email:          m.UserEmail,
-			AvatarURL:      m.UserAvatarUrl.String,
-			Role:           m.Role,
-			IsSelf:         memberID == viewerMemberID,
-			SquadName:      squadByMember[memberID],
-			ProjectsLed:    projectsLedByMember[memberID],
-			ProjectsDri:    projectsDriByUser[userID],
-			IssuesByStatus: byStatus,
-			IssuesTotal:    total,
-			IssuesBlocked:  byStatus["blocked"],
-			AgentsTotal:    agentsByUser[userID],
-			AgentsRunning:  runningAgentsByUser[userID],
-			Autopilots:     autopilotsByMember[memberID],
-			TokensWeek:     tokensWeekByUser[userID],
-			TokensMonth:    tokensMonthByUser[userID],
+			MemberID:            memberID,
+			UserID:              userID,
+			Name:                m.UserName,
+			Email:               m.UserEmail,
+			AvatarURL:           m.UserAvatarUrl.String,
+			Role:                m.Role,
+			IsSelf:              memberID == viewerMemberID,
+			SquadName:           squadByMember[memberID],
+			ProjectsLed:         projectsLedByMember[memberID],
+			ProjectsDri:         projectsDriByUser[userID],
+			IssuesByStatus:      byStatus,
+			IssuesTotal:         total,
+			IssuesBlocked:       byStatus["blocked"],
+			AgentIssuesByStatus: agentByStatus,
+			AgentIssuesTotal:    agentTotal,
+			AgentsTotal:         agentsByUser[userID],
+			AgentsRunning:       runningAgentsByUser[userID],
+			Autopilots:          autopilotsByMember[memberID],
+			TokensWeek:          tokensWeekByUser[userID],
+			TokensMonth:         tokensMonthByUser[userID],
 		})
 	}
 

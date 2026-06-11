@@ -50,6 +50,8 @@ function member(over: Partial<TeamOverviewMember>): TeamOverviewMember {
     issues_by_status: {},
     issues_total: 0,
     issues_blocked: 0,
+    agent_issues_by_status: {},
+    agent_issues_total: 0,
     agents_total: 0,
     agents_running: 0,
     autopilots: 0,

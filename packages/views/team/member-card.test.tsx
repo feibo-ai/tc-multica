@@ -29,6 +29,8 @@ function renderCard(member: Partial<TeamOverviewMember>) {
     issues_by_status: {},
     issues_total: 0,
     issues_blocked: 0,
+    agent_issues_by_status: {},
+    agent_issues_total: 0,
     agents_total: 0,
     agents_running: 0,
     autopilots: 0,
@@ -62,5 +64,23 @@ describe("TeamMemberCard", () => {
     expect(screen.getByText(/To do/)).toBeInTheDocument();
     expect(screen.getByText(/Stuck/)).toBeInTheDocument();
     expect(screen.getByText("5")).toBeInTheDocument();
+  });
+
+  it("folds agent-delegated tasks into the distribution total", () => {
+    // An AI-native team's own-task counts are usually zero; the work is on the
+    // agents. The total must reflect own + agent-delegated, not just own.
+    renderCard({
+      issues_total: 1,
+      issues_by_status: { todo: 1 },
+      agent_issues_total: 4,
+      agent_issues_by_status: { in_progress: 4 },
+    });
+    // own (1) + agent-delegated (4) = 5; would read "1" if agent work were dropped.
+    expect(screen.getByText("5")).toBeInTheDocument();
+    // The agent-delegated status shows a non-zero count in the legend.
+    const inProgress = screen
+      .getAllByText(/In progress/)
+      .find((el) => el.textContent?.includes("4"));
+    expect(inProgress).toBeDefined();
   });
 });

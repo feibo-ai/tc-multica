@@ -34,6 +34,9 @@ describe("TeamOverviewSchema drift-defense", () => {
     expect(m.agents_running).toBe(0);
     expect(m.tokens_week).toBe(0);
     expect(m.issues_by_status.blocked).toBe(1);
+    // Delegated-task fields the member omitted default safely (drift contract).
+    expect(m.agent_issues_total).toBe(0);
+    expect(m.agent_issues_by_status).toEqual({});
   });
 
   it("degrades to the fallback when members is the wrong type", () => {

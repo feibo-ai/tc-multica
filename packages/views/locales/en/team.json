@@ -6,18 +6,19 @@
   "agents_running": "{{n}} agents running",
   "agents_idle": "No agents running",
   "metrics": {
-    "projects": "Projects led / in",
-    "agents": "Agents (running)",
+    "projects": "Projects · lead / DRI",
+    "agents": "Agents",
     "autopilots": "Automations",
     "ai_usage": "AI usage (week / month)"
   },
   "metrics_help": {
-    "projects": "Projects this person leads (or is DRI of) / takes part in",
-    "agents": "Agents this person owns, and how many are running right now — agent activity, not whether the person is online",
+    "projects": "Projects this person leads / is DRI of (first number is lead, second is DRI)",
+    "agents": "Total agents this person owns; how many are running right now shows in the status above the card",
     "autopilots": "Scheduled automations (daily/weekly digests, patrols) this person owns",
     "ai_usage": "AI tokens used this week / this month, which is roughly the cost"
   },
   "distribution": "Tasks",
+  "distribution_help": "Tasks assigned to this person plus their agents, by status (an AI-native team's work mostly sits on the agents)",
   "blocked_help": "Tasks stuck in the blocked status",
   "status": {
     "backlog": "Backlog",

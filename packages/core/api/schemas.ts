@@ -863,6 +863,8 @@ export const TeamOverviewMemberSchema = z.object({
   issues_by_status: z.record(z.string(), z.number()).default({}),
   issues_total: z.number().default(0),
   issues_blocked: z.number().default(0),
+  agent_issues_by_status: z.record(z.string(), z.number()).default({}),
+  agent_issues_total: z.number().default(0),
   agents_total: z.number().default(0),
   agents_running: z.number().default(0),
   autopilots: z.number().default(0),

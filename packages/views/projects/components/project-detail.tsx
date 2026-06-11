@@ -438,14 +438,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   // stack — closing returns to wherever the user was before the project,
   // not back through each previewed issue.
   const selectedIssueId = router.searchParams.get("issue") || null;
-  const revealRightPane = useCallback(() => {
-    if (isMobile) {
-      setMobileSidebarOpen(true);
-    } else {
-      sidebarRef.current?.expand();
-      setDesktopSidebarOpen(true);
-    }
-  }, [isMobile, sidebarRef]);
   // Preserve any other query params on the project URL — only the `issue`
   // key is ours to add / remove.
   const issueUrl = useCallback(
@@ -462,13 +454,14 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const openIssue = useCallback(
     (issueId: string) => {
       router.replace(issueUrl(issueId));
-      revealRightPane();
     },
-    [router, issueUrl, revealRightPane],
+    [router, issueUrl],
   );
   const closeIssue = useCallback(() => {
     router.replace(issueUrl(null));
-  }, [router, issueUrl]);
+    // Back to the list-focused view; the properties sidebar stays one click away.
+    if (!isMobile) sidebarRef.current?.collapse();
+  }, [router, issueUrl, isMobile, sidebarRef]);
   const issuePane = useMemo(
     () => ({ activeIssueId: selectedIssueId, openIssue }),
     [selectedIssueId, openIssue],
@@ -482,12 +475,18 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedIssueId, closeIssue]);
-  // A deep-link / reload arriving with `?issue=` must reveal the pane, which
-  // otherwise defaults to collapsed. Fires only when the id changes, so a user
-  // who manually collapses the pane mid-view is not fought.
+  // Reveal + widen the pane to ~1/3 of the page whenever an issue becomes
+  // selected (card click, deep-link, or reload). Runs after `selectedIssueId`
+  // is set so the widened min/max-size props are already applied, so resize()
+  // isn't clamped back to the narrow properties width. Fires only on id change,
+  // so a user who hand-resizes the open pane isn't fought.
   useEffect(() => {
-    if (selectedIssueId) revealRightPane();
-  }, [selectedIssueId, revealRightPane]);
+    if (!selectedIssueId || isMobile) return;
+    const panel = sidebarRef.current;
+    if (!panel) return;
+    panel.expand();
+    panel.resize(Math.round(window.innerWidth / 3));
+  }, [selectedIssueId, isMobile, sidebarRef]);
   const sidebarOpen = isMobile ? mobileSidebarOpen : desktopSidebarOpen;
 
   useEffect(() => {
@@ -871,8 +870,11 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         <ResizablePanel
           id="sidebar"
           defaultSize={desktopSidebarOpen ? 320 : 0}
-          minSize={260}
-          maxSize={420}
+          // Issue detail wants ~1/3 of the page; the properties sidebar stays
+          // narrow. Widen the min/max bounds while an issue is open so the
+          // resize() to innerWidth/3 isn't clamped.
+          minSize={selectedIssueId ? 360 : 260}
+          maxSize={selectedIssueId ? 760 : 420}
           collapsible
           groupResizeBehavior="preserve-pixel-size"
           panelRef={sidebarRef}
