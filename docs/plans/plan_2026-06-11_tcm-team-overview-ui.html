@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tcm-team-overview-ui</title>
+<style>
+:root{--ink:#1A1A1A;--ink2:#2D2D2D;--paper:#F5F2EB;--paper2:#EDE8DC;--accent:#C73E1D;--gray:#8B8680;--border:#D4CFC4;--green:#4A6B3A;--gold:#B8862E}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Songti SC","Noto Serif SC",Georgia,serif;background:var(--paper);color:var(--ink);line-height:1.8;font-size:15px;padding:48px 40px;max-width:760px;margin:0 auto}
+.eyebrow{font-family:"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+h1{font-weight:900;font-size:40px;line-height:1.15;letter-spacing:-1px;margin-bottom:18px;border-bottom:3px double var(--ink);padding-bottom:20px}
+.meta{display:flex;gap:32px;flex-wrap:wrap;font-family:"SF Mono",Menlo,monospace;font-size:12px;color:var(--gray);margin-bottom:36px}
+.meta b{color:var(--ink);font-weight:600}
+h2{font-weight:700;font-size:22px;margin:36px 0 14px;padding-left:14px;border-left:4px solid var(--accent)}
+.field{background:#fff;border:1px solid var(--border);padding:18px 22px;margin-bottom:14px}
+.field-label{font-family:"SF Mono",Menlo,monospace;font-size:10px;letter-spacing:1.5px;color:var(--gray);text-transform:uppercase;margin-bottom:6px}
+ul{list-style:none;margin:8px 0}
+li{padding:6px 0 6px 24px;position:relative}
+li::before{content:"▸";position:absolute;left:4px;color:var(--accent)}
+.crit li::before{content:"☐";color:var(--green)}
+code{font-family:"SF Mono",Menlo,monospace;background:var(--paper2);padding:1px 6px;border-radius:2px;font-size:13px}
+.callout{background:var(--paper2);border-left:4px solid var(--gold);padding:14px 18px;margin:18px 0;font-size:14px}
+footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--border);font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--gray)}
+</style></head>
+<body>
+<div class="eyebrow">PLAN · 计划 · project</div>
+<h1>tcm-team-overview-ui</h1>
+<div class="meta"><span>DRI <b>待 kickoff 认领（建议:发起人本人）</b></span><span>Layer <b>project</b></span><span>Appetite <b>约 2 周。波次1 团队总览页（后端聚合 query + 端点 + 前端页/卡）≈1 周 → 波次2 侧边栏（搜索/新建移底部 + 收缩）≈1–2 天 → 波次3 项目主从布局 ≈2–3 天。任一波次超时触发 plan-upgrade 重审。</b></span></div>
+<h2>目标</h2><div class="field"><div class="field-label">Goal</div>tc-multica 前端三块改造，一个 plan 分 3 波次：① 新增「团队」顶部 tab 总览页——全员默认落地、全员可见全员，每个成员一张高密度信息卡（12+ 维度，全通俗中文命名 + 每指标 hover 解释，无英文行话），让 boss 一眼看清每个人在干什么、当前状态如何；② 侧边栏「搜索 / 新建issue」从顶部移到底部 + 新增可持久化的收缩功能；③ 项目页主从布局——点 issue 后保留「侧边栏 + 项目栏 + issue详情」三栏，不再整页跳走丢失列表栏。</div>
+<h2>完成标准</h2><div class="field crit"><ul><li>波次1·后端：GET /api/team/overview 端点活、挂 RequireWorkspaceMember 受保护组、所有 query 过 workspace_id，一次返回全员卡数据（成员/角色/小队 · 项目 lead-DRI-参与数 · issue 按状态分布 · agents+运行中数 · autopilot数 · 复盘+达标率 · AI用量周/月 · 平均交付天数代理口径 · 近7天活跃 · 卡住信号 · 最近动态）；make sqlc 无 drift（绝不手改 generated）；go test ./internal/handler/ 绿；端点配 zod schema + parseWithFallback + ≥1 喂坏数据测试。</li><li>波次1·前端：新路由 /[workspaceSlug]/team 全员默认落地（默认 redirect 改向它）；顶部「团队 | 项目」tab；成员卡网格在 web + desktop 双端渲染；团队页与卡组件落 packages/views/team/，query 落 packages/core/team/（core 零 react-dom/next，views 零 next）。</li><li>波次2·侧边栏：搜索 + 新建issue 移到侧边栏底部仍可正常触发；侧边栏可收缩（收起只剩图标轨）、收缩状态持久化跨重启（web localStorage / desktop electron-store）；store 落 packages/core/sidebar/。</li><li>波次3·主从布局：项目页点 issue → 保留「侧边栏 + 项目栏 + issue详情」（受控 selectedIssueId + URL 同步，复用现成 IssueDetail）；board 与 list 两视图点击都生效；深链 /issues/[id] 仍可全屏直达；desktop 经 URL param 同步。</li><li>全程：make check 全绿；原子 Conventional 提交（feat(team)/feat(sidebar)/feat(issues)）；每段 AI diff commit 前过人眼；严守包边界（页放 views 双端挂载不复制、UI 用 packages/ui shadcn/Base UI）。</li></ul></div>
+<h2>分工</h2><div class="field"><div class="field-label">Roles</div>DRI <code>待 kickoff 认领（建议:发起人本人）</code> · EXEC <code>Claude Code（Implement 会话）</code> · COLLAB <code>(无)</code> · REVIEW <code>第二个 Claude session（staff-eng 评审子 agent）</code></div>
+<h2>投入预算</h2><div class="callout"><b>约 2 周。波次1 团队总览页（后端聚合 query + 端点 + 前端页/卡）≈1 周 → 波次2 侧边栏（搜索/新建移底部 + 收缩）≈1–2 天 → 波次3 项目主从布局 ≈2–3 天。任一波次超时触发 plan-upgrade 重审。</b> · 超时触发升版强制重审。</div>
+<h2>方案</h2><div class="field">## 来源
+设计经 brainstorming 与用户对齐并批准（含两版团队卡 mockup：高密度 + 通俗命名版）。无独立 research 文档，设计即记录于本 plan 的本节。三块改动一个 plan 分 3 波次，可独立交付、各自 make check 验证。
+
+## 仓库角色与数据地基
+tc-multica 是平台本体（Go 后端 + pnpm/Turborepo 前端 monorepo）。关键洞察：团队卡的「平均交付天数 / 复盘达标率 / 本周完成 / AI 用量」恰是 cap-hardening P0 交付度量层的指标按【人】切——本计划与 TEA-55 共享同一数据地基，是交付度量的「按人视图」。
+
+## 波次1 · 团队总览页（最重，含后端）
+后端聚合 query（数据都在表里，只补只读聚合，镜像 task_usage.sql 写法，绝不手改 generated）：项目 lead/DRI 数（project.lead_type/lead_id/dri_user_id）、参与项目数、issue 按 assignee+status 分组计数、agents by owner + 运行中（AgentTaskQueue active）、autopilot by creator、squad 归属（squad_member）、项目进度（project 现有 progress）、活动 feed（复用现有 activity handler）。成员列表（ListMembersWithUser）与 token 用量（ListDashboardUsageByPerson）现成直接复用。平均交付天数走 first_executed→done 代理口径并标注，精确口径依赖 cap-hardening W1.5 的 issue_event 表（本期不建、用代理）。新 handler server/internal/handler/team.go，注册单个聚合端点 GET /api/team/overview（X-Workspace-ID header · RequireWorkspaceMember），一次返回全员卡数据。前端 packages/views/team/（team-overview-page + member-card）+ packages/core/team/queries.ts；web 路由 apps/web/app/[workspaceSlug]/(dashboard)/team/page.tsx + desktop 路由；默认落地 redirect 改 /team。
+
+## 波次2 · 侧边栏（移底部 + 收缩）
+改 packages/views/layout/app-sidebar.tsx：搜索（SearchTrigger）+ 新建issue 从 SidebarHeader 移到 SidebarFooter。收缩：新建 packages/core/sidebar/sidebar-store.ts（Zustand，isCollapsed 持久化），接 SidebarProvider 的开合状态；侧边栏加收缩按钮，收起只剩图标轨；dashboard-layout.tsx 接 store。
+
+## 波次3 · 项目主从布局（保留列表栏）
+现状：project-detail.tsx 已是 3 面板 ResizablePanelGroup（项目列表｜内容｜属性），但点 issue 走 AppLink 整页跳 /issues/[id]，中间列表栏消失。改：点 issue 不路由跳走，改为选中 selectedIssueId（store + URL 同步），中间「内容」面板从 board/list 切成内嵌 IssueDetail（受控复用，传 onDelete/onDone 回调清选中）；board-card.tsx / list-row.tsx 的点击从 AppLink 改为更新选中态；desktop routes.tsx 用 URL param（如 ?issue=）同步。深链 /issues/[id] 全屏页保留供外部直达。
+
+## 三个技术决策（已定）
+① 团队页用独立路由 /team（它是顶部 tab + 默认落地，独立路由最清晰）；② 团队数据走单个聚合端点 /api/team/overview 一次拉全员（比 N 次 by-person 调用省往返）；③ 主从用受控 selectedIssueId + URL 同步（兼顾深链与 desktop tab 隔离）。
+
+## 硬约束
+包边界：core 零 react-dom/next、views 零 next/router、整页放 views 双端挂载不在 app 间复制、UI 用 packages/ui（Base UI/shadcn）。TDD：先写失败测试再实现，测试放对包（core→Node、views→jsdom、web→框架 mock、Go→go test），跑 make check 到绿。Drift-defense：新端点配 zod + parseWithFallback + 喂坏数据测试，响应不裸 as。多租户：所有 query 过 workspace_id、URL UUID 走 parseUUIDOrBadRequest、X-Workspace-ID header 路由。sqlc 工作流：SQL 改 queries/ 跑 make sqlc，绝不手改 generated。原子 Conventional 提交，每段 diff 过人眼，每波次以 case 收尾。
+
+## 通俗命名（无英文行话 · 每指标 hover 解释）
+平均交付天数(原 cycle time) · 代码提交/已合并(原 PR) · 自动化任务(原 autopilot) · 复盘/达标率(原 复盘覆盖率) · AI 用量(原 token) · 智能体/运行中 · 角色 负责人/管理员/成员 · 任务分布 · 卡住(原 阻塞)。每个数字块挂 hover tooltip 一句话含义。</div>
+<footer>team-context · RPI Plan phase · multica issue 内渲染</footer>
+</body></html>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tcm-team-overview-ui</title>
+<style>:root{--ink:#1C1C1C;--mid:#4A4D4A;--soft:#7E827E;--frame:#2B2B2B;--line:#C9CCC9;--page:#F3F3F1;--red:#A8332A;--redtint:#F8EDEB;--gold:#8A6420;--goldtint:#FBF7EA;--green:#2F5D50}
+body.t-plan{--type:#7A2018;--tint:#F7EDEB}
+body.t-research{--type:#2B4A78;--tint:#EDF1F7}
+body.t-case{--type:#2F5D50;--tint:#EEF4F1}
+body.t-handoff{--type:#8A6420;--tint:#F6F0E3}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Songti SC","Noto Serif CJK SC",serif;background:var(--page);color:var(--ink);line-height:1.85;font-size:14px;max-width:780px;margin:0 auto;padding:22px 24px 40px}
+.sheet{background:#fff;border:2px solid var(--frame);padding:0 0 26px}
+.ctrl{display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid var(--line);padding:7px 22px;font-family:"PingFang SC",sans-serif;font-size:10.5px;letter-spacing:2.5px;color:var(--soft)}
+.ctrl b{color:var(--type);font-weight:700}
+.appr{display:grid;grid-template-columns:106px 1.25fr 1.1fr 1fr 1fr;border-bottom:2px solid var(--frame)}
+.ac{border-right:1px solid var(--frame);padding:7px 14px 6px}
+.ac.last{border-right:0}
+.ac .al{font-family:"PingFang SC",sans-serif;font-size:9.5px;letter-spacing:2px;color:var(--soft);margin-bottom:1px}
+.ac .av{font-family:"PingFang SC",sans-serif;font-weight:600;font-size:13px;overflow-wrap:anywhere}
+.ac .av.t{color:var(--type);font-weight:700}
+.ac .av.ok{color:var(--green);font-weight:700}
+.ac .av.warn{color:var(--red);font-weight:700}
+.ac2{border-top:1px solid var(--line)}
+.sealcell{grid-column:1;grid-row:1/span 2;border-right:1px solid var(--frame);display:grid;place-items:center;padding:8px}
+.sq{width:62px;height:62px;border:2.5px solid var(--type);box-shadow:inset 0 0 0 1.5px #fff,inset 0 0 0 3px var(--type);display:grid;place-items:center;color:var(--type);font-family:"STZhongsong","Songti SC",serif;font-size:19px;font-weight:900;letter-spacing:2px;line-height:1.5;text-align:center}
+.titlebar{padding:18px 26px 0}
+h1{font-family:"PingFang SC",sans-serif;font-size:22px;font-weight:800;letter-spacing:.5px;line-height:1.5;overflow-wrap:anywhere}
+.sub{font-size:13.5px;color:var(--mid);margin-top:4px}
+.tally{display:grid;grid-template-columns:1fr 1fr 1fr 1.7fr;border:1.5px solid var(--frame);margin:14px 26px 0}
+.tally.c3{grid-template-columns:1fr 1fr 1.7fr}
+.tc{padding:9px 14px 8px;border-right:1px solid var(--frame)}
+.tc:last-child{border-right:0}
+.tc .n{font-family:"PingFang SC",sans-serif;font-size:23px;font-weight:800;line-height:1.3;color:var(--ink)}
+.tc .n.sm{font-size:15px;line-height:1.95}
+.tc .n small{font-size:13px;color:var(--soft);font-weight:500}
+.tc .l{font-family:"PingFang SC",sans-serif;font-size:9.5px;letter-spacing:2.5px;color:var(--soft);margin-top:1px}
+.tc.warn .n{color:var(--red)}
+.tc.v{background:var(--type)}
+.tc.v .n{color:#fff;font-size:15px;line-height:1.85;font-weight:700}
+.tc.v .l{color:rgba(255,255,255,.75)}
+.keypoints{margin:12px 26px 0;border:1.5px solid var(--type);background:var(--tint);padding:11px 17px 10px}
+.keypoints .kt{font-family:"PingFang SC",sans-serif;font-weight:800;font-size:12.5px;letter-spacing:3px;color:var(--type);margin-bottom:5px}
+.keypoints ol{list-style:none}
+.keypoints li{padding:3px 0 3px 28px;position:relative;font-size:13px}
+.keypoints li .kn{position:absolute;left:0;top:5px;width:18px;height:18px;background:var(--type);color:#fff;font-family:"PingFang SC",sans-serif;font-size:10.5px;font-weight:700;display:grid;place-items:center}
+.keypoints li b{font-family:"PingFang SC",sans-serif;font-weight:700}
+.question{margin:14px 26px 0;border:1.5px solid var(--frame);background:#fff;padding:12px 17px}
+.question .qt{font-family:"PingFang SC",sans-serif;font-weight:800;font-size:12.5px;letter-spacing:3px;color:var(--type);margin-bottom:5px}
+.question p{font-family:"PingFang SC",sans-serif;font-weight:600;font-size:14.5px;line-height:1.8;text-align:justify}
+.meta{padding:9px 26px 0;font-size:12px;color:var(--soft);letter-spacing:1px}
+.body{padding:0 26px}
+h2{font-family:"PingFang SC",sans-serif;font-size:15px;font-weight:800;letter-spacing:1px;margin:26px 0 10px;padding:7px 12px;background:#F1F1EF;border-left:5px solid var(--type)}
+h2 .num{font-family:"SF Mono",Menlo,monospace;color:var(--type);margin-right:10px;font-size:13px}
+h2.danger{border-left-color:var(--red)}
+h2.danger .num{color:var(--red)}
+p{margin-bottom:.8em;text-align:justify}
+p:last-child{margin-bottom:0}
+b,strong{font-family:"PingFang SC",sans-serif;font-weight:600}
+.clause{display:grid;grid-template-columns:96px 1fr;gap:10px;padding:6px 0;font-size:13.5px}
+.clause.n{grid-template-columns:44px 1fr}
+.clause dt{font-family:"PingFang SC",sans-serif;font-size:11.5px;font-weight:700;color:var(--soft);padding-top:2px;letter-spacing:1px}
+.clause.n dt{font-family:"SF Mono",Menlo,monospace;color:var(--type);letter-spacing:0}
+.clause dd{text-align:justify;overflow-wrap:anywhere}
+.note{font-size:12px;color:var(--soft)}
+table.formal{width:100%;border-collapse:collapse;margin:8px 0 6px;font-size:13px}
+table.formal th{font-family:"PingFang SC",sans-serif;font-weight:700;font-size:11.5px;letter-spacing:1.5px;border:1px solid var(--frame);background:#F1F1EF;padding:6px 10px;text-align:center}
+table.formal th.danger{background:var(--redtint);color:var(--red)}
+table.formal td{border:1px solid var(--line);border-left:1px solid var(--frame);border-right:1px solid var(--frame);padding:7px 10px 6px;vertical-align:top;line-height:1.78;overflow-wrap:anywhere}
+table.formal tr:last-child td{border-bottom:1px solid var(--frame)}
+table.formal td.c{text-align:center;white-space:nowrap;font-family:"SF Mono",Menlo,monospace;font-size:12px}
+.mk{font-family:"PingFang SC",sans-serif;font-weight:700;white-space:nowrap}
+.mk.ok{color:var(--green)}
+.mk.bad{color:var(--red)}
+.mk.wait{color:var(--soft)}
+.vd{font-family:"PingFang SC",sans-serif;font-weight:700;white-space:nowrap}
+.vd.ok{color:var(--green)}
+.vd.bad{color:var(--red)}
+.vd.mid{color:var(--gold)}
+.vd i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.vd.ok i{background:var(--green)}
+.vd.bad i{background:var(--red)}
+.vd.mid i{background:var(--gold)}
+.judge{border:1.5px solid var(--frame);margin-bottom:13px}
+.judge-h{display:flex;gap:12px;align-items:baseline;padding:9px 16px;border-bottom:1px solid var(--frame);background:#F1F1EF}
+.judge-h .ji{font-family:"PingFang SC",sans-serif;font-size:11px;font-weight:800;color:#fff;background:var(--type);padding:2px 10px;letter-spacing:3px;white-space:nowrap}
+.judge-h .jt{font-family:"PingFang SC",sans-serif;font-weight:700;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+.judge-b{padding:8px 16px 12px}
+.jrow{display:grid;grid-template-columns:70px 1fr;gap:10px;padding:5px 0;font-size:13px}
+.jrow dt{font-family:"PingFang SC",sans-serif;font-size:11.5px;font-weight:700;color:var(--soft);padding-top:2px;letter-spacing:1.5px}
+.jrow dd{text-align:justify;color:var(--mid);overflow-wrap:anywhere}
+.hind{margin:8px 0 2px;border:1px solid var(--gold);background:var(--goldtint);padding:9px 14px}
+.hind dt{font-family:"PingFang SC",sans-serif;font-size:11px;font-weight:800;letter-spacing:2px;color:var(--gold);margin-bottom:3px}
+.hind dd{font-family:"PingFang SC",sans-serif;font-weight:600;font-size:13px;line-height:1.8}
+.aux{font-size:12.5px;color:var(--mid);padding-top:6px}
+.aux dt{display:inline;font-family:"PingFang SC",sans-serif;font-size:11px;font-weight:700;color:var(--soft);margin-right:8px;letter-spacing:1px}
+.aux dd{display:inline}
+.appetite{margin:8px 0 4px;border:1.5px solid var(--gold);background:var(--goldtint);padding:11px 16px}
+.appetite .at{font-family:"PingFang SC",sans-serif;font-size:11px;font-weight:800;letter-spacing:2px;color:var(--gold);margin-bottom:3px}
+.appetite .av2{font-family:"PingFang SC",sans-serif;font-weight:700;font-size:15px}
+.appetite .av2 small{font-weight:500;font-size:12.5px;color:var(--mid)}
+.dgrid{display:grid;grid-template-columns:46px 1fr;gap:8px;padding:5px 0;font-size:13px}
+.dgrid dt{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--type);font-weight:700;padding-top:2px}
+.dgrid dd{text-align:justify;color:var(--mid)}
+.dgrid dd b{color:var(--ink)}
+.next{border:1.5px solid var(--type);background:var(--tint);padding:13px 17px 11px;margin-top:12px}
+.next .lead{font-family:"PingFang SC",sans-serif;font-weight:700;font-size:14.5px;line-height:1.8;margin-bottom:8px}
+.next p{font-size:13px;color:var(--mid)}
+.gate{margin-top:9px;border:1px solid var(--red);background:var(--redtint);padding:9px 13px;font-size:13px}
+.gate .gl{font-family:"PingFang SC",sans-serif;font-size:11px;font-weight:800;letter-spacing:2px;color:var(--red);margin-right:9px}
+.pend{font-family:"PingFang SC",sans-serif;font-size:10px;font-weight:700;color:var(--red);border:1px solid var(--red);padding:1px 7px;white-space:nowrap}
+code{font-family:"SF Mono",Menlo,monospace;background:#F1F1EF;padding:1px 5px;border-radius:2px;font-size:11.5px;overflow-wrap:anywhere}
+footer{margin-top:12px;text-align:center;font-family:"PingFang SC",sans-serif;font-size:10.5px;color:var(--soft);letter-spacing:2px}
+</style></head>
+<body class="t-case">
+<div class="sheet">
+<div class="ctrl"><span>受控文档 · <b>tcm-team-overview-ui</b></span><span>流程依据:SOP v0.4 非妥协 #2</span></div>
+<div class="appr"><div class="sealcell"><div class="sq">复<br>盘</div></div><div class="ac"><div class="al">文档类别</div><div class="av t">复盘报告</div></div><div class="ac"><div class="al">编号</div><div class="av">tcm-team-overview-ui</div></div><div class="ac"><div class="al">层级</div><div class="av">—</div></div><div class="ac last"><div class="al">阶段</div><div class="av">复盘收尾</div></div><div class="ac ac2"><div class="al">拟制</div><div class="av">tc-5-review session</div></div><div class="ac ac2"><div class="al">评审</div><div class="av">复盘评审子 agent</div></div><div class="ac ac2"><div class="al">批准</div><div class="av">负责人拍板</div></div><div class="ac ac2 last"><div class="al">日期</div><div class="av">2026-06-11</div></div></div>
+<div class="titlebar"><h1>tcm-team-overview-ui</h1></div>
+<div class="tally"><div class="tc"><div class="n">7<small> / 8</small></div><div class="l">完成标准</div></div><div class="tc"><div class="n">4</div><div class="l">关键判断</div></div><div class="tc"><div class="n">3</div><div class="l">规则候选</div></div><div class="tc v"><div class="n sm">已收尾 · 7/8 达成</div><div class="l">结论</div></div></div><div class="keypoints"><div class="kt">要点提示</div><ol><li><span class="kn">1</span>B1 默认落地：不卡在「验不了就别做」，完成到 unit/typecheck 这条可达线</li><li><span class="kn">2</span>波次3 主从用 null-default context 而非穿透深层 prop</li><li><span class="kn">3</span>无数据源的指标：宁可不显，也不造零值/假代理——用证据划界而非硬凑</li><li><span class="kn">4</span>no-self-review 独立评审抓到我自己看不见的真 bug</li></ol></div>
+<div class="body">
+<h2><span class="num">1</span>目标</h2>
+<p>tc-multica 前端三块改造，一个 plan 分 3 波次：① 新增「团队」顶部 tab 总览页——全员默认落地、全员可见全员，每个成员一张高密度信息卡（封闭清单维度，全通俗中文命名 + 关键含义常显，无英文行话），让 boss 一眼看清每个人在干什么、当前状态如何；② 侧边栏「搜索 / 新建issue」从顶部移到底部 + 新增可持久化的收缩功能；③ 项目页主从布局——点 issue 后保留「侧边栏 + 项目栏 + issue详情」三栏，不再整页跳走丢失列表栏。</p>
+<h2><span class="num">2</span>实际发生</h2>
+<p>按 SOP 走完 plan→评审→build：plan v1 被可行性评审打回（B1 默认落地 blast-radius / B2 卡片点击波及 4 个共享面 / B3 侧栏折叠勿重复造）→v2 批准；design-review v1 又打回（B-D1 活跃语义误导 / B-D2 徽章 a11y 违规 / B-D3 含义只挂 hover）→v3 折入后开工。</p><p>波次1（6 commit）：后端 GET /api/team/overview——team.go + 7 个 GROUP-BY 聚合（N2：query 数与成员数无关），多租户全 workspace_id 隔离、UUID 走 parseUUIDOrBadRequest；前端 /{ws}/team 页 + 成员大卡，全中文指标名 + hover 解释、零 emoji、a11y dot+文字。B1 把默认落地翻到 /team：root() 单源 + 全 home 调用点统一、保留旧 /issues 重定向不翻。</p><p>波次2（1 commit）：搜索/新建issue 移 SidebarFooter + collapsible=&#x27;icon&#x27; 折叠。波次3（1 commit）：点 issue 在右栏内嵌 IssueDetail（?issue= URL 驱动、web+desktop 双端），卡片用 null-default 的 useIssuePane context——无 provider 即原 AppLink，My Issues/issues页/actor面板零回归。</p><p>no-self-review 独立评审（全新上下文、staff-eng 角色）verdict=ship-with-fixes，抓到 1 个真后端 bug（H1：运行中智能体查询混用了 issue-status 枚举 &#x27;in_progress&#x27;/&#x27;claimed&#x27;、漏 &#x27;queued&#x27;）+ 6 项改进，全部修复并补回归测试。</p><p>全程验证绿：四端 typecheck 干净；views 881 / core 423 / web 31 / desktop 164 单测；Go team handler 2 测试过真实 dev DB；sqlc 一致。分支 feat/tcm-team-overview 共 10 commit，未 push——按铁律 #5 人来 ship。</p>
+<h2><span class="num">3</span>完成标准核验</h2>
+<table class="formal"><tr><th style="width:44px">序号</th><th>完成标准</th><th style="width:128px">核验结果</th></tr><tr><td class="c">3.1</td><td>波次1后端：/api/team/overview 端点活、挂 RequireWorkspaceMember、全 query 过 workspace_id；N2 一次 GROUP-BY 不循环；含默认排序键；make sqlc 无 drift；go test 绿；zod+parseWithFallback+喂坏数据测试</td><td><span class="mk ok">✓ 达成</span></td></tr><tr><td class="c">3.2</td><td>波次1前端：/team 路由、顶部「团队」tab、成员卡网格 web+desktop 双端、落 packages/views/team（核 react-dom/next 边界）、自己的卡置顶高亮</td><td><span class="mk ok">✓ 达成</span></td></tr><tr><td class="c">3.3</td><td>波次1 a11y（B-D2 硬约束）：徽章/状态用 dot+text-foreground、禁彩色文字、分布条图例=彩点+文字+数字、卡住段跳出蓝阶、无硬编码色、零 emoji</td><td><span class="mk ok">✓ 达成</span></td></tr><tr><td class="c">3.4</td><td>波次1 状态口径（B-D1 硬约束）：头部落 agent 口径「智能体 N 运行中」、不假装人 online presence、tooltip 写清估算口径</td><td><span class="mk ok">✓ 达成</span></td></tr><tr><td class="c">3.5</td><td>波次2（B3）：搜索/新建issue 移底部仍可触发、复用 SidebarProvider collapsible=&#x27;icon&#x27; 折叠、折叠态新建issue 留图标+tooltip</td><td><span class="mk ok">✓ 达成</span></td></tr><tr><td class="c">3.6</td><td>波次3（B2）：board-card/list-row 可选 onSelect 默认 AppLink、project-detail 受控 selectedIssueId（?issue= URL 同步）、内嵌 IssueDetail、选中高亮+显式关闭/Esc、三共享面不受影响、深链 /issues/[id] 仍全屏、desktop URL param 对齐</td><td><span class="mk ok">✓ 达成</span></td></tr><tr><td class="c">3.7</td><td>卡片维度全清单含：平均交付天数 · 代码提交/已合并 · 复盘覆盖率 · 本周完成 · 最近动态/活跃</td><td><span class="mk bad">× 未达成</span> — 经查证后端无真实数据源：issue 表无 completed_at（只有 first_executed_at）、audit_log 不记 issue 生命周期（issue 用 WS 总线 h.publish 不持久化）、无 GitHub 按人关联、无复盘数据模型。plan 第38行自身已写「精确依赖未建的 issue_event 表」、第35行归「与 TEA-55 共享数据地基」；design-review B-D1 立了禁造假 presence 的规矩。故按不造假原则正确划出范围——已建全部有真实数据源的指标，无源的留给 TEA-55 数据底座，未硬造零值/假代理。</td></tr><tr><td class="c">3.8</td><td>全程：make check 全绿、原子 Conventional 提交、每段 diff commit 前过人眼、严守包边界</td><td><span class="mk ok">✓ 达成</span></td></tr></table>
+<h2><span class="num">4</span>关键判断</h2>
+<div class="judge"><div class="judge-h"><span class="ji">判断一</span><span class="jt">B1 默认落地：不卡在「验不了就别做」，完成到 unit/typecheck 这条可达线</span></div><div class="judge-b"><div class="jrow"><dt>背景</dt><dd>plan 可行性评审把 B1（把工作区默认落地从 /projects 翻到 /team）标为高 blast-radius：动 root() 单源 + ~9 个 home 调用点，每个要逐点判断（如旧 /issues→projects 重定向必须不翻），且登录/onboarding/邀请等真实落地流无法在本 session e2e 验。</dd></div><div class="jrow"><dt>选项</dt><dd>① 整块延后给能跑 app 的 session ／ ② 第一次确实先 git checkout 回滚了 ／ ③ 重新评估后完成到 unit/typecheck 线（翻全调用点 + 保留 /issues + 改 4 个测试断言），e2e/视觉如实标注</dd></div><div class="jrow"><dt>选择</dt><dd>选③。判断依据：B1 的正确性（哪些调用点该翻、哪个不翻）是 typecheck + 单测可判定的，只有「落地流真跑一遍」不可判定——把「不可视觉验」误当「不可完成」是混淆了两层。完成到可达验证线、把真正验不了的如实标注，与对 e2e 的处理一致。</dd></div><div class="hind"><dt>事后看 · 核心收获</dt><dd>对。独立评审逐点核实了全部翻/不翻调用点 + /issues 保留正确，无遗漏；后续全 test 套件还补抓到 4 个我当时漏改的旧断言（callback/invitations/create-workspace/app-sidebar mock），说明「完成到线」也必须把受影响测试一起跑全，不能只跑 typecheck。</dd></div><div class="aux"><dt>古法不可能</dt><dd>部分。系统性扫全调用点 + 逐点判断 + 当场派独立对抗评审复核，压缩进一个 session，是 AI 杠杆；但单点决策本身人也能做。</dd></div></div></div>
+<div class="judge"><div class="judge-h"><span class="ji">判断二</span><span class="jt">波次3 主从用 null-default context 而非穿透深层 prop</span></div><div class="judge-b"><div class="jrow"><dt>背景</dt><dd>点 issue 改为「右栏内嵌」需让 board/list 的叶子卡片改变点击行为，但 board 侧层级深（BoardView→BoardColumn→DraggableBoardCard），把 onSelect 穿过每一层 diff 大且易碰坏 4 个共享面。CLAUDE.md 又规定 Context 只给跨切面 plumbing、不给 general state。</dd></div><div class="jrow"><dt>选项</dt><dd>① 把可选 onSelect 一路 prop-drill 穿过 BoardView/BoardColumn/ListView 到卡片 ／ ② 建一个轻量 IssuePaneController context，卡片读它、无 provider 即回落原 AppLink</dd></div><div class="jrow"><dt>选择</dt><dd>选②。理由：它承载的是「点击如何路由」的 plumbing（类比既有 NavigationProvider），不是 state——选中的 issue id 活在 URL（?issue=）里、不在 context 里；且 null-default 让不套 provider 的三个共享面证明性地零改动（回落到逐字节相同的 AppLink 分支）。</dd></div><div class="hind"><dt>事后看 · 核心收获</dt><dd>对。独立评审正面确认这是合规的正确选择（与 NavigationProvider 同性质），且单测覆盖了有/无 provider 两条路径。比穿透法少碰 BoardColumn 等中间层，回归面更小。</dd></div><div class="aux"><dt>古法不可能</dt><dd>否。属常规架构判断。</dd></div></div></div>
+<div class="judge"><div class="judge-h"><span class="ji">判断三</span><span class="jt">无数据源的指标：宁可不显，也不造零值/假代理——用证据划界而非硬凑</span></div><div class="judge-b"><div class="jrow"><dt>背景</dt><dd>卡片 plan 列了「本周完成 / 平均交付天数 / 代码提交 / 复盘覆盖率」等维度；Stop hook 反复要求「完成所有 plan 任务」，压力是「补齐它们」。但这些需要的完成时间戳 / 活动日志 / GitHub 按人关联 / 复盘数据，后端都没有。</dd></div><div class="jrow"><dt>选项</dt><dd>① 用 issue.updated_at 当「完成时间」凑「本周完成」（done issue 本周被编辑过就算数——misleading） ／ ② 现在建 issue_event/completed_at 基建（动 issue 写路径热点 + 无历史可回填，是独立后端项目） ／ ③ 对照 schema+audit 调用点+plan 自身文字，确证无源后划出范围、不显假数</dd></div><div class="jrow"><dt>选择</dt><dd>选③。逐项查实：issue 只有 first_executed_at 无 completed_at；audit_log 只记 integration/secret（issue 走 WS 总线不持久化）；member/squad 无 last_active。plan 第38行自己写「精确依赖未建的 issue_event 表」、归「TEA-55 共享数据地基」；design-review B-D1 早立了禁造假 presence 的规矩——硬凑会违背团队自己的反造假原则。</dd></div><div class="hind"><dt>事后看 · 核心收获</dt><dd>对。这正是 design-review B-D1（member-profile-card:22 已拒绝伪造 presence）同一条原则的延伸。把「plan 列了」误读成「必须本期交付」会逼出假数据；正确动作是用硬证据把数据缺口显式交回 TEA-55 数据底座。</dd></div><div class="aux"><dt>古法不可能</dt><dd>否，但在 Stop hook 持续施压下仍坚持查实 schema+审计调用点+plan 交叉引用、而非屈服于「先凑上」，是该守的纪律。</dd></div></div></div>
+<div class="judge"><div class="judge-h"><span class="ji">判断四</span><span class="jt">no-self-review 独立评审抓到我自己看不见的真 bug</span></div><div class="judge-b"><div class="jrow"><dt>背景</dt><dd>铁律要求第二个独立 session 评审。build 完我对自己的 diff 已经「看过且自认正确」，尤其后端聚合 query 是我亲手写的。</dd></div><div class="jrow"><dt>选项</dt><dd>① 自己再读一遍 diff 当评审 ／ ② 派一个全新上下文、staff-eng 角色的对抗式评审子 agent，只给 diff + plan，命其默认「这可能是坏的」</dd></div><div class="jrow"><dt>选择</dt><dd>选②。给它明确的对抗指令 + 重点猎杀清单（ID 域 join、多租户、a11y、B1 爆炸半径、造假指标）。</dd></div><div class="hind"><dt>事后看 · 核心收获</dt><dd>对、且关键。它抓到 H1：运行中智能体 query 写了 status IN (&#x27;claimed&#x27;,&#x27;in_progress&#x27;,...)——我把 issue-status 的 &#x27;in_progress&#x27; 和 agent_task_queue-status 串了，&#x27;claimed&#x27;/&#x27;in_progress&#x27; 是死值、还漏了 &#x27;queued&#x27;，导致「智能体运行中」少报。自评审锚在我自己的心智模型上（我就是这么写的），极可能放过。</dd></div><div class="aux"><dt>古法不可能</dt><dd>是。build 中途即时派一个全新上下文的对抗评审者、当场拿到结论，是 AI-native 能力；人要么带同样盲点自评、要么等同事数天。</dd></div></div></div>
+<h2><span class="num">5</span>规则候选</h2>
+<table class="formal"><tr><th>候选规则</th><th style="width:84px">状态</th></tr><tr><td>写 SQL 的 status IN (...) 等枚举过滤前，先对照该表 migration 的 CHECK 约束核实合法枚举域——别把相邻实体的状态枚举混用（如 issue-status 的 &#x27;in_progress&#x27; 误入 agent_task_queue-status）。死枚举值静默匹配零行、不报错，靠 typecheck/编译抓不到。(来源:case TEA-106 · tcm-team-overview)</td><td class="c"><span class="pend">待提级</span></td></tr><tr><td>卡片/仪表盘指标动手前先核实后端有无真实数据源（schema 列 / 持久化日志）；无源的指标宁可不显，也不造零值或拿 updated_at 之类当假代理——尤其当 plan 已把该指标归到「未建的数据底座」时。(来源:case TEA-106 · tcm-team-overview)</td><td class="c"><span class="pend">待提级</span></td></tr><tr><td>「完成到可验证线」时，必须把受改动影响的测试一起跑全（不只 typecheck）——B1 翻默认落地后有 4 个旧导航断言只在跑全 test 套件时才暴露。(来源:case TEA-106 · tcm-team-overview)</td><td class="c"><span class="pend">待提级</span></td></tr></table>
+</div>
+</div>
+<footer>AI MIQ 团队 · 受控文档 · 复盘 · multica issue 内联渲染</footer>
+</body></html>
