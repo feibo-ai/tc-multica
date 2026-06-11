@@ -6,18 +6,19 @@
   "agents_running": "{{n}} 个智能体运行中",
   "agents_idle": "无智能体运行",
   "metrics": {
-    "projects": "负责 / 参与项目",
-    "agents": "智能体（运行中）",
+    "projects": "项目 · 负责 / DRI",
+    "agents": "智能体",
     "autopilots": "自动化任务",
     "ai_usage": "AI 用量（本周/月）"
   },
   "metrics_help": {
-    "projects": "TA 作为负责人（或 DRI）的项目数 / 有份参与的项目数",
-    "agents": "TA 拥有的智能体数，括号内是此刻正在干活的数量——是智能体活动，不是人是否在线",
+    "projects": "TA 作为负责人 / DRI 的项目数（第一个数是负责，第二个是 DRI）",
+    "agents": "TA 拥有的智能体总数；此刻运行中的数量见卡片头部的状态",
     "autopilots": "挂在 TA 名下、定时自动跑的任务（日报/周报/巡检等）",
     "ai_usage": "本周 / 本月消耗的 AI 量，约等于成本"
   },
   "distribution": "任务",
+  "distribution_help": "TA 本人 + 名下智能体被指派的任务（按状态分布；AI-native 团队的活多在智能体上）",
   "blocked_help": "处于「卡住（阻塞）」状态的任务数",
   "status": {
     "backlog": "待规划",

@@ -70,9 +70,14 @@ export function TeamMemberCard({ member }: { member: TeamOverviewMember }) {
     }
   };
 
+  // Fold the member's own tasks together with the work their agents are doing
+  // (delegated). An AI-native team assigns issues to agents, not members, so the
+  // own-task counts are usually zero — the agent counts are the real activity.
   const segments = STATUS_SEGMENTS.map((s) => ({
     ...s,
-    count: member.issues_by_status[s.key] ?? 0,
+    count:
+      (member.issues_by_status[s.key] ?? 0) +
+      (member.agent_issues_by_status[s.key] ?? 0),
   }));
   const barTotal = segments.reduce((sum, s) => sum + s.count, 0);
 
@@ -131,7 +136,7 @@ export function TeamMemberCard({ member }: { member: TeamOverviewMember }) {
         <MetricTile
           label={t(($) => $.metrics.projects)}
           help={t(($) => $.metrics_help.projects)}
-          value={`${member.projects_led}${member.projects_dri ? ` · DRI ${member.projects_dri}` : ""}`}
+          value={`${member.projects_led} / ${member.projects_dri}`}
         />
         <MetricTile
           label={t(($) => $.metrics.agents)}
@@ -152,8 +157,13 @@ export function TeamMemberCard({ member }: { member: TeamOverviewMember }) {
 
       <div>
         <div className="mb-1.5 flex items-center justify-between text-xs">
-          <span className="text-muted-foreground">{t(($) => $.distribution)}</span>
-          <span className="font-medium tabular-nums">{member.issues_total}</span>
+          <span
+            className="text-muted-foreground"
+            title={t(($) => $.distribution_help)}
+          >
+            {t(($) => $.distribution)}
+          </span>
+          <span className="font-medium tabular-nums">{barTotal}</span>
         </div>
         <div
           className="flex h-2 overflow-hidden rounded-full bg-muted"

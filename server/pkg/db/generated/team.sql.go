@@ -11,6 +11,48 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAgentIssuesByOwnerStatus = `-- name: CountAgentIssuesByOwnerStatus :many
+SELECT a.owner_id, i.status, COUNT(*)::bigint AS count
+FROM issue i
+JOIN agent a ON a.id = i.assignee_id
+WHERE i.workspace_id = $1
+  AND a.workspace_id = $1
+  AND i.assignee_type = 'agent'
+  AND a.owner_id IS NOT NULL
+  AND a.archived_at IS NULL
+GROUP BY a.owner_id, i.status
+`
+
+type CountAgentIssuesByOwnerStatusRow struct {
+	OwnerID pgtype.UUID `json:"owner_id"`
+	Status  string      `json:"status"`
+	Count   int64       `json:"count"`
+}
+
+// Issues assigned to AGENTS, grouped by the agent's owner (user.id) + status.
+// An AI-native team assigns issues to agents rather than to members, so the
+// member-assigned view above is empty — this captures the delegated work each
+// person's agents are doing, which the card folds into the task distribution.
+func (q *Queries) CountAgentIssuesByOwnerStatus(ctx context.Context, workspaceID pgtype.UUID) ([]CountAgentIssuesByOwnerStatusRow, error) {
+	rows, err := q.db.Query(ctx, countAgentIssuesByOwnerStatus, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountAgentIssuesByOwnerStatusRow{}
+	for rows.Next() {
+		var i CountAgentIssuesByOwnerStatusRow
+		if err := rows.Scan(&i.OwnerID, &i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countAgentsByOwner = `-- name: CountAgentsByOwner :many
 SELECT owner_id, COUNT(*)::bigint AS count
 FROM agent
@@ -111,8 +153,9 @@ type CountIssuesByMemberStatusRow struct {
 //	squad_member.member_id (member_type='member') → member.id
 //	token usage owner_id (ListDashboardUsageByPerson) → user.id
 //
-// Per-member issue counts grouped by status. Member-assigned only; agent-assigned
-// issues are out of the per-person team view.
+// Per-member issue counts grouped by status (issues assigned directly to the
+// member). Keyed by member.id. See CountAgentIssuesByOwnerStatus for the work
+// this member's agents are doing — the card sums both.
 func (q *Queries) CountIssuesByMemberStatus(ctx context.Context, workspaceID pgtype.UUID) ([]CountIssuesByMemberStatusRow, error) {
 	rows, err := q.db.Query(ctx, countIssuesByMemberStatus, workspaceID)
 	if err != nil {

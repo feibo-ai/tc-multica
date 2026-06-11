@@ -13,14 +13,30 @@
 --   token usage owner_id (ListDashboardUsageByPerson) → user.id
 
 -- name: CountIssuesByMemberStatus :many
--- Per-member issue counts grouped by status. Member-assigned only; agent-assigned
--- issues are out of the per-person team view.
+-- Per-member issue counts grouped by status (issues assigned directly to the
+-- member). Keyed by member.id. See CountAgentIssuesByOwnerStatus for the work
+-- this member's agents are doing — the card sums both.
 SELECT assignee_id, status, COUNT(*)::bigint AS count
 FROM issue
 WHERE workspace_id = $1
   AND assignee_type = 'member'
   AND assignee_id IS NOT NULL
 GROUP BY assignee_id, status;
+
+-- name: CountAgentIssuesByOwnerStatus :many
+-- Issues assigned to AGENTS, grouped by the agent's owner (user.id) + status.
+-- An AI-native team assigns issues to agents rather than to members, so the
+-- member-assigned view above is empty — this captures the delegated work each
+-- person's agents are doing, which the card folds into the task distribution.
+SELECT a.owner_id, i.status, COUNT(*)::bigint AS count
+FROM issue i
+JOIN agent a ON a.id = i.assignee_id
+WHERE i.workspace_id = $1
+  AND a.workspace_id = $1
+  AND i.assignee_type = 'agent'
+  AND a.owner_id IS NOT NULL
+  AND a.archived_at IS NULL
+GROUP BY a.owner_id, i.status;
 
 -- name: CountAgentsByOwner :many
 -- Active (non-archived) agents per owner.
