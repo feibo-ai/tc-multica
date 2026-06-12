@@ -3,11 +3,23 @@
     "title": "プロジェクト",
     "new_project": "新規プロジェクト",
     "empty": "プロジェクトはまだありません",
+    "empty_without_dri": "すべてのプロジェクトに DRI が設定されています",
     "create_first": "最初のプロジェクトを作成",
     "view_compact": "コンパクト",
     "view_comfortable": "ゆったり",
+    "view_projects": "プロジェクト",
+    "view_all_issues": "すべてのイシュー",
     "search_placeholder": "プロジェクトを検索...",
     "no_search_results": "検索条件に一致する結果はありません"
+  },
+  "health": {
+    "on_track": "順調",
+    "at_risk": "リスクあり",
+    "off_track": "逸脱"
+  },
+  "filters": {
+    "without_dri": "DRI なし",
+    "without_dri_description": "DRI が指定されていないプロジェクト（SOP P-5 リスク）"
   },
   "table": {
     "name": "名前",
@@ -52,6 +64,7 @@
     "pin_tooltip": "サイドバーに固定",
     "unpin_tooltip": "サイドバーの固定を解除",
     "sidebar_tooltip": "サイドバーの開閉",
+    "issue_pane_close": "イシューを閉じる",
     "copy_link": "リンクをコピー",
     "delete_action": "プロジェクトを削除",
     "section_properties": "プロパティ",
@@ -62,9 +75,16 @@
     "empty_issues_hint": "新しいイシューを作成するか、既存のイシューをこのプロジェクトに割り当ててください。",
     "empty_issues_new_button": "新規イシュー",
     "no_issues_yet": "イシューはまだありません",
+    "dri_label": "DRI",
+    "dri_unassigned": "未指定（SOP P-5 リスク）",
+    "dri_assign": "DRI を指定",
+    "dri_change": "DRI を変更",
+    "dri_assign_placeholder": "メンバーを検索...",
     "toast_link_copied": "リンクをコピーしました",
     "toast_project_deleted": "プロジェクトを削除しました",
-    "toast_move_issue_failed": "イシューを移動できませんでした"
+    "toast_move_issue_failed": "イシューを移動できませんでした",
+    "toast_dri_updated": "DRI を更新しました",
+    "toast_dri_update_failed": "DRI を更新できませんでした"
   },
   "resources": {
     "section_header": "リソース",

@@ -48,6 +48,25 @@
     "header_tasks": "タスク",
     "no_data": "この期間にエージェントの活動はありません。"
   },
+  "tabs": {
+    "users": "ユーザー",
+    "agents": "エージェント"
+  },
+  "heatmap": {
+    "metric_cost": "コスト",
+    "metric_tokens": "トークン",
+    "select_hint": "行を選択すると、その 26 週間のアクティビティが表示されます"
+  },
+  "by_user": {
+    "caption": "{{count}} 人のユーザー",
+    "header_user": "ユーザー",
+    "header_cost": "コスト",
+    "header_tokens": "トークン",
+    "unattributed": "帰属不明",
+    "tools_label": "ツール",
+    "tool_claude_code": "Claude Code",
+    "no_data": "この期間にローカル CLI の使用量はありません。"
+  },
   "empty": {
     "title": "まだ使用量はありません",
     "body": "ここでエージェントがタスクを実行し始めると、トークンの消費と実行時間がこの画面に表示されます。"

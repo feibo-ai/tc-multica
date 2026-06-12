@@ -9,7 +9,8 @@
       "all": { "label": "すべて", "description": "このワークスペースのすべてのスキル" },
       "used": { "label": "使用中", "description": "1 つ以上のエージェントに割り当てられたスキル" },
       "unused": { "label": "未使用", "description": "どのエージェントにも割り当てられていないスキル" },
-      "mine": { "label": "自分が作成", "description": "あなたが作成したスキル" }
+      "mine": { "label": "自分が作成", "description": "あなたが作成したスキル" },
+      "stale": { "label": "陳腐", "description": "90 日間レビューされていない、または一度もレビューされていない" }
     },
     "empty": {
       "title": "まだスキルがありません",
@@ -38,6 +39,8 @@
     "name": "名前",
     "used_by": "使用中",
     "source": "ソース · 追加者",
+    "owner": "オーナー",
+    "last_reviewed": "最終レビュー",
     "updated": "更新日",
     "no_description": "説明なし",
     "lock_tooltip": "読み取り専用 — 作成者または管理者のみが編集できます",
@@ -50,6 +53,17 @@
     "source_clawhub": "ClawHub から",
     "source_skills_sh": "Skills.sh から",
     "source_github": "GitHub から"
+  },
+  "owner": {
+    "unassigned": "オーナーなし",
+    "assign": "オーナーを指定",
+    "change": "オーナーを変更"
+  },
+  "review": {
+    "never": "なし",
+    "mark_reviewed": "レビュー済みにする",
+    "marked_reviewed": "レビュー済みにしました",
+    "mark_reviewed_failed": "レビュー済みにできませんでした"
   },
   "detail": {
     "all_skills": "すべてのスキル",

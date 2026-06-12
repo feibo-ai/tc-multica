@@ -31,6 +31,7 @@ import { DaemonSettingsTab } from "./components/daemon-settings-tab";
 import { UpdatesSettingsTab } from "./components/updates-settings-tab";
 import { WorkspaceRouteLayout } from "./components/workspace-route-layout";
 import { DesktopRouteErrorPage } from "./components/route-error-page";
+import { ErrorBoundary } from "@multica/ui/components/common/error-boundary";
 
 /**
  * Wraps `SettingsPage` so the desktop-only extra tabs can pull their labels

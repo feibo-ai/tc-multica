@@ -1,0 +1,32 @@
+{
+  "tab": "팀",
+  "projects_tab": "프로젝트",
+  "you": "나",
+  "empty": "아직 팀 멤버가 없습니다",
+  "agents_running": "에이전트 {{n}}개 실행 중",
+  "agents_idle": "실행 중인 에이전트 없음",
+  "metrics": {
+    "projects": "프로젝트 · 리드 / DRI",
+    "agents": "에이전트",
+    "autopilots": "자동화",
+    "ai_usage": "AI 사용량 (주 / 월)"
+  },
+  "metrics_help": {
+    "projects": "이 사람이 리드 / DRI를 맡은 프로젝트 수 (첫 번째 숫자는 리드, 두 번째는 DRI)",
+    "agents": "이 사람이 소유한 에이전트 총수. 지금 실행 중인 수는 카드 상단 상태에 표시됩니다",
+    "autopilots": "이 사람이 소유한 예약 자동화(일일/주간 다이제스트, 점검)",
+    "ai_usage": "이번 주 / 이번 달에 사용한 AI 토큰으로, 대략적인 비용에 해당합니다"
+  },
+  "distribution": "작업",
+  "distribution_help": "이 사람과 그 에이전트에게 배정된 작업을 상태별로 표시합니다 (AI 네이티브 팀의 작업은 대부분 에이전트에 있습니다)",
+  "blocked_help": "막힘 상태에 멈춰 있는 작업",
+  "status": {
+    "backlog": "백로그",
+    "todo": "할 일",
+    "in_progress": "진행 중",
+    "in_review": "검토 중",
+    "done": "완료",
+    "blocked": "막힘",
+    "cancelled": "취소됨"
+  }
+}

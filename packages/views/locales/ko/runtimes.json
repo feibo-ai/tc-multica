@@ -250,6 +250,7 @@
   "charts": {
     "heatmap_less": "적음",
     "heatmap_more": "많음",
+    "heatmap_window": "최근 26주",
     "tooltip_total": "합계"
   },
   "list": {

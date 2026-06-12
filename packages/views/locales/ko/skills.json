@@ -9,7 +9,8 @@
       "all": { "label": "전체", "description": "이 워크스페이스의 모든 스킬" },
       "used": { "label": "사용 중", "description": "하나 이상의 에이전트에 할당된 스킬" },
       "unused": { "label": "미사용", "description": "어떤 에이전트에도 할당되지 않은 스킬" },
-      "mine": { "label": "내가 만든 스킬", "description": "내가 생성한 스킬" }
+      "mine": { "label": "내가 만든 스킬", "description": "내가 생성한 스킬" },
+      "stale": { "label": "오래됨", "description": "90일간 검토되지 않았거나, 한 번도 검토되지 않음" }
     },
     "empty": {
       "title": "아직 스킬이 없습니다",
@@ -38,6 +39,8 @@
     "name": "이름",
     "used_by": "사용 중",
     "source": "출처 · 추가한 사람",
+    "owner": "소유자",
+    "last_reviewed": "마지막 검토",
     "updated": "수정일",
     "no_description": "설명 없음",
     "lock_tooltip": "읽기 전용 — 생성자 또는 관리자만 수정할 수 있습니다",
@@ -50,6 +53,17 @@
     "source_clawhub": "ClawHub에서 가져옴",
     "source_skills_sh": "Skills.sh에서 가져옴",
     "source_github": "GitHub에서 가져옴"
+  },
+  "owner": {
+    "unassigned": "소유자 없음",
+    "assign": "소유자 지정",
+    "change": "소유자 변경"
+  },
+  "review": {
+    "never": "검토 안 함",
+    "mark_reviewed": "검토 완료로 표시",
+    "marked_reviewed": "검토 완료로 표시함",
+    "mark_reviewed_failed": "검토 완료로 표시하지 못했습니다"
   },
   "detail": {
     "all_skills": "모든 스킬",

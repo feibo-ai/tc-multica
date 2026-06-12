@@ -238,6 +238,7 @@
   "charts": {
     "heatmap_less": "少ない",
     "heatmap_more": "多い",
+    "heatmap_window": "直近 26 週間",
     "tooltip_total": "合計"
   },
   "list": {

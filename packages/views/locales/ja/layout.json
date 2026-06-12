@@ -3,6 +3,7 @@
     "inbox": "インボックス",
     "my_issues": "マイイシュー",
     "issues": "イシュー",
+    "team": "チーム",
     "projects": "プロジェクト",
     "autopilots": "オートパイロット",
     "agents": "エージェント",
@@ -10,6 +11,7 @@
     "usage": "使用量",
     "runtimes": "ランタイム",
     "skills": "スキル",
+    "integrations": "インテグレーション",
     "settings": "設定"
   },
   "help": {
@@ -33,6 +35,7 @@
     "log_out": "ログアウト",
     "new_issue": "新規イシュー",
     "new_issue_shortcut": "C",
+    "new_project": "新規プロジェクト",
     "pinned_label": "ピン留め済み",
     "workspace_group": "ワークスペース",
     "configure_group": "設定",

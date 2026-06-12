@@ -77,6 +77,8 @@ import koLayout from "./ko/layout.json";
 import koUsage from "./ko/usage.json";
 import koUi from "./ko/ui.json";
 import koSquads from "./ko/squads.json";
+import koIntegrations from "./ko/integrations.json";
+import koTeam from "./ko/team.json";
 import koBilling from "./ko/billing.json";
 import jaCommon from "./ja/common.json";
 import jaAuth from "./ja/auth.json";
@@ -102,6 +104,8 @@ import jaLayout from "./ja/layout.json";
 import jaUsage from "./ja/usage.json";
 import jaUi from "./ja/ui.json";
 import jaSquads from "./ja/squads.json";
+import jaIntegrations from "./ja/integrations.json";
+import jaTeam from "./ja/team.json";
 import jaBilling from "./ja/billing.json";
 
 // Single source of truth for the resource bundle. Both apps (web layout +
@@ -191,6 +195,8 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     usage: koUsage,
     ui: koUi,
     squads: koSquads,
+    integrations: koIntegrations,
+    team: koTeam,
     billing: koBilling,
   },
   ja: {
@@ -218,6 +224,8 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     usage: jaUsage,
     ui: jaUi,
     squads: jaSquads,
+    integrations: jaIntegrations,
+    team: jaTeam,
     billing: jaBilling,
   },
 };

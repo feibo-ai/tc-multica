@@ -48,6 +48,25 @@
     "header_tasks": "작업",
     "no_data": "이 기간에는 에이전트 활동이 없습니다."
   },
+  "tabs": {
+    "users": "사용자",
+    "agents": "에이전트"
+  },
+  "heatmap": {
+    "metric_cost": "비용",
+    "metric_tokens": "토큰",
+    "select_hint": "행을 선택하면 최근 26주 활동을 볼 수 있습니다"
+  },
+  "by_user": {
+    "caption": "사용자 {{count}}명",
+    "header_user": "사용자",
+    "header_cost": "비용",
+    "header_tokens": "토큰",
+    "unattributed": "미할당",
+    "tools_label": "도구",
+    "tool_claude_code": "Claude Code",
+    "no_data": "이 기간에는 로컬 CLI 사용량이 없습니다."
+  },
   "empty": {
     "title": "아직 사용량이 없습니다",
     "body": "여기에서 에이전트가 작업을 실행하기 시작하면 토큰 비용과 실행 시간이 이 화면에 표시됩니다."
