@@ -1,0 +1,32 @@
+{
+  "tab": "チーム",
+  "projects_tab": "プロジェクト",
+  "you": "あなた",
+  "empty": "チームメンバーはまだいません",
+  "agents_running": "{{n}} 個のエージェントが稼働中",
+  "agents_idle": "稼働中のエージェントはありません",
+  "metrics": {
+    "projects": "プロジェクト · リード / DRI",
+    "agents": "エージェント",
+    "autopilots": "自動化",
+    "ai_usage": "AI 使用量（週 / 月）"
+  },
+  "metrics_help": {
+    "projects": "この人がリード / DRI を務めるプロジェクト数（最初の数字がリード、2 番目が DRI）",
+    "agents": "この人が所有するエージェントの総数。現在稼働中の数はカードの上のステータスに表示されます",
+    "autopilots": "この人が所有する、スケジュールされた自動化（日次・週次のダイジェスト、巡回など）",
+    "ai_usage": "今週 / 今月に使用した AI トークン量。おおよそのコストに相当します"
+  },
+  "distribution": "タスク",
+  "distribution_help": "この人本人とそのエージェントに割り当てられたタスク（ステータス別。AI-native なチームでは作業の大半がエージェントに乗ります）",
+  "blocked_help": "ブロック状態で止まっているタスク",
+  "status": {
+    "backlog": "バックログ",
+    "todo": "未着手",
+    "in_progress": "進行中",
+    "in_review": "レビュー中",
+    "done": "完了",
+    "blocked": "停滞",
+    "cancelled": "キャンセル済み"
+  }
+}

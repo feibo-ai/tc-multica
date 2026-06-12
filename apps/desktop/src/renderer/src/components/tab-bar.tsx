@@ -126,6 +126,7 @@ function SortableTabItem({
 
   const tabButton = (
     <button
+      type="button"
       ref={setNodeRef}
       style={style}
       {...attributes}
@@ -223,6 +224,7 @@ function NewTabButton() {
 
   return (
     <button
+      type="button"
       onClick={handleClick}
       style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-muted/50 hover:text-muted-foreground"

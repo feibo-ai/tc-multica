@@ -1,0 +1,138 @@
+{
+  "page": {
+    "title": "インテグレーション",
+    "description": "MCP サーバー、feishu の認証情報、オートパイロット bot のデプロイを管理します。",
+    "new_button": "新規インテグレーション",
+    "load_failed": "インテグレーションの読み込みに失敗しました。",
+    "empty": "インテグレーションはまだありません。<em>新規インテグレーション</em> をクリックして追加してください。",
+    "filter_all": "すべて"
+  },
+  "table": {
+    "name": "名前",
+    "kind": "種別",
+    "status": "ステータス",
+    "version": "バージョン"
+  },
+  "create_dialog": {
+    "title": "新規インテグレーション",
+    "kind_label": "種別",
+    "name_label": "名前",
+    "name_placeholder": "例: tcmcp",
+    "cancel": "キャンセル",
+    "create": "作成",
+    "creating": "作成中…",
+    "name_required": "名前は必須です"
+  },
+  "detail": {
+    "load_failed": "インテグレーションの読み込みに失敗しました。",
+    "back": "インテグレーション一覧に戻る",
+    "status_heading": "ステータス",
+    "status_label": "インテグレーションのステータス",
+    "config_version_label": "設定バージョン",
+    "active_deployment_label": "稼働中のデプロイ",
+    "last_heartbeat": "最終ハートビート",
+    "no_active_deployment": "稼働中のデプロイはありません。",
+    "deployment_history": "デプロイ履歴"
+  },
+  "config": {
+    "heading": "設定",
+    "mode_form": "フォーム",
+    "mode_json": "生の JSON",
+    "reset": "リセット",
+    "save": "設定を保存",
+    "saving": "保存中…",
+    "must_be_object": "設定は JSON オブジェクトである必要があります",
+    "invalid_json": "JSON が無効です: {{message}}",
+    "switch_form_needs_object": "フォームに切り替えられません: トップレベルの値は JSON オブジェクトである必要があります。",
+    "switch_form_invalid_json": "フォームに切り替えられません — 先に JSON を修正してください: {{message}}"
+  },
+  "actions": {
+    "restart": "再起動",
+    "redeploy": "再デプロイ",
+    "delete_confirm": "このインテグレーションとそのすべてのシークレットを削除しますか?"
+  },
+  "secrets": {
+    "heading": "シークレット",
+    "add_button": "+ シークレットを追加",
+    "empty": "シークレットはまだありません。",
+    "reveal_tooltip": "表示する（30 秒後に自動的に非表示になります）",
+    "delete_tooltip": "削除",
+    "delete_confirm": "シークレット {{key}} を削除しますか?",
+    "add_title": "シークレットを追加",
+    "key_label": "Key（UPPER_SNAKE_CASE）",
+    "key_placeholder": "FEISHU_APP_SECRET",
+    "value_label": "Value",
+    "cancel": "キャンセル",
+    "save": "保存",
+    "saving": "保存中…",
+    "key_pattern_error": "Key は ^[A-Z][A-Z0-9_]+$ に一致する必要があります",
+    "value_required": "Value は必須です"
+  },
+  "timeline": {
+    "load_failed": "デプロイ履歴の読み込みに失敗しました。",
+    "empty": "登録されたデプロイはまだありません。",
+    "active": "稼働中",
+    "started": "開始",
+    "last_heartbeat": "最終ハートビート",
+    "stopped": "停止"
+  },
+  "forms": {
+    "mcp": {
+      "transport_stdio": "stdio（ローカルプロセス）",
+      "transport_sse": "sse（HTTP SSE）",
+      "transport_http": "http（ストリーミング）",
+      "add_argument": "+ 引数を追加",
+      "add_variable": "+ 変数を追加",
+      "transport_label": "トランスポート",
+      "command_label": "コマンド",
+      "command_hint": "起動するバイナリ。例: node / python / 実行ファイルのパス",
+      "working_dir_label": "作業ディレクトリ",
+      "working_dir_hint": "任意。デフォルトはランタイムプロセスの cwd です。",
+      "url_label": "URL",
+      "url_hint": "{{transport}} エンドポイント",
+      "arguments_label": "引数",
+      "arguments_hint": "1 行に 1 つの CLI 引数。例: ./mcp-server.js · --port · 9000",
+      "env_label": "環境変数",
+      "env_hint": "シークレットでない環境変数。シークレットの API トークンは下のシークレットセクションに入れてください。",
+      "remove": "削除"
+    },
+    "feishu": {
+      "domain_feishu": "feishu.cn（中国本土）",
+      "domain_lark": "larksuite.com（国際版）",
+      "app_id_label": "App ID",
+      "app_id_hint": "feishu.cn / lark.com の開発者コンソールから取得します。例: cli_xxxxxxxxxxxxxxx",
+      "domain_label": "ドメイン",
+      "base_url_label": "Base URL",
+      "base_url_hint": "API ホストを上書きします。空のままにすると選択したドメインのデフォルトが使われます。",
+      "team_chat_id_label": "チームチャット ID",
+      "team_chat_id_hint": "bot が所属する、OAuth で解決されたチャット。例: oc_xxxxxxxxxxxxxx",
+      "tenant_key_label": "テナントキー",
+      "tenant_key_hint": "任意。マルチテナントのストアアプリを連携する際に設定します。",
+      "webhook_url_label": "Webhook URL",
+      "webhook_url_hint": "自動化からメッセージを投稿するための incoming webhook の URL。（カスタム Bot の URL）",
+      "secrets_hint": "シークレット: FEISHU_APP_SECRET、FEISHU_VERIFICATION_TOKEN、（アプリが暗号化イベントを使う場合は）FEISHU_ENCRYPT_KEY を下のシークレットセクションに追加してください。これらは設定に貼り付けないでください。"
+    },
+    "autopilot": {
+      "enabled": "有効",
+      "disabled": "無効（一時停止中）",
+      "bot_name_label": "Bot 名",
+      "bot_name_hint": "オートパイロットのダッシュボードに表示される名前。",
+      "enabled_label": "有効",
+      "schedule_label": "スケジュール",
+      "schedule_hint": "5 フィールド形式の cron 式（例: \"0 9 * * 1\" — 毎週月曜 09:00）、またはトリガー実行のみの場合は \"manual\"。",
+      "target_workspace_label": "対象ワークスペースの slug",
+      "target_workspace_hint": "bot が操作するワークスペース。空のままにすると、このインテグレーションを所有するワークスペースがデフォルトになります。",
+      "description_label": "説明",
+      "description_hint": "bot 一覧用の 1 行サマリー。",
+      "health_check_label": "ヘルスチェック URL",
+      "health_check_hint": "任意。multica はこの URL に ping を送って bot のランタイムが稼働中か確認します。",
+      "secrets_hint": "シークレット: bot に必要な署名シークレット（例: WEBHOOK_SIGNING_SECRET）や API トークンは下のシークレットセクションに入れてください。"
+    }
+  },
+  "version_tag": "v{{version}}",
+  "kinds": {
+    "mcp_server": "mcp-server",
+    "feishu": "feishu",
+    "autopilot_bot": "autopilot-bot"
+  }
+}

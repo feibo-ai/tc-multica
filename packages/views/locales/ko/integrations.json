@@ -1,0 +1,138 @@
+{
+  "page": {
+    "title": "통합",
+    "description": "MCP 서버, 페이슈(Feishu) 자격 증명, 오토파일럿 봇 배포를 관리합니다.",
+    "new_button": "새 통합",
+    "load_failed": "통합 목록을 불러오지 못했습니다.",
+    "empty": "아직 통합이 없습니다. <em>새 통합</em>을 눌러 추가하세요.",
+    "filter_all": "전체"
+  },
+  "table": {
+    "name": "이름",
+    "kind": "종류",
+    "status": "상태",
+    "version": "버전"
+  },
+  "create_dialog": {
+    "title": "새 통합",
+    "kind_label": "종류",
+    "name_label": "이름",
+    "name_placeholder": "예: tcmcp",
+    "cancel": "취소",
+    "create": "만들기",
+    "creating": "만드는 중…",
+    "name_required": "이름은 필수입니다"
+  },
+  "detail": {
+    "load_failed": "통합을 불러오지 못했습니다.",
+    "back": "통합 목록으로 돌아가기",
+    "status_heading": "상태",
+    "status_label": "통합 상태",
+    "config_version_label": "구성 버전",
+    "active_deployment_label": "활성 배포",
+    "last_heartbeat": "마지막 하트비트",
+    "no_active_deployment": "활성 배포가 없습니다.",
+    "deployment_history": "배포 이력"
+  },
+  "config": {
+    "heading": "구성",
+    "mode_form": "양식",
+    "mode_json": "원본 JSON",
+    "reset": "초기화",
+    "save": "구성 저장",
+    "saving": "저장 중…",
+    "must_be_object": "구성은 JSON 객체여야 합니다",
+    "invalid_json": "잘못된 JSON: {{message}}",
+    "switch_form_needs_object": "양식으로 전환할 수 없습니다: 최상위 값이 JSON 객체여야 합니다.",
+    "switch_form_invalid_json": "양식으로 전환할 수 없습니다 — 먼저 JSON을 수정하세요: {{message}}"
+  },
+  "actions": {
+    "restart": "다시 시작",
+    "redeploy": "재배포",
+    "delete_confirm": "이 통합과 모든 시크릿을 삭제할까요?"
+  },
+  "secrets": {
+    "heading": "시크릿",
+    "add_button": "+ 시크릿 추가",
+    "empty": "아직 시크릿이 없습니다.",
+    "reveal_tooltip": "표시 (30초 후 자동 숨김)",
+    "delete_tooltip": "삭제",
+    "delete_confirm": "시크릿 {{key}}을(를) 삭제할까요?",
+    "add_title": "시크릿 추가",
+    "key_label": "키 (UPPER_SNAKE_CASE)",
+    "key_placeholder": "FEISHU_APP_SECRET",
+    "value_label": "값",
+    "cancel": "취소",
+    "save": "저장",
+    "saving": "저장 중…",
+    "key_pattern_error": "키는 ^[A-Z][A-Z0-9_]+$ 형식과 일치해야 합니다",
+    "value_required": "값은 필수입니다"
+  },
+  "timeline": {
+    "load_failed": "배포 이력을 불러오지 못했습니다.",
+    "empty": "아직 등록된 배포가 없습니다.",
+    "active": "활성",
+    "started": "시작됨",
+    "last_heartbeat": "마지막 하트비트",
+    "stopped": "중지됨"
+  },
+  "forms": {
+    "mcp": {
+      "transport_stdio": "stdio (로컬 프로세스)",
+      "transport_sse": "sse (HTTP SSE)",
+      "transport_http": "http (스트리밍)",
+      "add_argument": "+ 인수 추가",
+      "add_variable": "+ 변수 추가",
+      "transport_label": "전송 방식",
+      "command_label": "명령",
+      "command_hint": "실행할 바이너리, 예: node / python / 실행 파일 경로",
+      "working_dir_label": "작업 디렉터리",
+      "working_dir_hint": "선택 사항. 기본값은 런타임 프로세스의 작업 디렉터리입니다.",
+      "url_label": "URL",
+      "url_hint": "{{transport}} 엔드포인트",
+      "arguments_label": "인수",
+      "arguments_hint": "한 줄에 CLI 인수 하나씩. 예: ./mcp-server.js · --port · 9000",
+      "env_label": "환경 변수",
+      "env_hint": "비밀이 아닌 환경 변수. 비밀 API 토큰은 아래 시크릿 섹션에 넣으세요.",
+      "remove": "제거"
+    },
+    "feishu": {
+      "domain_feishu": "feishu.cn (중국 본토)",
+      "domain_lark": "larksuite.com (국제판)",
+      "app_id_label": "App ID",
+      "app_id_hint": "feishu.cn / lark.com 개발자 콘솔에서 확인. 예: cli_xxxxxxxxxxxxxxx",
+      "domain_label": "도메인",
+      "base_url_label": "Base URL",
+      "base_url_hint": "API 호스트를 재정의합니다. 비워 두면 선택한 도메인의 기본값을 사용합니다.",
+      "team_chat_id_label": "팀 채팅 ID",
+      "team_chat_id_hint": "봇이 속한, OAuth로 확인된 채팅. 예: oc_xxxxxxxxxxxxxx",
+      "tenant_key_label": "테넌트 키",
+      "tenant_key_hint": "선택 사항. 멀티 테넌트 스토어 앱을 통합할 때 설정합니다.",
+      "webhook_url_label": "Webhook URL",
+      "webhook_url_hint": "자동화에서 메시지를 게시하기 위한 수신 webhook URL입니다. (커스텀 봇 URL.)",
+      "secrets_hint": "시크릿: FEISHU_APP_SECRET, FEISHU_VERIFICATION_TOKEN, 그리고 (앱이 암호화된 이벤트를 사용하는 경우) FEISHU_ENCRYPT_KEY를 아래 시크릿 섹션에 추가하세요. 절대 구성에 직접 붙여넣지 마세요."
+    },
+    "autopilot": {
+      "enabled": "사용",
+      "disabled": "사용 안 함 (일시 중지됨)",
+      "bot_name_label": "봇 이름",
+      "bot_name_hint": "오토파일럿 대시보드에 표시되는 이름입니다.",
+      "enabled_label": "사용 여부",
+      "schedule_label": "스케줄",
+      "schedule_hint": "5필드 형식의 cron 표현식(예: \"0 9 * * 1\" — 매주 월요일 09:00) 또는 트리거 전용일 경우 \"manual\".",
+      "target_workspace_label": "대상 워크스페이스 slug",
+      "target_workspace_hint": "봇이 작동하는 워크스페이스. 비워 두면 이 통합을 소유한 워크스페이스가 기본값입니다.",
+      "description_label": "설명",
+      "description_hint": "봇 목록에 표시할 한 줄 요약입니다.",
+      "health_check_label": "헬스 체크 URL",
+      "health_check_hint": "선택 사항. multica가 이 URL을 ping하여 봇 런타임이 살아 있는지 확인합니다.",
+      "secrets_hint": "시크릿: 봇에 필요한 서명 시크릿(예: WEBHOOK_SIGNING_SECRET)이나 API 토큰은 아래 시크릿 섹션에 넣으세요."
+    }
+  },
+  "version_tag": "v{{version}}",
+  "kinds": {
+    "mcp_server": "mcp-server",
+    "feishu": "feishu",
+    "autopilot_bot": "autopilot-bot"
+  }
+}

@@ -7,6 +7,7 @@ import type { AnimateLayoutChanges } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { toast } from "sonner";
 import type { Issue, UpdateIssueRequest } from "@multica/core/types";
+import { formatDateOnly, isPastDateOnly } from "@multica/core/issues/date";
 import { CalendarClock, CalendarDays } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -29,10 +30,7 @@ import { useIssuePane } from "./issue-pane";
 import { useT } from "../../i18n";
 
 function formatDate(date: string): string {
-  return new Date(date).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
+  return formatDateOnly(date, { month: "short", day: "numeric" }, "en-US");
 }
 
 function descriptionPreview(markdown: string): string {
@@ -262,7 +260,7 @@ export const BoardCardContent = memo(function BoardCardContent({
                       trigger={
                         <span
                           className={`flex items-center gap-1 text-xs ${
-                            new Date(issue.due_date!) < new Date()
+                            isPastDateOnly(issue.due_date)
                               ? "text-destructive"
                               : "text-muted-foreground"
                           }`}
@@ -276,7 +274,7 @@ export const BoardCardContent = memo(function BoardCardContent({
                 ) : (
                   <span
                     className={`flex shrink-0 items-center gap-1 text-xs ${
-                      new Date(issue.due_date!) < new Date()
+                      isPastDateOnly(issue.due_date)
                         ? "text-destructive"
                         : "text-muted-foreground"
                     }`}
