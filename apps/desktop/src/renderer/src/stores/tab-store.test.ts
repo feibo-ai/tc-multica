@@ -266,7 +266,7 @@ describe("useTabStore actions", () => {
     const s = useTabStore.getState();
     expect(s.activeWorkspaceSlug).toBe("acme");
     expect(s.byWorkspace.acme.tabs).toHaveLength(1);
-    expect(s.byWorkspace.acme.tabs[0].path).toBe("/acme/issues");
+    expect(s.byWorkspace.acme.tabs[0].path).toBe("/acme/projects");
   });
 
   it("validateWorkspaceSlugs reactivates an existing valid group before seeding", () => {
@@ -296,7 +296,7 @@ describe("useTabStore actions", () => {
     expect(Object.keys(s.byWorkspace)).toEqual(["acme"]);
     expect(s.activeWorkspaceSlug).toBe("acme");
     expect(s.byWorkspace.acme.tabs).toHaveLength(1);
-    expect(s.byWorkspace.acme.tabs[0].path).toBe("/acme/issues");
+    expect(s.byWorkspace.acme.tabs[0].path).toBe("/acme/projects");
     // The dropped stale group's router must be disposed, not leaked.
     expect(staleRouter.dispose).toHaveBeenCalled();
   });

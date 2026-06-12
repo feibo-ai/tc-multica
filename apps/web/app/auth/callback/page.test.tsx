@@ -223,7 +223,7 @@ describe("CallbackPage", () => {
     ]);
     render(<CallbackPage />);
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith(paths.workspace("acme").issues());
+      expect(mockPush).toHaveBeenCalledWith(paths.workspace("acme").root());
     });
   });
 });
