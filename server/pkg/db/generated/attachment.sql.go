@@ -115,6 +115,38 @@ func (q *Queries) GetAttachment(ctx context.Context, arg GetAttachmentParams) (A
 	return i, err
 }
 
+const getAttachmentByIDOnly = `-- name: GetAttachmentByIDOnly :one
+SELECT id, workspace_id, issue_id, comment_id, uploader_type, uploader_id, filename, url, content_type, size_bytes, created_at, chat_session_id, chat_message_id FROM attachment
+WHERE id = $1
+`
+
+// Used by the download endpoint, which derives workspace context from the
+// attachment row itself rather than from request headers/query params. The
+// caller still has to verify the requester is a member of the returned
+// workspace_id before serving the bytes — this query is access-neutral on
+// purpose so a self-contained URL like /api/attachments/{id}/download can
+// work as a native <img>/<video> resource load (no header attachment).
+func (q *Queries) GetAttachmentByIDOnly(ctx context.Context, id pgtype.UUID) (Attachment, error) {
+	row := q.db.QueryRow(ctx, getAttachmentByIDOnly, id)
+	var i Attachment
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.IssueID,
+		&i.CommentID,
+		&i.UploaderType,
+		&i.UploaderID,
+		&i.Filename,
+		&i.Url,
+		&i.ContentType,
+		&i.SizeBytes,
+		&i.CreatedAt,
+		&i.ChatSessionID,
+		&i.ChatMessageID,
+	)
+	return i, err
+}
+
 const linkAttachmentsToChatMessage = `-- name: LinkAttachmentsToChatMessage :exec
 UPDATE attachment
 SET chat_message_id = $1
@@ -462,12 +494,12 @@ WHERE issue_id = $2
 `
 
 type ReplaceCommentAttachmentsParams struct {
-	CommentID pgtype.UUID   `json:"comment_id"`
-	IssueID   pgtype.UUID   `json:"issue_id"`
-	Column3   []pgtype.UUID `json:"column_3"`
+	CommentID     pgtype.UUID   `json:"comment_id"`
+	IssueID       pgtype.UUID   `json:"issue_id"`
+	AttachmentIds []pgtype.UUID `json:"attachment_ids"`
 }
 
 func (q *Queries) ReplaceCommentAttachments(ctx context.Context, arg ReplaceCommentAttachmentsParams) error {
-	_, err := q.db.Exec(ctx, replaceCommentAttachments, arg.CommentID, arg.IssueID, arg.Column3)
+	_, err := q.db.Exec(ctx, replaceCommentAttachments, arg.CommentID, arg.IssueID, arg.AttachmentIds)
 	return err
 }

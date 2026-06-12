@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { projectKeys } from "./queries";
 import { useWorkspaceId } from "../hooks";
+import { useRecentContextStore } from "../chat/recent-context-store";
 import type { Project, CreateProjectRequest, UpdateProjectRequest } from "../types";
 
 // The default project list cache stores an unwrapped `Project[]` — see
@@ -106,6 +107,9 @@ export function useDeleteProject() {
     },
     onError: (_err, _id, ctx) => {
       if (ctx?.prevList) qc.setQueryData(projectListAllKey(wsId), ctx.prevList);
+    },
+    onSuccess: (_data, id) => {
+      useRecentContextStore.getState().forgetContext(wsId, { type: "project", id });
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: projectKeys.list(wsId) });
