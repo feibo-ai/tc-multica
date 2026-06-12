@@ -95,17 +95,22 @@ func (h *Handler) buildTeamOverview(
 		return out, err
 	}
 
-	// Aggregates keyed by member.id.
-	issuesByMember := map[string]map[string]int64{}
+	// EVERY per-person count here is keyed by USER.id, NOT member.id. For a
+	// member-type assignee / lead / creator / squad member the polymorphic *_id
+	// column stores the user id (see issue.sql + handler_test + squad.go:
+	// "assignee_type='member' AND assignee_id=user_id"). So all of them bucket
+	// by user.id and assemble via m.UserID — exactly like DRI / agents / tokens.
+	// member.id is used only for the card identity / IsSelf / viewer match.
+	issuesByUser := map[string]map[string]int64{}
 	if rows, err := h.Queries.CountIssuesByMemberStatus(ctx, workspaceID); err != nil {
 		return out, err
 	} else {
 		for _, row := range rows {
 			id := uuidToString(row.AssigneeID)
-			if issuesByMember[id] == nil {
-				issuesByMember[id] = map[string]int64{}
+			if issuesByUser[id] == nil {
+				issuesByUser[id] = map[string]int64{}
 			}
-			issuesByMember[id][row.Status] = row.Count
+			issuesByUser[id][row.Status] = row.Count
 		}
 	}
 
@@ -123,32 +128,34 @@ func (h *Handler) buildTeamOverview(
 		}
 	}
 
-	autopilotsByMember := map[string]int64{}
+	autopilotsByUser := map[string]int64{}
 	if rows, err := h.Queries.CountAutopilotsByCreatorMember(ctx, workspaceID); err != nil {
 		return out, err
 	} else {
 		for _, row := range rows {
-			autopilotsByMember[uuidToString(row.CreatedByID)] = row.Count
+			autopilotsByUser[uuidToString(row.CreatedByID)] = row.Count
 		}
 	}
 
-	projectsLedByMember := map[string]int64{}
+	projectsLedByUser := map[string]int64{}
 	if rows, err := h.Queries.CountProjectsByLeadMember(ctx, workspaceID); err != nil {
 		return out, err
 	} else {
 		for _, row := range rows {
-			projectsLedByMember[uuidToString(row.LeadID)] = row.Count
+			projectsLedByUser[uuidToString(row.LeadID)] = row.Count
 		}
 	}
 
-	squadByMember := map[string]string{}
+	// squad_member.member_id (member_type='member') is ALSO the user.id, not the
+	// member.id (squad.go resolves the input as a user and stores it verbatim).
+	squadByUser := map[string]string{}
 	if rows, err := h.Queries.ListSquadMembershipByMember(ctx, workspaceID); err != nil {
 		return out, err
 	} else {
 		for _, row := range rows {
 			id := uuidToString(row.MemberID)
-			if squadByMember[id] == "" { // first squad wins for the chip
-				squadByMember[id] = row.SquadName
+			if squadByUser[id] == "" { // first squad wins for the chip
+				squadByUser[id] = row.SquadName
 			}
 		}
 	}
@@ -194,7 +201,7 @@ func (h *Handler) buildTeamOverview(
 		memberID := uuidToString(m.ID)
 		userID := uuidToString(m.UserID)
 
-		byStatus := issuesByMember[memberID]
+		byStatus := issuesByUser[userID]
 		if byStatus == nil {
 			byStatus = map[string]int64{}
 		}
@@ -220,8 +227,8 @@ func (h *Handler) buildTeamOverview(
 			AvatarURL:           m.UserAvatarUrl.String,
 			Role:                m.Role,
 			IsSelf:              memberID == viewerMemberID,
-			SquadName:           squadByMember[memberID],
-			ProjectsLed:         projectsLedByMember[memberID],
+			SquadName:           squadByUser[userID],
+			ProjectsLed:         projectsLedByUser[userID],
 			ProjectsDri:         projectsDriByUser[userID],
 			IssuesByStatus:      byStatus,
 			IssuesTotal:         total,
@@ -230,7 +237,7 @@ func (h *Handler) buildTeamOverview(
 			AgentIssuesTotal:    agentTotal,
 			AgentsTotal:         agentsByUser[userID],
 			AgentsRunning:       runningAgentsByUser[userID],
-			Autopilots:          autopilotsByMember[memberID],
+			Autopilots:          autopilotsByUser[userID],
 			TokensWeek:          tokensWeekByUser[userID],
 			TokensMonth:         tokensMonthByUser[userID],
 		})

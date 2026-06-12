@@ -143,16 +143,18 @@ type CountIssuesByMemberStatusRow struct {
 // the /api/team/overview endpoint runs a fixed number of queries regardless of
 // team size (TEA-104 criterion N2). All scoped by workspace_id (multi-tenancy).
 //
-// ID reference note (the handler maps both keys per member):
+// ID reference note (the handler buckets each by the right id domain):
 //
-//	issue.assignee_id (assignee_type='member')   → member.id
-//	project.lead_id   (lead_type='member')        → member.id
-//	project.dri_user_id                           → user.id
-//	agent.owner_id                                → user.id
-//	autopilot.created_by_id (created_by_type='member') → member.id
-//	squad_member.member_id (member_type='member') → member.id
-//	token usage owner_id (ListDashboardUsageByPerson) → user.id
+//	issue.assignee_id (assignee_type='member')         → user.id  (polymorphic actor: member-type *_id stores the user id)
+//	project.lead_id   (lead_type='member')             → user.id  (polymorphic actor)
+//	autopilot.created_by_id (created_by_type='member') → user.id  (polymorphic actor)
+//	project.dri_user_id                                → user.id
+//	agent.owner_id                                     → user.id
+//	squad_member.member_id (member_type='member')      → user.id  (squad.go stores the user id)
+//	token usage owner_id (ListDashboardUsageByPerson)  → user.id
 //
+// So EVERY per-person count buckets by user.id (assembled via member.UserID);
+// member.id is used only for the card identity / IsSelf / viewer match.
 // Per-member issue counts grouped by status (issues assigned directly to the
 // member). Keyed by member.id. See CountAgentIssuesByOwnerStatus for the work
 // this member's agents are doing — the card sums both.
