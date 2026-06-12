@@ -1,5 +1,17 @@
 # Releases
 
+## v0.4.18
+
+修复团队总览卡的人均统计全为 0 的根因（TEA-104 跟进）。
+
+### 根因：member 维度统计用错了 ID 域
+团队卡的每个人均聚合（负责项目、任务分布、自动化、小队）都按 `member.id` 分桶，但 Multica 的 polymorphic actor 约定里，member 类型的 `assignee_id` / `lead_id` / `created_by_id` / `squad_member.member_id` 存的其实是 **`user.id`**（见 `issue.sql`：`assignee_type='member' AND assignee_id=user_id`）。于是这些计数永远匹配不上 member.id、恒为 0；而 DRI / 智能体 / AI 用量本就按 user.id 键，所以一直正常。生产数据印证：曾振华名下 93 个 issue、负责 11 个项目，卡片却显示 0。
+
+修复：handler 把全部人均聚合改为按 **user.id** 分桶（经 `member.UserID` 装配），与 DRI / 智能体 / tokens 一致；`member.id` 仅用于卡片身份 / IsSelf / viewer 匹配。先前 v0.4.17 的「标签修正 + 智能体派发任务合并 + 面板加宽」保留不变——本版让 member 直接指派的任务也正确显示。
+
+### 升级
+- 自更：daemon 设 `MULTICA_DAEMON_AUTO_UPDATE=true` 后自动升级；手动 `multica update` 或重跑 `scripts/install.sh`。
+
 ## v0.4.17
 
 团队总览页上线后修复：卡片数据口径 + 主从面板宽度（TEA-104 跟进）。

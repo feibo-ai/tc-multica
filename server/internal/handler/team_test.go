@@ -56,9 +56,12 @@ func TestTeamOverviewIssueCountsAndSort(t *testing.T) {
 		testPool.Exec(context.Background(), `DELETE FROM issue WHERE id = $1`, issue.ID)
 	})
 
+	// Member-type assignee_id holds the USER id, not the member id (polymorphic
+	// actor convention — see issue.sql). The card buckets by user.id, so the
+	// viewer member (whose user_id is testUserID) must see this issue.
 	if _, err := testPool.Exec(context.Background(),
 		`UPDATE issue SET assignee_type='member', assignee_id=$1, status='blocked' WHERE id=$2`,
-		memberID, issue.ID); err != nil {
+		testUserID, issue.ID); err != nil {
 		t.Fatalf("assign issue: %v", err)
 	}
 
