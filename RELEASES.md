@@ -1,5 +1,25 @@
 # Releases
 
+## v0.4.20
+
+本地 session 用量新增 Codex 采集器,并标注 Users/Agents 用量的口径差异(TEA-111 / TEA-112)。
+
+### 新增 Codex 本地 session 用量采集(TEA-112)
+daemon 的 ambient 采集器此前只认 Claude（`~/.claude` transcript），Codex CLI 的本地用量完全没进库，导致 dashboard「用量 · Users」只看得到 Claude。新增 `codexCollector`，扫 `~/.codex/{sessions,archived_sessions}/**/rollout-*.jsonl` 的 `token_count` 事件入库。
+
+口径要点（Codex 的 `total_token_usage` 是**按会话累计**值，非逐消息增量、且同一会话会重复发）：
+- **per-session 累计增量**：`delta = 本次末值 − 上次水位`，绝不把多行累计值相加；
+- **forward-only watermark**：首跑记录每会话当前累计值（不回填历史，避免把历史一次性灌进当前小时）；
+- **合成 dedup 键**（session_id=rollout UUID、message_id=session_id、request_id=`cum:`+累计）去重，`sessions/` 与 `archived_sessions/` 不重复计，归档移动后水位保留；
+- 模型从 `turn_context` 解析。
+
+### dashboard 用量口径标注（TEA-111）
+Users（本地 session）用量按本地 transcript 估算，属**近似**；Agents（云端任务）用量来自服务端逐任务计量，**精确**。两个 tab 各加一行小字说明，避免把近似值误读为精确账单。
+
+### 升级
+- 自更：daemon 设 `MULTICA_DAEMON_AUTO_UPDATE=true` 后自动升级；手动 `multica update` 或重跑 `scripts/install.sh`。
+- 注：Codex 用量采集在 **daemon** 侧——需 daemon 升级到本版并运行才会开始上报。
+
 ## v0.4.18
 
 修复团队总览卡的人均统计全为 0 的根因（TEA-104 跟进）。
