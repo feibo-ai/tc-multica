@@ -456,6 +456,57 @@ func TestCodexCollector_ArchivedDirAndDedup(t *testing.T) {
 	_ = archPath
 }
 
+// TestCodexCollector_ArchiveMovePreservesWatermark locks the design's hinge:
+// when Codex archives a session (file moves sessions/ → archived_sessions/,
+// same UUID, no content change), the UUID-keyed watermark survives the move so
+// the already-counted cumulative is NOT re-emitted. Both dirs are walked every
+// scan, so the session never leaves liveSessions — this is the normal flow the
+// watermark-drop loop relies on.
+func TestCodexCollector_ArchiveMovePreservesWatermark(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	c := &codexCollector{logger: discardLogger(), root: root}
+
+	sid := "archive-move-uuid"
+	ts := "2026-06-15T01:30:00.000Z"
+	srcPath := writeCodexRollout(t, root, "sessions", "rollout-move-"+sid+".jsonl",
+		codexSessionMeta(sid, ts),
+		codexTurnContext("gpt-5.5", ts, ""),
+		codexTokenCount("2026-06-15T01:30:05.000Z", 1000, 50, 800, 10),
+	)
+	_, state, err := c.Scan(ctx, nil) // seed at 1000 cumulative, emit nothing
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	appendToFile(t, srcPath, codexTokenCount("2026-06-15T01:30:06.000Z", 1100, 57, 880, 11)+"\n")
+	entries, state, err := c.Scan(ctx, state)
+	if err != nil {
+		t.Fatalf("grow scan: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("growth must emit exactly 1 delta, got %d", len(entries))
+	}
+
+	// ARCHIVE: move sessions/ → archived_sessions/ (flat), same UUID.
+	dstDir := filepath.Join(root, "archived_sessions")
+	if err := os.MkdirAll(dstDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(srcPath, filepath.Join(dstDir, "rollout-move-"+sid+".jsonl")); err != nil {
+		t.Fatalf("archive move: %v", err)
+	}
+
+	// Re-scan: UUID now under archived_sessions/ with the SAME final cumulative.
+	// Watermark must survive the move → delta 0 → nothing re-emitted.
+	entries, _, err = c.Scan(ctx, state)
+	if err != nil {
+		t.Fatalf("post-archive scan: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("archive move must not re-emit (UUID-keyed watermark survives), got %d: %+v", len(entries), entries)
+	}
+}
+
 func pad(n int) string {
 	if n < 10 {
 		return "0" + strconv.Itoa(n)

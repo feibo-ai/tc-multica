@@ -268,7 +268,16 @@ func (c *codexCollector) Scan(ctx context.Context, prevState json.RawMessage) ([
 		state.Sessions[id] = codexSessionWatermark{Input: s.input, Output: s.output, CacheRead: s.cache}
 	}
 
-	// Drop watermarks for sessions whose files all disappeared.
+	// Drop watermarks for sessions whose files all disappeared, to keep state
+	// bounded. SAFE for the normal flows: archiving moves a file
+	// sessions/→archived_sessions/ but BOTH dirs are walked every scan, so the
+	// session UUID never leaves liveSessions and its watermark survives the move
+	// (TestCodexCollector_ArchiveMovePreservesWatermark); a permanently-deleted
+	// session never reappears. KNOWN v1 EDGE: if a UUID vanishes from both dirs
+	// for a full scan and later reappears (external move-out-and-back, or a
+	// non-atomic archive caught mid-scan), it re-seeds at prev=0 and re-emits its
+	// cumulative once — a bounded over-count. Accepted over unbounded state
+	// growth; revisit with a grace-TTL if it ever bites in practice.
 	for id := range state.Sessions {
 		if _, ok := liveSessions[id]; !ok {
 			delete(state.Sessions, id)
