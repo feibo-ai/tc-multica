@@ -50,7 +50,9 @@
   },
   "tabs": {
     "users": "Users",
-    "agents": "Agents"
+    "agents": "Agents",
+    "users_caption": "Approximate — scanned from local CLI transcripts; session resume/fork can slightly over-count.",
+    "agents_caption": "Exact — recorded once per task."
   },
   "heatmap": {
     "metric_cost": "Cost",

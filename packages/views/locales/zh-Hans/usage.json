@@ -50,7 +50,9 @@
   },
   "tabs": {
     "users": "用户",
-    "agents": "智能体"
+    "agents": "智能体",
+    "users_caption": "近似 —— 扫描本地 CLI transcript;会话 resume/fork 可能略微过计。",
+    "agents_caption": "精确 —— 每个任务记录一次。"
   },
   "heatmap": {
     "metric_cost": "费用",

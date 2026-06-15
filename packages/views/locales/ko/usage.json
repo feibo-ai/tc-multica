@@ -50,7 +50,9 @@
   },
   "tabs": {
     "users": "사용자",
-    "agents": "에이전트"
+    "agents": "에이전트",
+    "users_caption": "근사치 — 로컬 CLI 트랜스크립트에서 스캔. 세션 재개/포크 시 약간 과다 집계될 수 있습니다.",
+    "agents_caption": "정확 — 작업마다 한 번 기록."
   },
   "heatmap": {
     "metric_cost": "비용",
