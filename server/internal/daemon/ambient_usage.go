@@ -34,9 +34,12 @@ type Collector interface {
 	Scan(ctx context.Context, prevState json.RawMessage) (entries []AmbientUsageEntry, nextState json.RawMessage, err error)
 }
 
-// ambientCollectors is the registry of active collectors. v1 ships Claude only.
+// ambientCollectors is the registry of active collectors.
 func (d *Daemon) ambientCollectors() []Collector {
-	return []Collector{newClaudeCollector(d.logger)}
+	return []Collector{
+		newClaudeCollector(d.logger),
+		newCodexCollector(d.logger),
+	}
 }
 
 // collectorStore is the on-disk { source -> opaque collector state }, persisted
