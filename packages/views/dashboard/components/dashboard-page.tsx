@@ -822,6 +822,7 @@ function UsageTabs({
         <TabsTrigger value="agents">🤖 {t(($) => $.tabs.agents)}</TabsTrigger>
       </TabsList>
       <TabsContent value="users">
+        <p className="mb-2 text-xs text-muted-foreground">{t(($) => $.tabs.users_caption)}</p>
         <UserUsagePanel
           wsId={wsId}
           viewTZ={viewTZ}
@@ -830,6 +831,7 @@ function UsageTabs({
         />
       </TabsContent>
       <TabsContent value="agents">
+        <p className="mb-2 text-xs text-muted-foreground">{t(($) => $.tabs.agents_caption)}</p>
         <AgentUsagePanel
           wsId={wsId}
           viewTZ={viewTZ}
