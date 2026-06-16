@@ -59,3 +59,39 @@ export function useUpdateRuntime(wsId: string) {
     },
   });
 }
+
+// TEA-113 fleet one-click update. Nudges every lagging local runtime in the
+// workspace to self-check and pull the authoritative latest release. DRI-only
+// (server enforces the owner/admin gate, INV-3).
+//
+// INV-1: the only input is `{ force }` — no version. The mutationFn forwards
+// exactly that to api.nudgeFleetSelfCheck, which sends `{ force }` and nothing
+// else. The server fills the target version.
+//
+// On settle we invalidate (a) the runtime list — the just-nudged machines will
+// report new cli_version on their next heartbeat, so the "needs update" set and
+// the sidebar dot recompute — and (b) every fleet audit query for this
+// workspace (regardless of `since`), since the audit table is the authoritative
+// progress source (INV-6) and now has fresh (A) trigger rows. We do NOT key
+// progress off the ephemeral self-check response; that is a one-shot trigger
+// receipt, while the audit table survives the 5min ephemeral TTL.
+//
+// 429 (INV-12) surfaces as a typed FleetRateLimitError from the client — it
+// propagates to the caller's onError so the UI can disable the button and show
+// "try again shortly". The error is not swallowed here.
+export function useNudgeFleet(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ force }: { force?: boolean } = {}) =>
+      api.nudgeFleetSelfCheck(wsId, { force }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
+      // Invalidate all fleet-audit variants for this workspace (any `since`):
+      // the audit query key is ["runtimes", wsId, "fleet", "audit", ...], so a
+      // prefix match catches every lookback window.
+      qc.invalidateQueries({
+        queryKey: ["runtimes", wsId, "fleet", "audit"],
+      });
+    },
+  });
+}

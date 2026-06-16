@@ -235,6 +235,35 @@
       "timeout": "タイムアウト"
     }
   },
+  "fleet": {
+    "action": "メンバーのマシンを更新",
+    "title": "遅れているマシンを更新",
+    "subtitle_one": "{{count}} 台のマシンが最新 CLI より遅れています。",
+    "subtitle_other": "{{count}} 台のマシンが最新 CLI より遅れています。",
+    "target_prefix": "対象バージョン",
+    "version_unknown": "不明",
+    "owner_unknown": "所有者不明",
+    "owner_unassigned": "未割り当て",
+    "nudge_action": "セルフチェックを促す",
+    "force_action": "強制",
+    "force_hint": "強制すると、自動更新を有効にしていないマシンも対象になります。",
+    "rate_limited": "実行直後です。しばらくしてからもう一度お試しください。",
+    "progress_title": "{{done}} / {{total}} 確定",
+    "not_triggered_one": "{{count}} 台は未実行（デスクトップ管理または到達不可）。",
+    "not_triggered_other": "{{count}} 台は未実行（デスクトップ管理または到達不可）。",
+    "completed_caption": "「更新済み」はデーモンの自己申告であり、検証済みの結果ではありません。",
+    "retrigger_unknown": "結果不明のマシンを再実行",
+    "bucket": {
+      "pending": "待機中",
+      "running": "更新中",
+      "completed": "デーモンが更新済みと自己申告",
+      "failed": "失敗",
+      "timeout": "タイムアウト",
+      "skipped": "前回トリガーのバージョンへ更新中",
+      "trigger_failed": "トリガー失敗",
+      "unknown": "結果不明"
+    }
+  },
   "charts": {
     "heatmap_less": "少ない",
     "heatmap_more": "多い",

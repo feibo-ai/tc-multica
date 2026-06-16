@@ -907,6 +907,11 @@ func (h *Handler) processHeartbeat(ctx context.Context, rt db.AgentRuntime, supp
 			ack.PendingUpdate = &protocol.DaemonHeartbeatPendingUpdate{
 				ID:            pending.ID,
 				TargetVersion: pending.TargetVersion,
+				// TEA-113 INV-2: Force is pure passthrough for audit/log only.
+				// It does NOT decide TargetVersion (still pending.TargetVersion,
+				// server-filled from the authoritative latest) and does NOT
+				// decide who gets nudged (that is the pending row's existence).
+				Force: pending.Force,
 			}
 		}
 	case probeUpdateErr != nil:

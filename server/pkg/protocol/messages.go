@@ -155,6 +155,18 @@ const HeartbeatStatusRuntimeGone = "runtime_gone"
 type DaemonHeartbeatPendingUpdate struct {
 	ID            string `json:"id"`
 	TargetVersion string `json:"target_version"`
+	// Force marks a fleet self-check that was triggered with DRI override
+	// intent. It carries AUDIT/LOG semantics ONLY (TEA-113 INV-2): the
+	// daemon must never read it in any branch that touches attestation,
+	// revocation, SHA verification, the INV-7 version floor, the desktop
+	// guard, or the updating CAS — only structured logging. Server-side it
+	// is only persisted to the fleet_update_audit (A) trigger row; it never
+	// decides TargetVersion, who gets nudged, or any terminal-write branch.
+	// json `omitempty` so older daemons that don't know the field silently
+	// ignore it (safe degrade): a force nudge then behaves identically to a
+	// plain nudge, which is correct because the CLI path never branches on
+	// force anyway.
+	Force bool `json:"force,omitempty"`
 }
 
 // DaemonHeartbeatPendingModelList describes a request for the daemon to

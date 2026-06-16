@@ -1665,6 +1665,46 @@ func (d *Daemon) handleUpdate(ctx context.Context, runtimeID string, update *Pen
 		return
 	}
 
+	// TEA-113 INV-7 — anti-downgrade memory floor (hard block for this CLI
+	// phase). The server-triggered nudge carries TargetVersion over a
+	// transport-only trust channel: a spoofed/MITM'd server could point the
+	// fleet at an older, still-validly-signed, not-yet-revoked tag (attestation
+	// passes, SHA passes, revocation can fail-open). Mirror autoUpdateLoop's
+	// guards (auto_update.go:53 / :121) here, BEFORE runUpdateFn, using the
+	// running binary's own version (d.cfg.CLIVersion) as a zero-persistence
+	// floor:
+	//   1. If the running version doesn't parse as a tagged release, refuse —
+	//      source/dev builds never auto-upgrade. This is fail-closed: we must
+	//      NOT treat "unparseable → allow", which would turn the floor into a
+	//      downgrade bypass for any machine running a dev build.
+	//   2. Otherwise refuse unless the target is strictly newer than the
+	//      running version (<= semantics: equal versions are rejected too, so a
+	//      repeated nudge can't re-run the same tag).
+	// Neither check reads update.Force — force is audit/log only (INV-2) and
+	// must never reach this floor's branch decision.
+	if !isReleaseVersion(d.cfg.CLIVersion) {
+		d.logger.Warn("refusing CLI self-update: anti-downgrade floor — running version is not a tagged release (dev/source build)",
+			"runtime_id", runtimeID, "update_id", update.ID,
+			"running_version", d.cfg.CLIVersion, "target_version", update.TargetVersion,
+			"force", update.Force)
+		d.reportUpdateResult(ctx, runtimeID, update.ID, map[string]any{
+			"status": "failed",
+			"error":  "refused: running a development build — fleet self-check does not downgrade source builds",
+		})
+		return
+	}
+	if !isNewerVersion(update.TargetVersion, d.cfg.CLIVersion) {
+		d.logger.Warn("refusing CLI self-update: anti-downgrade floor — target is not newer than the running version",
+			"runtime_id", runtimeID, "update_id", update.ID,
+			"running_version", d.cfg.CLIVersion, "target_version", update.TargetVersion,
+			"force", update.Force)
+		d.reportUpdateResult(ctx, runtimeID, update.ID, map[string]any{
+			"status": "failed",
+			"error":  "refused: target version is not newer than the running version (anti-downgrade floor)",
+		})
+		return
+	}
+
 	// Prevent concurrent update attempts.
 	if !d.updating.CompareAndSwap(false, true) {
 		d.logger.Warn("update already in progress, ignoring", "runtime_id", runtimeID, "update_id", update.ID)
@@ -1672,7 +1712,11 @@ func (d *Daemon) handleUpdate(ctx context.Context, runtimeID string, update *Pen
 	}
 	defer d.updating.Store(false)
 
-	d.logger.Info("CLI update requested", "runtime_id", runtimeID, "update_id", update.ID, "target_version", update.TargetVersion)
+	// INV-2: force is a transport-only audit/log field. The ONLY daemon-side
+	// read of it is this structured log line — it never gates the desktop
+	// guard, the updating CAS, the INV-7 floor above, or the
+	// UpdateViaDownload/attestation/revocation/SHA verification chain.
+	d.logger.Info("CLI update requested", "runtime_id", runtimeID, "update_id", update.ID, "target_version", update.TargetVersion, "force", update.Force)
 
 	// Report running status.
 	d.reportUpdateResult(ctx, runtimeID, update.ID, map[string]any{

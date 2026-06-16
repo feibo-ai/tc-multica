@@ -60,6 +60,18 @@ const (
 	// ticks and 500 rows/tick we drain 60k rows/hour worst case — plenty
 	// of headroom for the documented backlog without monopolising DB CPU.
 	queuedExpireBatchSize = 500
+	// fleetUpdateTimeoutSeconds is the TEA-113 INV-14 wall-clock budget after
+	// which a fleet update with no daemon terminal report is flushed to
+	// 'timeout' in the persistent audit table. It mirrors the ephemeral
+	// UpdateStore lifecycle (updatePendingTimeout 120s + updateRunningTimeout
+	// 150s = 270s worst case) so the sweep never races ahead of a still-running
+	// update, and sits below the 5-minute updateStoreRetention. The sweep runs
+	// on the existing 30s sweeper tick (< this threshold, < retention) per the
+	// mini-ADR cadence requirement.
+	fleetUpdateTimeoutSeconds = 270.0
+	// fleetUpdateSweepBatchSize caps the per-tick timeout flush so a large
+	// fleet trigger cannot monopolise the sweep transaction.
+	fleetUpdateSweepBatchSize = 500
 )
 
 // runRuntimeSweeper periodically marks runtimes as offline if their
@@ -85,6 +97,7 @@ func runRuntimeSweeper(ctx context.Context, queries *db.Queries, liveness handle
 			sweepStaleRuntimes(ctx, queries, liveness, taskSvc, bus)
 			sweepStaleTasks(ctx, queries, taskSvc, bus)
 			sweepExpiredQueuedTasks(ctx, queries, taskSvc)
+			sweepTimedOutFleetUpdates(ctx, queries)
 			gcRuntimes(ctx, queries, bus)
 		}
 	}
@@ -283,6 +296,39 @@ func sweepExpiredQueuedTasks(ctx context.Context, queries *db.Queries, taskSvc *
 	slog.Info("task sweeper: expired stale queued tasks", "count", len(failedTasks))
 	taskSvc.CaptureQueuedExpiredTasks(ctx, failedTasks)
 	taskSvc.HandleFailedTasks(ctx, failedTasks)
+}
+
+// sweepTimedOutFleetUpdates flushes 'timeout' into the (B) result columns of
+// fleet_update_audit rows whose (A) trigger is older than the timeout threshold
+// and that still have no terminal (B) row (TEA-113 INV-14).
+//
+// REV-5: the data source is the PERSISTENT audit table itself, never the
+// ephemeral UpdateStore. This is deliberate and load-bearing for multi-node:
+// the production RedisUpdateStore evicts its keys by TTL with no enumeration /
+// SCAN primitive, so a sweep over the ephemeral store would, on the multi-node
+// path, both fail to see pending updates and lose the race against TTL
+// eviction. Scanning the DB audit table makes timeout persistence fully
+// decoupled from the UpdateStore backend (InMemory / Redis / multi-node) and
+// free of the TTL-eviction race — the same store-agnostic DB-keyed pattern as
+// sweepStaleTasks / sweepExpiredQueuedTasks above.
+//
+// The query guards every write on `report_status IS NULL`, so it is idempotent
+// and mutually exclusive with a concurrent daemon report (INV-13): whichever of
+// daemon-report or this sweep writes the terminal row first wins. force is never
+// consulted here (INV-2).
+func sweepTimedOutFleetUpdates(ctx context.Context, queries *db.Queries) {
+	swept, err := queries.SweepTimedOutFleetUpdates(ctx, db.SweepTimedOutFleetUpdatesParams{
+		TimeoutSecs: fleetUpdateTimeoutSeconds,
+		MaxPerTick:  fleetUpdateSweepBatchSize,
+	})
+	if err != nil {
+		slog.Warn("fleet update sweeper: failed to flush timed-out updates", "error", err)
+		return
+	}
+	if len(swept) == 0 {
+		return
+	}
+	slog.Info("fleet update sweeper: flushed timed-out updates", "count", len(swept))
 }
 
 // broadcastFailedTasks is preserved as a thin shim for the integration tests

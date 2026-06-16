@@ -188,6 +188,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		h.LivenessStore = handler.NewRedisLivenessStore(rdb)
 		h.WebhookRateLimiter = handler.NewRedisWebhookRateLimiter(rdb, handler.DefaultWebhookRateLimit())
 		h.WebhookIPRateLimiter = handler.NewRedisWebhookIPRateLimiter(rdb, handler.DefaultWebhookIPRateLimit())
+		// TEA-113 INV-12: the fleet self-check limiter MUST use shared storage
+		// in multi-node so one DRI cannot bypass the per-workspace window by
+		// hitting a different API replica. The in-memory default is single-node
+		// only. It uses a dedicated Redis key namespace
+		// (mul:fleet:selfcheck:rate:) so the fleet per-workspace budget is
+		// isolated from the autopilot webhook limiters and neither can exhaust
+		// the other's allowance.
+		h.FleetRateLimiter = handler.NewRedisFleetSelfCheckRateLimiter(rdb, handler.DefaultFleetSelfCheckRateLimit())
 	}
 
 	// Lark integration. Only wired when MULTICA_LARK_SECRET_KEY is set:
@@ -566,6 +574,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/api/upload-file", h.UploadFile)
 		r.Post("/api/feedback", h.CreateFeedback)
 
+		// Authoritative latest CLI release tag (TEA-113 INV-11), resolved
+		// server-side from feibo-ai/tc-multica with a short TTL cache. The
+		// Runtimes page uses this for the "is this runtime lagging?" check
+		// instead of the historical hard-coded upstream URL (wrong repo +
+		// unreachable from self-hosted internal networks). User-scoped: the
+		// latest tag is a deployment-wide fact, no workspace context needed.
+		r.Get("/api/cli/latest-release", h.GetFleetLatestRelease)
+
 		// Attachment download — user-scoped (auth-only), NOT
 		// workspace-scoped. The handler self-resolves the workspace
 		// from the attachment row and enforces membership inside, so
@@ -601,6 +617,18 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/", h.UpdateWorkspace)
 					r.Patch("/", h.UpdateWorkspace)
 					r.Post("/members", h.CreateInvitation)
+					// TEA-113 fleet one-click update (nudge + force-override).
+					// DRI-only (owner/admin) per INV-3. The role gate is the
+					// authority; the frontend hide is UX only. The handler fills
+					// the target version from the authoritative latest release
+					// (INV-1) — the body carries no version.
+					r.Post("/runtimes/fleet/self-check", h.FleetSelfCheck)
+					// Read-only fleet update progress回显 (INV-6). Same
+					// owner/admin gate as the self-check trigger: the progress
+					// view is DRI-only, so the gate stays consistent with who
+					// could press the button. Reads the persistent audit table
+					// (the authority source), never the ephemeral UpdateStore.
+					r.Get("/runtimes/fleet/audit", h.GetFleetUpdateAudit)
 					r.Route("/members/{memberId}", func(r chi.Router) {
 						r.Patch("/", h.UpdateMember)
 						r.Delete("/", h.DeleteMember)

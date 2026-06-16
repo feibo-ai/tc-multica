@@ -6,6 +6,12 @@ import {
   DashboardUsageDailyByModelListSchema,
   DashboardUsageDailyListSchema,
   DuplicateIssueErrorBodySchema,
+  FleetSelfCheckResultSchema,
+  FleetAuditResultSchema,
+  FleetLatestReleaseSchema,
+  EMPTY_FLEET_SELF_CHECK_RESULT,
+  EMPTY_FLEET_AUDIT_RESULT,
+  EMPTY_FLEET_LATEST_RELEASE,
   EMPTY_LIST_PROJECTS_RESPONSE,
   EMPTY_PROJECT,
   EMPTY_USER,
@@ -437,5 +443,129 @@ describe("DashboardUsageDailyByModelListSchema (drift safety)", () => {
         { endpoint: "test" },
       ),
     ).toEqual([]);
+  });
+});
+
+describe("TEA-113 fleet update schemas (white-screen defense)", () => {
+  it("parses a well-formed fleet self-check response", () => {
+    const parsed = parseWithFallback(
+      {
+        target_version: "v0.4.15",
+        force: true,
+        triggered: [{ runtime_id: "r1", update_id: "u1" }],
+        skipped: [{ runtime_id: "r2", reason: "update_in_progress" }],
+        failed: [{ runtime_id: "r4", reason: "redis: connection refused" }],
+        unreachable: [{ runtime_id: "r3", reason: "desktop" }],
+      },
+      FleetSelfCheckResultSchema,
+      EMPTY_FLEET_SELF_CHECK_RESULT,
+      { endpoint: "test" },
+    );
+    expect(parsed.target_version).toBe("v0.4.15");
+    expect(parsed.triggered).toEqual([{ runtime_id: "r1", update_id: "u1" }]);
+    expect(parsed.skipped[0]?.reason).toBe("update_in_progress");
+    // failed (trigger-time infra fault) parses into its OWN bucket, distinct
+    // from skipped.
+    expect(parsed.failed[0]?.reason).toBe("redis: connection refused");
+    expect(parsed.unreachable[0]?.reason).toBe("desktop");
+  });
+
+  it("defaults missing buckets to [] so an empty self-check still renders", () => {
+    const parsed = FleetSelfCheckResultSchema.parse({ target_version: "v0.4.15" });
+    expect(parsed.triggered).toEqual([]);
+    expect(parsed.skipped).toEqual([]);
+    // older server without the failed bucket parses cleanly as [].
+    expect(parsed.failed).toEqual([]);
+    expect(parsed.unreachable).toEqual([]);
+    expect(parsed.force).toBe(false);
+  });
+
+  it("falls back to EMPTY on a malformed self-check response", () => {
+    expect(
+      parseWithFallback(
+        "not an object",
+        FleetSelfCheckResultSchema,
+        EMPTY_FLEET_SELF_CHECK_RESULT,
+        { endpoint: "test" },
+      ),
+    ).toEqual(EMPTY_FLEET_SELF_CHECK_RESULT);
+  });
+
+  it("parses audit rows and keeps nullable (B) result columns null until reported", () => {
+    const parsed = FleetAuditResultSchema.parse({
+      window_seconds: 21600,
+      rows: [
+        {
+          update_id: "u1",
+          runtime_id: "r1",
+          user_id: "user-1",
+          target_version: "v0.4.15",
+          force: false,
+          triggered_at: "2026-06-16T00:00:00Z",
+          report_status: null,
+          report_source: null,
+          reported_at: null,
+        },
+      ],
+    });
+    expect(parsed.rows[0]?.report_status).toBeNull();
+    expect(parsed.rows[0]?.report_source).toBeNull();
+    expect(parsed.rows[0]?.reported_at).toBeNull();
+  });
+
+  it("coerces a missing (B) result column to null on an audit row", () => {
+    const parsed = FleetAuditResultSchema.parse({
+      window_seconds: 0,
+      rows: [
+        {
+          update_id: "u1",
+          runtime_id: "r1",
+          user_id: "user-1",
+          target_version: "v0.4.15",
+          triggered_at: "2026-06-16T00:00:00Z",
+        },
+      ],
+    });
+    expect(parsed.rows[0]?.report_status).toBeNull();
+    expect(parsed.rows[0]?.force).toBe(false);
+  });
+
+  it("keeps an unknown report_source value parsing (lenient enum) rather than crashing", () => {
+    const parsed = FleetAuditResultSchema.parse({
+      window_seconds: 0,
+      rows: [
+        {
+          update_id: "u1",
+          runtime_id: "r1",
+          user_id: "user-1",
+          target_version: "v0.4.15",
+          triggered_at: "2026-06-16T00:00:00Z",
+          report_status: "some_future_state",
+          report_source: "some_future_source",
+          reported_at: "2026-06-16T00:01:00Z",
+        },
+      ],
+    });
+    expect(parsed.rows[0]?.report_status).toBe("some_future_state");
+    expect(parsed.rows[0]?.report_source).toBe("some_future_source");
+  });
+
+  it("falls back to EMPTY on a malformed audit response", () => {
+    expect(
+      parseWithFallback(
+        { rows: "nope" },
+        FleetAuditResultSchema,
+        EMPTY_FLEET_AUDIT_RESULT,
+        { endpoint: "test" },
+      ),
+    ).toEqual(EMPTY_FLEET_AUDIT_RESULT);
+  });
+
+  it("parses the latest-release response and defaults missing fields to \"\"", () => {
+    expect(FleetLatestReleaseSchema.parse({ tag_name: "v0.4.15", html_url: "u" })).toMatchObject({
+      tag_name: "v0.4.15",
+      html_url: "u",
+    });
+    expect(FleetLatestReleaseSchema.parse({})).toEqual(EMPTY_FLEET_LATEST_RELEASE);
   });
 });

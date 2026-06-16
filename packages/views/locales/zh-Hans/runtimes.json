@@ -235,6 +235,35 @@
       "timeout": "超时"
     }
   },
+  "fleet": {
+    "action": "更新队员机器",
+    "title": "更新落后的机器",
+    "subtitle_one": "{{count}} 台机器的 CLI 落后于最新版。",
+    "subtitle_other": "{{count}} 台机器的 CLI 落后于最新版。",
+    "target_prefix": "目标版本",
+    "version_unknown": "未知",
+    "owner_unknown": "未知归属",
+    "owner_unassigned": "未归属",
+    "nudge_action": "触发自检",
+    "force_action": "强制",
+    "force_hint": "强制会一并触发未开启自更的机器。",
+    "rate_limited": "刚刚触发过，请稍后重试。",
+    "progress_title": "{{done}} / {{total}} 已落定",
+    "not_triggered_one": "{{count}} 台机器未触发（桌面端托管或不可达）。",
+    "not_triggered_other": "{{count}} 台机器未触发（桌面端托管或不可达）。",
+    "completed_caption": "「已更新」为守护进程自报，并非已核验的结果。",
+    "retrigger_unknown": "重新触发结果未知的机器",
+    "bucket": {
+      "pending": "等待中",
+      "running": "更新中",
+      "completed": "daemon 自报已更新",
+      "failed": "失败",
+      "timeout": "超时",
+      "skipped": "仍在更新到上次触发的版本",
+      "trigger_failed": "触发出错",
+      "unknown": "结果未知"
+    }
+  },
   "charts": {
     "heatmap_less": "少",
     "heatmap_more": "多",

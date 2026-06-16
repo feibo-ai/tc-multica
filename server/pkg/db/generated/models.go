@@ -329,6 +329,19 @@ type Feedback struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type FleetUpdateAudit struct {
+	UpdateID      string             `json:"update_id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	RuntimeID     pgtype.UUID        `json:"runtime_id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	TargetVersion string             `json:"target_version"`
+	Force         bool               `json:"force"`
+	TriggeredAt   pgtype.Timestamptz `json:"triggered_at"`
+	ReportStatus  pgtype.Text        `json:"report_status"`
+	ReportSource  pgtype.Text        `json:"report_source"`
+	ReportedAt    pgtype.Timestamptz `json:"reported_at"`
+}
+
 type GithubInstallation struct {
 	ID               pgtype.UUID        `json:"id"`
 	WorkspaceID      pgtype.UUID        `json:"workspace_id"`

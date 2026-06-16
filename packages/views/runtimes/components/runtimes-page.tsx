@@ -40,6 +40,7 @@ import {
   type RuntimeMachineFilter,
 } from "./runtime-machines";
 import { HealthDot, HealthIcon, useHealthLabel } from "./shared";
+import { FleetUpdateSection } from "./fleet-update-section";
 import { useT } from "../../i18n";
 
 const MACHINE_FILTERS: RuntimeMachineFilter[] = ["all", "online", "issues"];
@@ -193,6 +194,7 @@ export function RuntimesPage({
   return (
     <div className="flex flex-1 min-h-0 flex-col">
       <PageHeaderBar
+        wsId={wsId}
         totalCount={totalCount}
         onConnectRemote={() => setShowConnectDialog(true)}
         cloudRuntimeEnabled={cloudRuntimeEnabled}
@@ -286,11 +288,13 @@ export function RuntimesPage({
 // ---------------------------------------------------------------------------
 
 function PageHeaderBar({
+  wsId,
   totalCount,
   onConnectRemote,
   cloudRuntimeEnabled,
   onOpenCloudRuntime,
 }: {
+  wsId: string;
   totalCount: number;
   onConnectRemote: () => void;
   cloudRuntimeEnabled: boolean;
@@ -309,6 +313,10 @@ function PageHeaderBar({
         )}
       </div>
       <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+        {/* DRI one-click fleet update (TEA-113). Renders null for non-DRIs and
+            when nothing is lagging; gating is UX-only, the server's 403 is
+            the authority (INV-3). */}
+        <FleetUpdateSection wsId={wsId} />
         {cloudRuntimeEnabled && (
           <Button
             type="button"

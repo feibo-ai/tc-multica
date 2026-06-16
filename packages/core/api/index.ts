@@ -1,6 +1,7 @@
 export {
   ApiClient,
   ApiError,
+  FleetRateLimitError,
   PreviewTooLargeError,
   PreviewUnsupportedError,
 } from "./client";
