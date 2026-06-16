@@ -247,6 +247,35 @@
       "timeout": "시간 초과"
     }
   },
+  "fleet": {
+    "action": "팀원 머신 업데이트",
+    "title": "뒤처진 머신 업데이트",
+    "subtitle_one": "{{count}}대의 머신이 최신 CLI보다 뒤처져 있습니다.",
+    "subtitle_other": "{{count}}대의 머신이 최신 CLI보다 뒤처져 있습니다.",
+    "target_prefix": "대상 버전",
+    "version_unknown": "알 수 없음",
+    "owner_unknown": "소유자 알 수 없음",
+    "owner_unassigned": "미할당",
+    "nudge_action": "자가 점검 요청",
+    "force_action": "강제",
+    "force_hint": "강제하면 자동 업데이트를 켜지 않은 머신도 함께 트리거됩니다.",
+    "rate_limited": "방금 실행했습니다. 잠시 후 다시 시도하세요.",
+    "progress_title": "{{done}} / {{total}} 확정",
+    "not_triggered_one": "{{count}}대는 트리거되지 않음(데스크톱 관리 또는 도달 불가).",
+    "not_triggered_other": "{{count}}대는 트리거되지 않음(데스크톱 관리 또는 도달 불가).",
+    "completed_caption": "\"업데이트됨\"은 데몬의 자가 보고이며 검증된 결과가 아닙니다.",
+    "retrigger_unknown": "결과 알 수 없는 머신 다시 트리거",
+    "bucket": {
+      "pending": "대기 중",
+      "running": "업데이트 중",
+      "completed": "데몬이 업데이트됨으로 자가 보고",
+      "failed": "실패",
+      "timeout": "시간 초과",
+      "skipped": "이전 트리거 버전으로 업데이트 중",
+      "trigger_failed": "트리거 오류",
+      "unknown": "결과 알 수 없음"
+    }
+  },
   "charts": {
     "heatmap_less": "적음",
     "heatmap_more": "많음",

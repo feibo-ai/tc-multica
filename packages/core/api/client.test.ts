@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiClient, ApiError } from "./client";
+import { ApiClient, ApiError, FleetRateLimitError } from "./client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -549,5 +549,111 @@ describe("ApiClient", () => {
       expect(JSON.parse(fetchMock.mock.calls[0]![1]?.body as string)).toEqual({ content: "hello" });
       expect(JSON.parse(fetchMock.mock.calls[1]![1]?.body as string)).toEqual({ content: "again" });
     });
+  });
+});
+
+describe("ApiClient — TEA-113 fleet one-click update", () => {
+  // Returns a fresh Response per call: a Response body can only be read once,
+  // and a real `fetch` hands back a new Response each time, so the mock must
+  // mirror that (mockResolvedValue would reuse one instance across calls).
+  function okJsonImpl(body: unknown, status = 200): () => Promise<Response> {
+    return () =>
+      Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+  }
+
+  // INV-1 (front-end assertion): the fleet self-check request body must carry
+  // ONLY `force`. It must never contain target_version / version — the server
+  // fills the target from the authoritative latest release. This test locks the
+  // wire shape so a future edit cannot reintroduce a client-chosen version.
+  it("nudgeFleetSelfCheck sends ONLY { force } — no version field (INV-1)", async () => {
+    const fetchMock = vi.fn().mockImplementation(
+      okJsonImpl({ target_version: "v1.2.3", force: false, triggered: [], skipped: [], unreachable: [] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+
+    await client.nudgeFleetSelfCheck("ws-1");
+    await client.nudgeFleetSelfCheck("ws-1", {});
+    await client.nudgeFleetSelfCheck("ws-1", { force: true });
+
+    const bodies = fetchMock.mock.calls.map(
+      ([, init]) => JSON.parse((init?.body as string) ?? "{}") as Record<string, unknown>,
+    );
+
+    // Exact shape: defaults to { force: false }, honours { force: true }, and
+    // never anything else.
+    expect(bodies[0]).toEqual({ force: false });
+    expect(bodies[1]).toEqual({ force: false });
+    expect(bodies[2]).toEqual({ force: true });
+
+    // Hard INV-1 guard: not a single request may mention a version under any
+    // key name.
+    for (const body of bodies) {
+      expect(Object.keys(body)).toEqual(["force"]);
+      expect(body).not.toHaveProperty("target_version");
+      expect(body).not.toHaveProperty("version");
+      expect("target_version" in body).toBe(false);
+      expect("version" in body).toBe(false);
+    }
+
+    // Correct method + URL.
+    for (const [url, init] of fetchMock.mock.calls) {
+      expect(url).toBe("https://api.example.test/api/workspaces/ws-1/runtimes/fleet/self-check");
+      expect(init?.method).toBe("POST");
+    }
+  });
+
+  // INV-12: the per-workspace 30s rate-limit 429 surfaces as a typed,
+  // branchable FleetRateLimitError (not a generic ApiError) so the UI can
+  // disable the button and show "try again shortly".
+  it("nudgeFleetSelfCheck maps 429 to a typed FleetRateLimitError (INV-12)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        okJsonImpl({ error: "fleet self-check rate limited; try again shortly" }, 429),
+      ),
+    );
+
+    const client = new ApiClient("https://api.example.test");
+
+    await expect(client.nudgeFleetSelfCheck("ws-1", { force: true })).rejects.toBeInstanceOf(
+      FleetRateLimitError,
+    );
+  });
+
+  it("getFleetAudit hits the workspace audit endpoint with optional since/limit", async () => {
+    const fetchMock = vi.fn().mockImplementation(okJsonImpl({ window_seconds: 21600, rows: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+
+    await client.getFleetAudit("ws-1");
+    await client.getFleetAudit("ws-1", { since: 3600, limit: 50 });
+
+    expect(fetchMock.mock.calls[0]![0]).toBe(
+      "https://api.example.test/api/workspaces/ws-1/runtimes/fleet/audit",
+    );
+    expect(fetchMock.mock.calls[1]![0]).toBe(
+      "https://api.example.test/api/workspaces/ws-1/runtimes/fleet/audit?since=3600&limit=50",
+    );
+  });
+
+  it("getLatestCliRelease reads the backend authoritative endpoint (INV-11)", async () => {
+    const fetchMock = vi.fn().mockImplementation(
+      okJsonImpl({ tag_name: "v0.4.15", html_url: "https://example.test/releases/v0.4.15" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+    const release = await client.getLatestCliRelease();
+
+    expect(fetchMock.mock.calls[0]![0]).toBe("https://api.example.test/api/cli/latest-release");
+    expect(release.tag_name).toBe("v0.4.15");
   });
 });

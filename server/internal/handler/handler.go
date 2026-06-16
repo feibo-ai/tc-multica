@@ -123,7 +123,17 @@ type Handler struct {
 	MembershipCache      *auth.MembershipCache
 	WebhookRateLimiter   WebhookRateLimiter
 	WebhookIPRateLimiter WebhookRateLimiter
-	CloudRuntime         cloudRuntimeProxy
+	// FleetLatestRelease resolves the authoritative latest CLI release tag
+	// from feibo-ai/tc-multica (TEA-113 INV-11) with a short TTL cache. It is
+	// the server-side source of truth for both the fleet self-check target
+	// version and the GET latest endpoint. Defaults to a cli.FetchLatestRelease
+	// wrapper; tests inject a fake.
+	FleetLatestRelease FleetLatestReleaseResolver
+	// FleetRateLimiter gates the fleet self-check endpoint to one call per
+	// workspace per fixed window (TEA-113 INV-12). Shared-storage backed
+	// (Redis in multi-node); the in-memory default is single-node only.
+	FleetRateLimiter WebhookRateLimiter
+	CloudRuntime     cloudRuntimeProxy
 	// Lark integration. All three are nil when the Lark master key
 	// (MULTICA_LARK_SECRET_KEY) is unset; the corresponding HTTP
 	// handlers return 503 in that case so a misconfigured self-host
@@ -214,6 +224,8 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		Analytics:             analyticsClient,
 		WebhookRateLimiter:    NewMemoryWebhookRateLimiter(DefaultWebhookRateLimit()),
 		WebhookIPRateLimiter:  NewMemoryWebhookIPRateLimiter(DefaultWebhookIPRateLimit()),
+		FleetLatestRelease:    NewDefaultFleetLatestReleaseResolver(),
+		FleetRateLimiter:      NewMemoryWebhookRateLimiter(DefaultFleetSelfCheckRateLimit()),
 		CloudRuntime: cloudruntime.NewClient(cloudruntime.Config{
 			BaseURL: cfg.CloudRuntimeFleetURL,
 			Timeout: cfg.CloudRuntimeFleetTimeout,

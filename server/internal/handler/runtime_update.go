@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 // ---------------------------------------------------------------------------
@@ -36,6 +38,11 @@ type UpdateRequest struct {
 	CreatedAt     time.Time    `json:"created_at"`
 	UpdatedAt     time.Time    `json:"updated_at"`
 	RunStartedAt  *time.Time   `json:"-"`
+	// Force is a TEA-113 fleet-self-check audit/log flag (INV-2). It is
+	// carried through Create → PopPending → heartbeat ack so the daemon can
+	// log it; it is NEVER read in any verification, floor, desktop, CAS, or
+	// terminal-write branch. Single-runtime InitiateUpdate always sets false.
+	Force bool `json:"force,omitempty"`
 }
 
 const (
@@ -45,7 +52,11 @@ const (
 )
 
 type UpdateStore interface {
-	Create(ctx context.Context, runtimeID, targetVersion string) (*UpdateRequest, error)
+	// Create reserves a pending update for runtimeID at targetVersion. force
+	// is a TEA-113 fleet audit/log flag carried verbatim onto the request
+	// (INV-2): it is never consulted by the store for any control decision,
+	// only stored so PopPending can echo it into the heartbeat ack.
+	Create(ctx context.Context, runtimeID, targetVersion string, force bool) (*UpdateRequest, error)
 	Get(ctx context.Context, id string) (*UpdateRequest, error)
 	HasPending(ctx context.Context, runtimeID string) (bool, error)
 	PopPending(ctx context.Context, runtimeID string) (*UpdateRequest, error)
@@ -91,7 +102,7 @@ func NewInMemoryUpdateStore() *InMemoryUpdateStore {
 	}
 }
 
-func (s *InMemoryUpdateStore) Create(_ context.Context, runtimeID, targetVersion string) (*UpdateRequest, error) {
+func (s *InMemoryUpdateStore) Create(_ context.Context, runtimeID, targetVersion string, force bool) (*UpdateRequest, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -116,6 +127,8 @@ func (s *InMemoryUpdateStore) Create(_ context.Context, runtimeID, targetVersion
 		TargetVersion: targetVersion,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
+		// Audit/log only (INV-2): stored verbatim, never branched on.
+		Force: force,
 	}
 	s.requests[req.ID] = req
 	return req, nil
@@ -235,7 +248,10 @@ func (h *Handler) InitiateUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	update, err := h.UpdateStore.Create(r.Context(), uuidToString(rt.ID), req.TargetVersion)
+	// force is always false on the single-runtime path: this endpoint has no
+	// fleet/DRI override semantics. The fleet self-check endpoint is the only
+	// caller that may pass force=true (TEA-113 INV-2).
+	update, err := h.UpdateStore.Create(r.Context(), uuidToString(rt.ID), req.TargetVersion, false)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
@@ -319,20 +335,53 @@ func (h *Handler) ReportUpdateResult(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "failed to persist completion")
 			return
 		}
+		// TEA-113 INV-13: in the same event that lands the ephemeral terminal
+		// status, persist the (B) daemon-reported result keyed by update_id so
+		// the persistent audit table (the frontend's authority source) is not
+		// stuck at pending. force is NOT read here (INV-2).
+		h.recordFleetUpdateReport(r.Context(), updateID, "completed")
 	case "failed":
 		if err := h.UpdateStore.Fail(r.Context(), updateID, req.Error); err != nil {
 			slog.Error("UpdateStore Fail failed", "error", err, "update_id", updateID)
 			writeError(w, http.StatusInternalServerError, "failed to persist failure")
 			return
 		}
+		h.recordFleetUpdateReport(r.Context(), updateID, "failed")
 	case "running":
 		// No-op: status is already "running" from PopPending. This call is
 		// just a progress signal from the daemon to confirm it received the
-		// update command and is executing it.
+		// update command and is executing it. No terminal (B) row is written.
 	default:
 		writeError(w, http.StatusBadRequest, "invalid status: "+req.Status)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// recordFleetUpdateReport persists the (B) daemon-reported terminal result for
+// a fleet update keyed by update_id (TEA-113 INV-13). It is a best-effort
+// audit write: the row only exists when this update was created by the fleet
+// self-check endpoint, so a single-runtime InitiateUpdate (no audit row) simply
+// matches 0 rows and is a no-op. The UpsertFleetUpdateResult query guards on
+// `report_status IS NULL`, so it is idempotent and mutually exclusive with the
+// server-timeout sweep (INV-14): the first terminal writer wins. force is never
+// consulted here (INV-2). Failures are logged, never surfaced to the daemon —
+// the ephemeral terminal status was already persisted above and the audit row
+// is for追责, not the daemon's success path.
+func (h *Handler) recordFleetUpdateReport(ctx context.Context, updateID, status string) {
+	rows, err := h.Queries.UpsertFleetUpdateResult(ctx, db.UpsertFleetUpdateResultParams{
+		ReportStatus: pgtype.Text{String: status, Valid: true},
+		UpdateID:     updateID,
+	})
+	if err != nil {
+		slog.Warn("fleet update audit (B) write failed", "error", err, "update_id", updateID, "status", status)
+		return
+	}
+	if rows == 0 {
+		// Either not a fleet update (no audit row), or a terminal (B) row
+		// already landed (sweep won the race / duplicate report). Both are
+		// expected and benign.
+		slog.Debug("fleet update audit (B) write no-op", "update_id", updateID, "status", status)
+	}
 }

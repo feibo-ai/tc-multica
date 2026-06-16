@@ -43,7 +43,7 @@ func NewRedisUpdateStore(rdb *redis.Client) *RedisUpdateStore {
 	return &RedisUpdateStore{rdb: rdb}
 }
 
-func (s *RedisUpdateStore) Create(ctx context.Context, runtimeID, targetVersion string) (*UpdateRequest, error) {
+func (s *RedisUpdateStore) Create(ctx context.Context, runtimeID, targetVersion string, force bool) (*UpdateRequest, error) {
 	now := time.Now()
 	req := &UpdateRequest{
 		ID:            randomID(),
@@ -52,6 +52,9 @@ func (s *RedisUpdateStore) Create(ctx context.Context, runtimeID, targetVersion 
 		TargetVersion: targetVersion,
 		CreatedAt:     now,
 		UpdatedAt:     now,
+		// Audit/log only (INV-2): persisted verbatim in the envelope, never
+		// branched on by the store.
+		Force: force,
 	}
 	data, err := s.marshalRequest(req)
 	if err != nil {

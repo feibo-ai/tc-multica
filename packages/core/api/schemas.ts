@@ -13,6 +13,9 @@ import type {
   CreateAgentFromTemplateResponse,
   CreateBillingCheckoutSessionResponse,
   CreateBillingPortalSessionResponse,
+  FleetSelfCheckResult,
+  FleetAuditResult,
+  FleetLatestRelease,
   GroupedIssuesResponse,
   ListIssuesResponse,
   ListProjectsResponse,
@@ -1126,4 +1129,112 @@ export const CreateBillingPortalSessionResponseSchema = z.object({
 
 export const EMPTY_CREATE_BILLING_PORTAL_SESSION_RESPONSE: CreateBillingPortalSessionResponse = {
   url: "",
+};
+
+// ---------------------------------------------------------------------------
+// TEA-113 fleet one-click update (nudge + force-override).
+//
+// These schemas guard the two read paths that drive the DRI fleet update UI:
+//   - the self-check POST response (which lagging runtimes got nudged), and
+//   - the persistent audit table read (the AUTHORITATIVE per-runtime progress
+//     source — never the ephemeral UpdateStore, per the mini-ADR INV-6).
+//
+// They are lenient like the rest of this file: `report_status` / `report_source`
+// stay `z.string()` so a future server-side terminal-state value still parses
+// and renders as a generic fallback rather than white-screening the panel.
+//
+// IMPORTANT (INV-1): there is deliberately NO request schema for a target/
+// version field here. The fleet self-check request body is `{ force }` only;
+// the server fills the target version from the authoritative latest release.
+// The client must never send a version. See nudgeFleetSelfCheck in client.ts
+// and the INV-1 assertion test in client.test.ts.
+// ---------------------------------------------------------------------------
+
+const FleetTriggeredRuntimeSchema = z.object({
+  runtime_id: z.string(),
+  update_id: z.string(),
+}).loose();
+
+const FleetSkippedRuntimeSchema = z.object({
+  runtime_id: z.string(),
+  // `update_in_progress` today, but kept as a free string so the UI can
+  // surface any other Create reason the server forwards (INV-6).
+  reason: z.string(),
+}).loose();
+
+// A lagging runtime whose Create faulted with an infrastructure error (store /
+// Redis), distinct from skipped (already updating). Free-string reason mirrors
+// the server's raw error text so a transient fault is honest, not disguised.
+const FleetFailedRuntimeSchema = z.object({
+  runtime_id: z.string(),
+  reason: z.string(),
+}).loose();
+
+const FleetUnreachableRuntimeSchema = z.object({
+  runtime_id: z.string(),
+  // `desktop` today (desktop-launched runtimes excluded from the fleet, INV-5).
+  reason: z.string(),
+}).loose();
+
+export const FleetSelfCheckResultSchema = z.object({
+  // Server-filled target version (INV-1). Echoed for display, never client-sent.
+  target_version: z.string().default(""),
+  // Echoed DRI-override intent — audit data only, never decides behaviour (INV-2).
+  force: z.boolean().default(false),
+  triggered: z.array(FleetTriggeredRuntimeSchema).default([]),
+  skipped: z.array(FleetSkippedRuntimeSchema).default([]),
+  // Trigger-time infrastructure failures — defaults to [] so an older server
+  // (pre-failed-bucket) parses cleanly as "no trigger errors".
+  failed: z.array(FleetFailedRuntimeSchema).default([]),
+  unreachable: z.array(FleetUnreachableRuntimeSchema).default([]),
+}).loose();
+
+export const EMPTY_FLEET_SELF_CHECK_RESULT: FleetSelfCheckResult = {
+  target_version: "",
+  force: false,
+  triggered: [],
+  skipped: [],
+  failed: [],
+  unreachable: [],
+};
+
+// One per-runtime audit/progress row. (A) trigger-fact columns are the server's
+// non-repudiable record; (B) result columns (report_*) are nullable and stay
+// null until a terminal result lands — a daemon report or the server-timeout
+// sweep. `report_source` distinguishes 'daemon-reported' (NOT a "safely
+// updated" assertion, INV-4) from 'server-timeout'.
+const FleetAuditRowSchema = z.object({
+  update_id: z.string(),
+  runtime_id: z.string(),
+  user_id: z.string(),
+  target_version: z.string(),
+  force: z.boolean().default(false),
+  triggered_at: z.string(),
+  report_status: z.string().nullable().default(null),
+  report_source: z.string().nullable().default(null),
+  reported_at: z.string().nullable().default(null),
+}).loose();
+
+export const FleetAuditResultSchema = z.object({
+  window_seconds: z.number().default(0),
+  rows: z.array(FleetAuditRowSchema).default([]),
+}).loose();
+
+export const EMPTY_FLEET_AUDIT_RESULT: FleetAuditResult = {
+  window_seconds: 0,
+  rows: [],
+};
+
+// Authoritative latest CLI release (feibo-ai/tc-multica, INV-11). The frontend
+// uses `tag_name` for the "is this runtime lagging?" comparison instead of the
+// historical hard-coded upstream GitHub URL (wrong repo + unreachable from
+// self-hosted internal networks).
+export const FleetLatestReleaseSchema = z.object({
+  tag_name: z.string().default(""),
+  html_url: z.string().default(""),
+}).loose();
+
+export const EMPTY_FLEET_LATEST_RELEASE: FleetLatestRelease = {
+  tag_name: "",
+  html_url: "",
 };

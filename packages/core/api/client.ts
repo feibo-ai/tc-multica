@@ -54,6 +54,9 @@ import type {
   DashboardAgentRunTime,
   DashboardRunTimeDaily,
   RuntimeUpdate,
+  FleetSelfCheckResult,
+  FleetAuditResult,
+  FleetLatestRelease,
   RuntimeModelListRequest,
   RuntimeLocalSkillListRequest,
   CreateRuntimeLocalSkillImportRequest,
@@ -217,6 +220,12 @@ import {
   EMPTY_CREATE_BILLING_CHECKOUT_SESSION_RESPONSE,
   EMPTY_BILLING_CHECKOUT_SESSION_STATUS,
   EMPTY_CREATE_BILLING_PORTAL_SESSION_RESPONSE,
+  FleetSelfCheckResultSchema,
+  FleetAuditResultSchema,
+  FleetLatestReleaseSchema,
+  EMPTY_FLEET_SELF_CHECK_RESULT,
+  EMPTY_FLEET_AUDIT_RESULT,
+  EMPTY_FLEET_LATEST_RELEASE,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -261,6 +270,23 @@ export class ApiError extends Error {
   }
 }
 
+// Thrown by nudgeFleetSelfCheck when the server rejects the fleet self-check
+// with 429 Too Many Requests (INV-12: per-workspace 30s fixed-window limit).
+// On a hit the server produces ZERO Create / ZERO audit row / ZERO nudge —
+// all-or-nothing — so the UI can safely surface "try again shortly" and keep
+// the button disabled without worrying about a partial fleet trigger. Carries
+// the optional `retryAfterSeconds` parsed from the Retry-After header so the
+// UI can show a countdown.
+export class FleetRateLimitError extends Error {
+  readonly retryAfterSeconds: number | null;
+
+  constructor(message: string, retryAfterSeconds: number | null) {
+    super(message);
+    this.name = "FleetRateLimitError";
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
 // Thrown by getAttachmentTextContent when the server refuses to inline a
 // file because it exceeds the 2 MB cap. UI maps to a "too large, please
 // download" affordance with the Download CTA still available.
@@ -280,6 +306,26 @@ export class PreviewUnsupportedError extends Error {
     super("attachment type not supported for inline preview");
     this.name = "PreviewUnsupportedError";
   }
+}
+
+// The server's fleet self-check rate-limit window (INV-12) is a fixed 30s and
+// it sets `Retry-After: 30` on the 429. The shared fetch path surfaces the
+// failure as an ApiError without the response headers, so we best-effort read a
+// `retry_after` field off the structured error body and otherwise fall back to
+// this known window. Used only to seed a UI countdown — not a correctness gate.
+const FLEET_SELF_CHECK_RETRY_AFTER_SECONDS = 30;
+
+function parseRetryAfterSeconds(err: ApiError): number | null {
+  const body = err.body;
+  if (body && typeof body === "object") {
+    const v = (body as Record<string, unknown>).retry_after;
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+    if (typeof v === "string") {
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  }
+  return FLEET_SELF_CHECK_RETRY_AFTER_SECONDS;
 }
 
 export class ApiClient {
@@ -1342,6 +1388,97 @@ export class ApiClient {
     updateId: string,
   ): Promise<RuntimeUpdate> {
     return this.fetch(`/api/runtimes/${runtimeId}/update/${updateId}`);
+  }
+
+  // -------------------------------------------------------------------------
+  // TEA-113 fleet one-click update (nudge + force-override).
+  // -------------------------------------------------------------------------
+
+  // Nudge every lagging local CLI runtime in the workspace to self-check and
+  // pull the authoritative latest release. DRI-only — gated by the server's
+  // owner/admin role check (INV-3); the UI hide is UX only.
+  //
+  // INV-1: the request body is `{ force }` ONLY. It deliberately carries NO
+  // target_version / version field — the server fills the target from the
+  // authoritative latest release (feibo-ai/tc-multica). `force` is DRI-override
+  // intent recorded for audit (INV-2/INV-4); it never decides which version is
+  // sent or which runtimes are nudged. See the INV-1 assertion in
+  // client.test.ts that locks the request body shape.
+  //
+  // INV-12: on the per-workspace 30s rate-limit hit the server returns 429 with
+  // zero side effects (no Create / no audit row / no nudge). We translate that
+  // into a typed `FleetRateLimitError` (carrying Retry-After) so the UI can
+  // disable the button and surface "try again shortly" without treating it as a
+  // generic failure.
+  async nudgeFleetSelfCheck(
+    wsId: string,
+    { force }: { force?: boolean } = {},
+  ): Promise<FleetSelfCheckResult> {
+    // INV-1: the body has exactly one key, `force`. No version field exists on
+    // this path — not even an optional one — so a client cannot influence the
+    // target version. `force` defaults to false when omitted.
+    const body: { force: boolean } = { force: force ?? false };
+    let res: Response;
+    try {
+      res = await this.fetchRaw(
+        `/api/workspaces/${wsId}/runtimes/fleet/self-check`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+          extraHeaders: { "Content-Type": "application/json" },
+        },
+      );
+    } catch (err) {
+      // INV-12: surface the rate-limit hit as a typed, branchable error.
+      if (err instanceof ApiError && err.status === 429) {
+        throw new FleetRateLimitError(err.message, parseRetryAfterSeconds(err));
+      }
+      throw err;
+    }
+    const raw = (await res.json()) as unknown;
+    return parseWithFallback(
+      raw,
+      FleetSelfCheckResultSchema,
+      EMPTY_FLEET_SELF_CHECK_RESULT,
+      { endpoint: "POST /api/workspaces/:id/runtimes/fleet/self-check" },
+    );
+  }
+
+  // Read the persistent fleet-update audit table — the AUTHORITATIVE per-runtime
+  // progress source (INV-6), never the ephemeral UpdateStore. Same owner/admin
+  // gate as the trigger. Optional `since` (seconds, server-capped at 7d) and
+  // `limit` (server-capped at 500) bound the read.
+  async getFleetAudit(
+    wsId: string,
+    params?: { since?: number; limit?: number },
+  ): Promise<FleetAuditResult> {
+    const search = new URLSearchParams();
+    if (params?.since !== undefined) search.set("since", String(params.since));
+    if (params?.limit !== undefined) search.set("limit", String(params.limit));
+    const query = search.toString();
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${wsId}/runtimes/fleet/audit${query ? `?${query}` : ""}`,
+    );
+    return parseWithFallback(
+      raw,
+      FleetAuditResultSchema,
+      EMPTY_FLEET_AUDIT_RESULT,
+      { endpoint: "GET /api/workspaces/:id/runtimes/fleet/audit" },
+    );
+  }
+
+  // Resolve the authoritative latest CLI release (feibo-ai/tc-multica, INV-11).
+  // User-scoped (no workspace context): the latest tag is a deployment-wide
+  // fact. Replaces the historical hard-coded upstream GitHub URL, which pointed
+  // at the wrong repo and was unreachable from self-hosted internal networks.
+  async getLatestCliRelease(): Promise<FleetLatestRelease> {
+    const raw = await this.fetch<unknown>("/api/cli/latest-release");
+    return parseWithFallback(
+      raw,
+      FleetLatestReleaseSchema,
+      EMPTY_FLEET_LATEST_RELEASE,
+      { endpoint: "GET /api/cli/latest-release" },
+    );
   }
 
   async initiateListModels(runtimeId: string): Promise<RuntimeModelListRequest> {

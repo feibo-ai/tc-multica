@@ -247,6 +247,35 @@
       "timeout": "Timeout"
     }
   },
+  "fleet": {
+    "action": "Update fleet",
+    "title": "Update lagging machines",
+    "subtitle_one": "{{count}} machine is behind the latest CLI.",
+    "subtitle_other": "{{count}} machines are behind the latest CLI.",
+    "target_prefix": "Target version",
+    "version_unknown": "unknown",
+    "owner_unknown": "Unknown owner",
+    "owner_unassigned": "Unassigned",
+    "nudge_action": "Nudge self-check",
+    "force_action": "Force",
+    "force_hint": "Force also triggers machines that have not opted into auto-update.",
+    "rate_limited": "Just triggered — try again shortly.",
+    "progress_title": "{{done}} / {{total}} settled",
+    "not_triggered_one": "{{count}} machine not triggered (desktop-managed or unreachable).",
+    "not_triggered_other": "{{count}} machines not triggered (desktop-managed or unreachable).",
+    "completed_caption": "\"Updated\" is the daemon's self-report, not a verified result.",
+    "retrigger_unknown": "Re-trigger unknown machines",
+    "bucket": {
+      "pending": "Waiting",
+      "running": "Updating",
+      "completed": "Daemon self-reported updated",
+      "failed": "Failed",
+      "timeout": "Timed out",
+      "skipped": "Still updating to a prior trigger",
+      "trigger_failed": "Trigger errored",
+      "unknown": "Result unknown"
+    }
+  },
   "charts": {
     "heatmap_less": "Less",
     "heatmap_more": "More",

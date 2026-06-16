@@ -601,6 +601,92 @@ export interface RuntimeUpdate {
   updated_at: string;
 }
 
+// ---------------------------------------------------------------------------
+// TEA-113 fleet one-click update (nudge + force-override).
+//
+// Shapes mirror server/internal/handler/fleet_update.go. The fleet self-check
+// request carries `{ force }` only — there is intentionally NO version field
+// (INV-1): the server fills the target from the authoritative latest release.
+// ---------------------------------------------------------------------------
+
+/** One lagging local runtime that received an UpdateStore.Create nudge. */
+export interface FleetTriggeredRuntime {
+  runtime_id: string;
+  update_id: string;
+}
+
+/** A lagging runtime whose Create was refused (e.g. an update is already in
+ *  progress to a prior trigger). Surfaced explicitly, never silently dropped. */
+export interface FleetSkippedRuntime {
+  runtime_id: string;
+  reason: string;
+}
+
+/** A lagging runtime whose Create failed with an infrastructure error (anything
+ *  other than errUpdateInProgress — a store / Redis fault). Reported in its OWN
+ *  bucket, never folded into Skipped: a transient trigger fault is honest as
+ *  "trigger errored" and re-triggerable, NOT disguised as "已在更新中"
+ *  (INV-6: zero silent drops). Mirrors server FleetFailedRuntime. */
+export interface FleetFailedRuntime {
+  runtime_id: string;
+  reason: string;
+}
+
+/** A lagging runtime excluded from the fleet (desktop-launched). NOT counted in
+ *  the x/N denominator. */
+export interface FleetUnreachableRuntime {
+  runtime_id: string;
+  reason: string;
+}
+
+/** Response of POST /api/workspaces/{id}/runtimes/fleet/self-check. */
+export interface FleetSelfCheckResult {
+  /** Server-filled target version (INV-1). Never client-supplied. */
+  target_version: string;
+  /** Echoed DRI-override intent — audit data only, never decides behaviour. */
+  force: boolean;
+  triggered: FleetTriggeredRuntime[];
+  skipped: FleetSkippedRuntime[];
+  /** Trigger-time infrastructure failures (Create faulted) — distinct from
+   *  skipped (already updating). Their own bucket; see FleetFailedRuntime. */
+  failed: FleetFailedRuntime[];
+  unreachable: FleetUnreachableRuntime[];
+}
+
+/** Source of a fleet update terminal result (INV-4). 'daemon-reported' is NOT a
+ *  "safely updated" assertion; 'server-timeout' is the sweep's flush. */
+export type FleetReportSource = "daemon-reported" | "server-timeout";
+
+/** One per-runtime audit/progress row from the persistent audit table — the
+ *  AUTHORITATIVE per-runtime progress source (INV-6), never the ephemeral
+ *  UpdateStore. (A) trigger-fact columns are non-repudiable; (B) result columns
+ *  (report_*) stay null until a terminal result lands. */
+export interface FleetAuditRow {
+  update_id: string;
+  runtime_id: string;
+  user_id: string;
+  target_version: string;
+  force: boolean;
+  triggered_at: string;
+  report_status: RuntimeUpdateStatus | null;
+  report_source: FleetReportSource | null;
+  reported_at: string | null;
+}
+
+/** Response of GET /api/workspaces/{id}/runtimes/fleet/audit. Rows ordered
+ *  newest trigger first; the UI groups by update_id per fleet run. */
+export interface FleetAuditResult {
+  window_seconds: number;
+  rows: FleetAuditRow[];
+}
+
+/** Response of GET /api/cli/latest-release — the authoritative latest CLI
+ *  release (feibo-ai/tc-multica, INV-11). */
+export interface FleetLatestRelease {
+  tag_name: string;
+  html_url: string;
+}
+
 export interface RuntimeModel {
   id: string;
   label: string;

@@ -93,6 +93,13 @@ func (l *memoryWebhookRateLimiter) Allow(_ context.Context, key string) bool {
 const (
 	webhookLimiterKeyPrefix   = "mul:webhook:rate:"
 	webhookIPLimiterKeyPrefix = "mul:webhook:ip:"
+	// fleetSelfCheckLimiterKeyPrefix isolates the TEA-113 fleet self-check
+	// per-workspace limiter (INV-12) in its own Redis namespace, separate from
+	// the autopilot webhook token/IP limiters above. They share the same
+	// sliding-window Lua primitive but must never share a budget: a busy
+	// webhook ingress must not consume the fleet button's per-workspace
+	// allowance and vice versa.
+	fleetSelfCheckLimiterKeyPrefix = "mul:fleet:selfcheck:rate:"
 )
 
 // webhookLimiterAllowSrc runs the slide-window check atomically on Redis:
@@ -153,6 +160,15 @@ func NewRedisWebhookIPRateLimiter(rdb *redis.Client, cfg WebhookRateLimit) Webho
 // limiter — single-node only.
 func NewMemoryWebhookIPRateLimiter(cfg WebhookRateLimit) WebhookRateLimiter {
 	return NewMemoryWebhookRateLimiter(cfg)
+}
+
+// NewRedisFleetSelfCheckRateLimiter is the TEA-113 fleet self-check limiter
+// (INV-12). Same sliding-window Lua primitive as the webhook limiters, but a
+// dedicated Redis key namespace (fleetSelfCheckLimiterKeyPrefix) so the fleet
+// button's per-workspace budget is isolated from the autopilot webhook
+// limiters — neither can exhaust the other's allowance.
+func NewRedisFleetSelfCheckRateLimiter(rdb *redis.Client, cfg WebhookRateLimit) WebhookRateLimiter {
+	return &redisWebhookRateLimiter{cfg: cfg, rdb: rdb, keyPrefix: fleetSelfCheckLimiterKeyPrefix}
 }
 
 func (l *redisWebhookRateLimiter) Allow(ctx context.Context, key string) bool {
