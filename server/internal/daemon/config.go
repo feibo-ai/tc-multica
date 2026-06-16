@@ -73,7 +73,18 @@ var DefaultGCArtifactPatterns = []string{"node_modules", ".next", ".turbo"}
 
 // Config holds all daemon configuration.
 type Config struct {
-	ServerBaseURL                  string
+	ServerBaseURL string
+	// UpdateMirrorBase is the verified-mirror base URL the daemon's three
+	// binary-anchor fetch points (cli.fetchReleaseByTag / cli.FetchLatestRelease
+	// / cli.attestationsAPIBase) are rewritten against, so a one-click fleet
+	// update no longer stacks N daemons onto N api.github.com release/attestations
+	// calls (TEA-115, the TEA-113 thundering-herd). Defaults to
+	// https://<server>/api/cli/mirror derived from ServerBaseURL; overridable via
+	// MULTICA_DAEMON_UPDATE_MIRROR_BASE. The mirror is an untrusted dumb cache —
+	// the daemon re-verifies every byte fail-closed against the embedded root +
+	// SAN triad (INV-16), so a misconfigured/empty mirror is at worst a DoS
+	// (fail-closed refuse + retry), never an RCE.
+	UpdateMirrorBase               string
 	DaemonID                       string
 	LegacyDaemonIDs                []string // historical daemon_ids this machine may have registered under; reported at register time so the server can merge old runtime rows
 	DeviceName                     string
@@ -144,6 +155,12 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+
+	// Verified-mirror base (TEA-115): default to <server>/api/cli/mirror derived
+	// from the normalized server base URL; MULTICA_DAEMON_UPDATE_MIRROR_BASE
+	// overrides. The daemon redirects only the byte-transport host of its three
+	// binary-anchor fetch points here; offline verification is unchanged (INV-16).
+	updateMirrorBase := envOrDefault("MULTICA_DAEMON_UPDATE_MIRROR_BASE", deriveMirrorFromServer(serverBaseURL))
 
 	// Apply backend overrides from the CLI config file (issue #3875).
 	//
@@ -500,6 +517,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 
 	return Config{
 		ServerBaseURL:                  serverBaseURL,
+		UpdateMirrorBase:               updateMirrorBase,
 		DaemonID:                       daemonID,
 		LegacyDaemonIDs:                legacyDaemonIDs,
 		DeviceName:                     deviceName,
@@ -551,6 +569,24 @@ func isOfficialCloudServer(baseURL string) bool {
 		return false
 	}
 	return strings.EqualFold(u.Hostname(), officialCloudHost)
+}
+
+// deriveMirrorFromServer builds the default verified-mirror base URL from the
+// already-normalized server base URL (TEA-115): <server>/api/cli/mirror. The
+// server exposes the mirror download endpoints under that prefix
+// (router.go: /api/cli/mirror/releases/..., /attestations/...), so the daemon's
+// three binary-anchor fetch points naturally land on the same multica server the
+// daemon already talks to — no extra config in the happy path. serverBaseURL is
+// the output of NormalizeServerBaseURL (scheme http/https, no trailing slash, no
+// /ws), so a plain string concat is sufficient and deterministic. An empty
+// serverBaseURL yields "" (no mirror → daemon falls back to GitHub-pinned
+// literals, preserving the bootstrap path).
+func deriveMirrorFromServer(serverBaseURL string) string {
+	s := strings.TrimRight(strings.TrimSpace(serverBaseURL), "/")
+	if s == "" {
+		return ""
+	}
+	return s + "/api/cli/mirror"
 }
 
 // NormalizeServerBaseURL converts a WebSocket or HTTP URL to a base HTTP URL.

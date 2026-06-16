@@ -847,6 +847,68 @@ func TestLoadConfig_BackendOverrides_MalformedConfigFileNonFatal(t *testing.T) {
 	// make sure log/slog stays imported.
 }
 
+// =============================================================================
+// TEA-115 verified-mirror: UpdateMirrorBase default-derivation + env override
+// =============================================================================
+
+func TestDeriveMirrorFromServer(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"http host:port", "http://localhost:8080", "http://localhost:8080/api/cli/mirror"},
+		{"https cloud", "https://api.multica.ai", "https://api.multica.ai/api/cli/mirror"},
+		{"trailing slash trimmed", "https://api.teamctx.actionow.ai/", "https://api.teamctx.actionow.ai/api/cli/mirror"},
+		{"lan ip", "http://10.0.5.51:8083", "http://10.0.5.51:8083/api/cli/mirror"},
+		{"empty yields empty (no mirror)", "", ""},
+		{"whitespace yields empty", "   ", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := deriveMirrorFromServer(tc.in); got != tc.want {
+				t.Errorf("deriveMirrorFromServer(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestLoadConfig_UpdateMirrorBase_DefaultDerivedFromServer asserts the happy
+// path: with no MULTICA_DAEMON_UPDATE_MIRROR_BASE set, the daemon defaults the
+// mirror base to <server>/api/cli/mirror derived from the normalized server URL
+// (the wss form must be normalized to https first by NormalizeServerBaseURL).
+func TestLoadConfig_UpdateMirrorBase_DefaultDerivedFromServer(t *testing.T) {
+	stageFakeAgent(t)
+	t.Setenv("MULTICA_DAEMON_UPDATE_MIRROR_BASE", "")
+	cfg, err := LoadConfig(Overrides{
+		ServerURL:      "wss://api.teamctx.actionow.ai/ws",
+		WorkspacesRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	want := "https://api.teamctx.actionow.ai/api/cli/mirror"
+	if cfg.UpdateMirrorBase != want {
+		t.Fatalf("UpdateMirrorBase = %q, want default-derived %q", cfg.UpdateMirrorBase, want)
+	}
+}
+
+// TestLoadConfig_UpdateMirrorBase_EnvOverride asserts MULTICA_DAEMON_UPDATE_MIRROR_BASE
+// overrides the derived default (e.g. to point at a separate cache host).
+func TestLoadConfig_UpdateMirrorBase_EnvOverride(t *testing.T) {
+	stageFakeAgent(t)
+	t.Setenv("MULTICA_DAEMON_UPDATE_MIRROR_BASE", "https://mirror.example.internal/api/cli/mirror")
+	cfg, err := LoadConfig(Overrides{
+		ServerURL:      "http://localhost:8080",
+		WorkspacesRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.UpdateMirrorBase != "https://mirror.example.internal/api/cli/mirror" {
+		t.Fatalf("UpdateMirrorBase = %q, want env override", cfg.UpdateMirrorBase)
+	}
+}
+
 // agentKeys is a tiny helper to make agent-map missing-key error messages
 // readable. Returns sorted keys.
 func agentKeys(m map[string]AgentEntry) []string {

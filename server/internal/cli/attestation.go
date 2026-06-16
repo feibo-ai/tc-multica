@@ -171,11 +171,18 @@ type githubAttestationsResponse struct {
 	} `json:"attestations"`
 }
 
-// fetchAttestationBundles 从二进制(⑨)信任锚的 GitHub attestations API 拉取某
-// artifact digest 的全部 attestation bundle。保持 ⑨ 二进制路径行为不变 —— 它只是
-// 用 attestationsAPIBase 调用通用的 fetchAttestationBundlesFor。
+// fetchAttestationBundles 从二进制(⑨)信任锚拉取某 artifact digest 的全部
+// attestation bundle。保持 ⑨ 二进制路径行为不变 —— 它只是用 attestationsBaseURL()
+// 调用通用的 fetchAttestationBundlesFor。
+//
+// TEA-115:base 由 attestationsBaseURL() 提供,当 daemon 配了 verified-mirror 时
+// 它返回 <mirror>/attestations/,否则回退 GitHub-pinned attestationsAPIBase 字面量
+// (bootstrap / 老机路径)。这只改字节传输 host;digest content-addressed 路径
+// (sha256:<digest>)、Accept header、非-200 错误处理(fetchAttestationBundlesFor
+// :204-206)、离线验签全部不变(INV-16)。skill 第二信任锚 skillAttestationsAPIBase
+// 绝不经此变量重写 —— 它仍由 VerifySkillBundleAttestation 直接传 const(INV-18 隔离)。
 func fetchAttestationBundles(digestHex string, timeout time.Duration) ([][]byte, error) {
-	return fetchAttestationBundlesFor(attestationsAPIBase, digestHex, timeout)
+	return fetchAttestationBundlesFor(attestationsBaseURL(), digestHex, timeout)
 }
 
 // fetchAttestationBundlesFor 从给定信任锚 API base 拉取某 artifact digest 的全部
