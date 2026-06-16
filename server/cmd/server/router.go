@@ -500,6 +500,30 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	r.Get("/api/config", h.GetConfig)
 	r.With(contactSalesRL).Post("/api/contact-sales", h.CreateContactSales)
 
+	// TEA-115 verified-mirror download endpoints. PUBLIC on purpose
+	// (no DaemonAuth/Auth): an old v0.4.x daemon's bootstrap first-hop
+	// cannot reach an authenticated endpoint, the bytes are non-secret,
+	// and their authenticity is anchored by attestation (INV-19). The
+	// server is a dumb, untrusted cache that adjudicates nothing; the
+	// daemon re-verifies every byte fail-closed (INV-16). These exist to
+	// move WHICH HOST the binary-anchor artifact bytes come from off the
+	// GitHub distribution hot path, killing the TEA-113 thundering herd.
+	//
+	// Per-IP fixed-window rate limit (same shared-storage Redis primitive as
+	// authRL/FleetRateLimiter, NOT a per-process map, so the budget holds across
+	// API replicas). These routes are public AND origin-fetch from GitHub on a
+	// cold miss, so an unthrottled external client spraying
+	// /releases/tags/<random> or /attestations/<random> could exhaust the
+	// server's GitHub metadata quota and break the whole fleet's updates. A
+	// generous per-IP/minute budget (RATE_LIMIT_MIRROR, default 120) leaves
+	// normal batched bootstrap untouched (the cache collapses repeats to the
+	// origin anyway) while capping a single source's burn. Over the budget → 429.
+	mirrorRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_MIRROR", 120), time.Minute, trustedProxies)
+	r.With(mirrorRL).Get("/api/cli/mirror/releases/tags/{tag}", h.MirrorReleaseByTag)
+	r.With(mirrorRL).Get("/api/cli/mirror/releases/latest", h.MirrorLatestRelease)
+	r.With(mirrorRL).Get("/api/cli/mirror/attestations/{digest}", h.MirrorAttestations)
+	r.With(mirrorRL).Get("/api/cli/mirror/assets/{tag}/{asset}", h.MirrorAsset)
+
 	// Webhook ingress for autopilots. Outside the authenticated group on
 	// purpose: the bearer token in the URL path IS the credential. Workspace
 	// context is derived from the trigger row, never from request headers.

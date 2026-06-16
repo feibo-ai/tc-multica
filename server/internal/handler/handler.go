@@ -133,7 +133,14 @@ type Handler struct {
 	// workspace per fixed window (TEA-113 INV-12). Shared-storage backed
 	// (Redis in multi-node); the in-memory default is single-node only.
 	FleetRateLimiter WebhookRateLimiter
-	CloudRuntime     cloudRuntimeProxy
+	// MirrorCache backs the TEA-115 verified-mirror download endpoints
+	// (fleet_mirror.go). It is a dumb, untrusted lazy cache-through with
+	// single-flight origin fetch (INV-19): it caches GitHub release artifacts so
+	// a fleet of daemons costs GitHub one upstream request per artifact, not N.
+	// The daemon re-verifies every byte (INV-16); this server adjudicates
+	// nothing. Defaults to a GitHub-pinned origin; tests inject a fake.
+	MirrorCache  *mirrorCache
+	CloudRuntime cloudRuntimeProxy
 	// Lark integration. All three are nil when the Lark master key
 	// (MULTICA_LARK_SECRET_KEY) is unset; the corresponding HTTP
 	// handlers return 503 in that case so a misconfigured self-host
@@ -226,6 +233,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		WebhookIPRateLimiter:  NewMemoryWebhookIPRateLimiter(DefaultWebhookIPRateLimit()),
 		FleetLatestRelease:    NewDefaultFleetLatestReleaseResolver(),
 		FleetRateLimiter:      NewMemoryWebhookRateLimiter(DefaultFleetSelfCheckRateLimit()),
+		MirrorCache:           newMirrorCache(realMirrorOrigin{timeout: mirrorAssetTimeout}),
 		CloudRuntime: cloudruntime.NewClient(cloudruntime.Config{
 			BaseURL: cfg.CloudRuntimeFleetURL,
 			Timeout: cfg.CloudRuntimeFleetTimeout,

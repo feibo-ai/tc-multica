@@ -1,5 +1,19 @@
 # Releases
 
+## v0.4.22
+
+fleet 分发去 GitHub 热路径(验签镜像 · TEA-115):修复 TEA-113 一键更新在全机群同时触发时,多 daemon(含同主机多 agent 共享 IP)同时打 api.github.com release/attestations API 触发 504/403/timeout 的雷群。daemon 自更新的二进制锚工件分发改从 multica 服务端的验签镜像 download 端点拉取,GitHub 退出分发热路径。
+
+### 验签镜像(服务端 download 端点)
+- 服务端新增公开 download 端点(`/api/cli/mirror/...`)缓存按需镜像 GitHub release 工件(release 元数据 / archive / checksums / attestation bundle / revocations.json),single-flight 合并并发回源——N 台机群对 GitHub 每工件只回源 1 次,雷群根除。
+- **daemon 仍照旧离线验签**(attestation 三元组绑死 `feibo-ai/tc-multica` · SHA-256 · 吊销),验签代码一行未改;镜像是不可信哑缓存,污染最坏=拒装(DoS)或降级(由 v0.4.21 内存 floor 拒),永远注入不了码。
+- 缓存安全:三桶语义(immutable / latest 短 TTL / revocations 内容与其 attestation 同一原子缓存单元)、SSRF 回源 host 白名单(github.com / *.githubusercontent.com)+ 权威 asset 集校验、redirect 逐跳重校验、缓存条目 LRU 上界、公开路由限流。
+
+### 升级与部署
+- 服务端镜像端点随本版部署即生效(默认从 server URL 派生镜像 base);可用 `MULTICA_DAEMON_UPDATE_MIRROR_BASE` 覆盖。
+- 注意:0.4.x 老 daemon 的 GitHub URL 写死,首次更新到本版仍直连 GitHub(镜像重定向自本版起生效);DRI 用 web fleet 按钮 / CLI 分批(≤3-5 台/批 · 间隔 30-60s)bootstrap 老机群,全部到本版后镜像永久接管,GitHub 退出热路径。
+- 自更:daemon 设 `MULTICA_DAEMON_AUTO_UPDATE=true` 后自动升级;手动 `multica update` 或重跑 `scripts/install.sh`。
+
 ## v0.4.21
 
 队员一键更新(fleet one-click update · TEA-113):DRI 在 Runtimes 页一键把所有落后(CLI)的队员机器从 ≤6h 轮询压到秒级拉到最新。服务端只给 daemon 发「立即自检」nudge,daemon 仍走已验证自更路径(attestation + 吊销 + SHA → 本地自拉),只改「何时检查」不改「装什么」;支持 DRI 强制覆盖未开 `MULTICA_DAEMON_AUTO_UPDATE` 的机器。本期纯 CLI 维度,skill 一键更新切后续独立 task。

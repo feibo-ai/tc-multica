@@ -165,6 +165,12 @@ type Daemon struct {
 // New creates a new Daemon instance.
 func New(cfg Config, logger *slog.Logger) *Daemon {
 	cacheRoot := filepath.Join(cfg.WorkspacesRoot, ".repos")
+	// TEA-115: redirect the byte-transport host of the daemon's three
+	// binary-anchor fetch points (cli.fetchReleaseByTag / cli.FetchLatestRelease
+	// / cli.attestationsAPIBase) to the verified mirror. Offline verification is
+	// unchanged (INV-16); the mirror is an untrusted dumb cache. Empty base = no
+	// rewrite (GitHub-pinned literals, bootstrap path).
+	cli.SetUpdateMirrorBase(cfg.UpdateMirrorBase)
 	client := NewClient(cfg.ServerBaseURL)
 	// Tag every daemon HTTP request with the daemon's CLI version so the
 	// server can split logs/metrics by client version (parallel to the CLI).
