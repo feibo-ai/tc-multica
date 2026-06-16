@@ -1,5 +1,28 @@
 # Releases
 
+## v0.4.21
+
+队员一键更新(fleet one-click update · TEA-113):DRI 在 Runtimes 页一键把所有落后(CLI)的队员机器从 ≤6h 轮询压到秒级拉到最新。服务端只给 daemon 发「立即自检」nudge,daemon 仍走已验证自更路径(attestation + 吊销 + SHA → 本地自拉),只改「何时检查」不改「装什么」;支持 DRI 强制覆盖未开 `MULTICA_DAEMON_AUTO_UPDATE` 的机器。本期纯 CLI 维度,skill 一键更新切后续独立 task。
+
+### 前端(Runtimes 页)
+- 新增 DRI-only(owner/admin)「一键更新机群」按钮 + 落后队员列表(谁的机器落后 + 当前 → 目标版本)+ 二次确认。
+- 逐机进度回显以持久审计表为权威 source,区分「server 已触发」与「daemon 自报完成」;429 限流命中按钮禁用并在窗口后自动恢复。
+- 修正落后判定的 latest 源仓为 `feibo-ai/tc-multica`(此前误指 upstream,导致 sidebar「有更新」红点与逐机更新按钮误判)。
+
+### 服务端
+- 新增 fleet self-check 端点(请求体不接受版本号,目标版本由服务端从权威 latest 填)+ owner/admin 角色 gate + 每 workspace 限流(共享存储,命中先于任何 update 创建返回 429)。
+- 新增独立持久审计表(migration `119_fleet_update_audit`),分「服务端触发事实」与「daemon 回传结果」两组列;终态由 daemon 回传同步落表,超时由后台 sweep 扫审计表补齐(与 store 后端解耦,多节点安全)。
+
+### daemon / CLI(本版二进制)
+- 新增防降级版本单调内存 floor:server 触发的更新在执行前拒绝非递增 / 等值 / dev 版本(复用运行中二进制版本,关闭此前 server 触发更新路径的 anti-rollback 缺口)。force 标志仅用于审计与日志,不触达验签序列。
+
+### 注意(部署)
+- **服务端需跑 migration `119_fleet_update_audit`**——否则 fleet 端点报错。
+- 服务端 + 前端需部署本版才有该功能;daemon 侧防降级 floor 随 CLI 升级生效。
+
+### 升级
+- 自更:daemon 设 `MULTICA_DAEMON_AUTO_UPDATE=true` 后自动升级;手动 `multica update` 或重跑 `scripts/install.sh`。
+
 ## v0.4.20
 
 本地 session 用量新增 Codex 采集器,并标注 Users/Agents 用量的口径差异(TEA-111 / TEA-112)。
