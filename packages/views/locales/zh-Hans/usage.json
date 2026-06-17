@@ -67,6 +67,8 @@
     "unattributed": "未归属",
     "tools_label": "工具",
     "tool_claude_code": "Claude Code",
+    "tool_codex": "Codex",
+    "tool_unknown": "其他",
     "no_data": "此窗口内暂无本地 CLI 用量。"
   },
   "empty": {

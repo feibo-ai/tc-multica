@@ -6,6 +6,7 @@ import {
   addDaysIso,
   aggregateByWeek,
   aggregateCostByModel,
+  classifyModelTool,
   collectUnmappedModels,
   computeCostInWindow,
   estimateCost,
@@ -859,5 +860,61 @@ describe("computeCostInWindow", () => {
   it("returns 0 for an empty row set", () => {
     vi.setSystemTime(new Date("2026-05-20T12:00:00Z"));
     expect(computeCostInWindow([], 7, "UTC")).toBe(0);
+  });
+});
+
+describe("classifyModelTool", () => {
+  it("maps current Claude SKUs to claude_code", () => {
+    expect(classifyModelTool("claude-opus-4-8")).toBe("claude_code");
+  });
+
+  it("maps a future / unknown Claude SKU to claude_code by family prefix", () => {
+    expect(classifyModelTool("claude-fable-5")).toBe("claude_code");
+  });
+
+  it("maps dotted-minor GPT SKUs to codex", () => {
+    expect(classifyModelTool("gpt-5.5")).toBe("codex");
+  });
+
+  it("maps -codex variants to codex", () => {
+    expect(classifyModelTool("gpt-5-codex")).toBe("codex");
+  });
+
+  it("is case-insensitive (GPT-5.5 → codex)", () => {
+    expect(classifyModelTool("GPT-5.5")).toBe("codex");
+  });
+
+  it("strips a provider prefix before classifying Claude", () => {
+    expect(classifyModelTool("anthropic/claude-opus-4-8")).toBe("claude_code");
+  });
+
+  it("strips a provider prefix before classifying GPT", () => {
+    expect(classifyModelTool("openai/gpt-5.5")).toBe("codex");
+  });
+
+  it("strips a trailing dated snapshot before classifying GPT", () => {
+    expect(classifyModelTool("gpt-5-2025-08-07")).toBe("codex");
+  });
+
+  it("strips a context-window tag before classifying Claude", () => {
+    expect(classifyModelTool("claude-opus-4-7[1m]")).toBe("claude_code");
+  });
+
+  it("classifies o-series reasoning models as codex", () => {
+    expect(classifyModelTool("o3-mini")).toBe("codex");
+    expect(classifyModelTool("o4-mini")).toBe("codex");
+  });
+
+  it("falls back to other for an unknown model", () => {
+    expect(classifyModelTool("some-unknown-model")).toBe("other");
+  });
+
+  it("falls back to other for a non-Anthropic / non-OpenAI SKU", () => {
+    expect(classifyModelTool("deepseek-v4-pro")).toBe("other");
+    expect(classifyModelTool("glm-5")).toBe("other");
+  });
+
+  it("treats an empty model string as other", () => {
+    expect(classifyModelTool("")).toBe("other");
   });
 });

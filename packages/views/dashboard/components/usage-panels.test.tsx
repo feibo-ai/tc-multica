@@ -102,6 +102,50 @@ describe("UserUsagePanel", () => {
       screen.getByText("Select a row to see its 26-week activity"),
     ).toBeTruthy();
   });
+
+  it("renders a per-tool breakdown for the selected owner, summing to 100%", () => {
+    // u-mix is the top spender (claude-opus 1M ≈ $5 + gpt-5.5 1M ≈ $5 = ~$10),
+    // so it's the default selection. Equal token volume across the two
+    // families → Claude Code 50% / Codex 50%.
+    const rows = [
+      { owner_id: "u-mix", model: "claude-opus-4-7", input_tokens: 1_000_000, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 },
+      { owner_id: "u-mix", model: "gpt-5.5", input_tokens: 1_000_000, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 },
+      { owner_id: "u-1", model: "claude-haiku-4-5", input_tokens: 1000, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 },
+    ];
+    renderWithI18n(
+      <UserUsagePanel
+        wsId="ws-1"
+        viewTZ="UTC"
+        rows={rows}
+        members={[{ user_id: "u-mix", name: "Mix" }, { user_id: "u-1", name: "Alice" }]}
+      />,
+    );
+    // Both tool rows render with their label …
+    expect(screen.getByText("Claude Code")).toBeTruthy();
+    expect(screen.getByText("Codex")).toBeTruthy();
+    // … and the two 50% cells appear (one per tool, summing to 100).
+    const pcts = screen.getAllByText("50%");
+    expect(pcts).toHaveLength(2);
+    // A model family the owner didn't use must not show up.
+    expect(screen.queryByText("Other")).toBeNull();
+  });
+
+  it("renders a single tool at 100% when the owner used only one family", () => {
+    const rows = [
+      { owner_id: "u-solo", model: "claude-opus-4-7", input_tokens: 1_000_000, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 },
+    ];
+    renderWithI18n(
+      <UserUsagePanel
+        wsId="ws-1"
+        viewTZ="UTC"
+        rows={rows}
+        members={[{ user_id: "u-solo", name: "Solo" }]}
+      />,
+    );
+    expect(screen.getByText("Claude Code")).toBeTruthy();
+    expect(screen.getByText("100%")).toBeTruthy();
+    expect(screen.queryByText("Codex")).toBeNull();
+  });
 });
 
 const AGENT_ROWS = [
