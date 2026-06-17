@@ -61,6 +61,12 @@ const (
 	DefaultGCArtifactTTL           = 12 * time.Hour  // 12h — drop regenerable artifacts on completed but still-open issues
 	DefaultAutoUpdateCheckInterval = 6 * time.Hour   // how often the daemon polls GitHub for a newer CLI release
 	DefaultAmbientUsageInterval    = 1 * time.Minute // how often the ambient (local-CLI) usage collector scans transcripts
+	// DefaultAmbientBackfillDays bounds the one-time historical backfill window
+	// the ambient collectors run on their first scan under this collector version
+	// (full daemon, or an upgrade of an already-seeded one). Usage events older
+	// than now()-this are never emitted; <=0 disables backfill entirely and
+	// restores the legacy forward-only seed (emit nothing on first scan).
+	DefaultAmbientBackfillDays = 7
 )
 
 // DefaultGCArtifactPatterns lists basename matches that the GC loop treats as
@@ -109,6 +115,7 @@ type Config struct {
 	SkillSyncCheckInterval         time.Duration         // how often the skill-sync loop polls team-context for a newer skill bundle (default: 6h)
 	AmbientUsageEnabled            bool                  // periodically collect token usage from local CLI transcripts (ad-hoc sessions never dispatched as tasks) and report it per-runtime (default: true)
 	AmbientUsageInterval           time.Duration         // how often the ambient-usage collector scans transcripts (default: 1m)
+	AmbientBackfillDays            int                   // one-time historical backfill window in days for the ambient collectors' first scan (default: 7, <=0 disables backfill → legacy forward-only seed)
 	PollInterval                   time.Duration
 	HeartbeatInterval              time.Duration
 	AgentTimeout                   time.Duration
@@ -466,6 +473,10 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	ambientBackfillDays, err := intFromEnv("MULTICA_AMBIENT_BACKFILL_DAYS", DefaultAmbientBackfillDays)
+	if err != nil {
+		return Config{}, err
+	}
 
 	// Auto-update config: default -> env override -> CLI override.
 	//
@@ -534,6 +545,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		GCArtifactPatterns:             gcArtifactPatterns,
 		AmbientUsageEnabled:            ambientUsageEnabled,
 		AmbientUsageInterval:           ambientUsageInterval,
+		AmbientBackfillDays:            ambientBackfillDays,
 		AutoUpdateEnabled:              autoUpdateEnabled,
 		AutoUpdateCheckInterval:        autoUpdateInterval,
 		SkillWriteEnabled:              skillWriteEnabled,

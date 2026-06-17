@@ -160,6 +160,11 @@ type Daemon struct {
 	// New() and overridable in tests so the auto-update poller can be exercised
 	// without touching the real network or the brew CLI.
 	runUpdateFn func(targetVersion string) (string, error)
+	// collectorsFn returns the ambient-usage collectors. Set to
+	// d.defaultAmbientCollectors by New() and overridable in tests so the
+	// scan→report→commit cycle can be exercised with a deterministic fake
+	// collector instead of the real transcript readers.
+	collectorsFn func() []Collector
 }
 
 // New creates a new Daemon instance.
@@ -194,6 +199,7 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 	}
 	d.runner = taskRunnerFunc(d.runTask)
 	d.runUpdateFn = d.runUpdate
+	d.collectorsFn = d.defaultAmbientCollectors
 	return d
 }
 

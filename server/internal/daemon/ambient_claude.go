@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // claudeSource is the collector / provider id for Claude Code transcripts.
@@ -26,14 +27,20 @@ const claudeSource = "claude"
 type claudeCollector struct {
 	logger *slog.Logger
 	root   string // ~/.claude/projects; overridable in tests
+	// backfillDays is the one-time historical window (days). <=0 disables
+	// backfill and restores the legacy forward-only seed.
+	backfillDays int
+	// now returns the reference time used to derive the backfill cutoff;
+	// defaults to time.Now, overridable in tests for a fixed instant.
+	now func() time.Time
 }
 
-func newClaudeCollector(logger *slog.Logger) *claudeCollector {
+func newClaudeCollector(logger *slog.Logger, backfillDays int) *claudeCollector {
 	root := ""
 	if home, err := os.UserHomeDir(); err == nil {
 		root = filepath.Join(home, ".claude", "projects")
 	}
-	return &claudeCollector{logger: logger, root: root}
+	return &claudeCollector{logger: logger, root: root, backfillDays: backfillDays, now: time.Now}
 }
 
 func (c *claudeCollector) Source() string { return claudeSource }
@@ -47,13 +54,17 @@ type claudeFileState struct {
 }
 
 // claudeState is the collector's opaque, serialized watermark. Seeded gates the
-// forward-only contract: the very first scan records every existing file's
-// current end WITHOUT emitting (we do not backfill years of history — plan
-// decision "只向前"); only content appended after that, and files created after
-// that, are reported.
+// legacy forward-only seed (kept for backfillDays<=0 and as a marker the state
+// has been written at least once). BackfillVersion gates the one-time windowed
+// backfill: a state below ambientBackfillVersion runs a single historical pass
+// (emit every message with EventAt >= cutoff, then watermark to file end). The
+// uq key (session+message+request) makes the re-read of already-emitted lines a
+// server-side no-op, so an upgrade of an already-Seeded daemon backfills without
+// double-counting.
 type claudeState struct {
-	Seeded bool                       `json:"seeded"`
-	Files  map[string]claudeFileState `json:"files"`
+	Seeded          bool                       `json:"seeded"`
+	BackfillVersion int                        `json:"backfill_version"`
+	Files           map[string]claudeFileState `json:"files"`
 }
 
 // claudeLine is the ONLY shape a transcript line is decoded into — numbers and
@@ -84,6 +95,15 @@ func (c *claudeCollector) Scan(ctx context.Context, prevState json.RawMessage) (
 		}
 	}
 	firstRun := !state.Seeded
+	// needsBackfill triggers exactly one windowed historical pass: a brand-new
+	// daemon (empty state, BackfillVersion 0) and an already-Seeded daemon that
+	// upgraded into this version (BackfillVersion 0) both qualify. Disabled when
+	// backfillDays<=0, which keeps the legacy forward-only behavior intact.
+	needsBackfill := c.backfillDays > 0 && state.BackfillVersion < ambientBackfillVersion
+	var cutoff time.Time
+	if needsBackfill {
+		cutoff = c.now().Add(-time.Duration(c.backfillDays) * 24 * time.Hour)
+	}
 
 	var entries []AmbientUsageEntry
 	// Dedup within a scan by (message.id, requestId): a transcript repeats the
@@ -133,6 +153,18 @@ func (c *claudeCollector) Scan(ctx context.Context, prevState json.RawMessage) (
 			mtime := info.ModTime().UnixNano()
 			prev, known := state.Files[path]
 
+			if needsBackfill {
+				// Windowed backfill: read every file whole (offset 0), emit only
+				// messages with EventAt >= cutoff, then watermark to file end. The
+				// uq key makes re-reading already-reported lines a server no-op, so
+				// an upgrade path that previously seeded forward-only can backfill
+				// the window without double-counting.
+				newOffset, fileEntries := c.tailFile(path, 0, cutoff, seen)
+				entries = append(entries, fileEntries...)
+				state.Files[path] = claudeFileState{Offset: newOffset, MTimeNano: mtime, Size: size}
+				return nil
+			}
+
 			if firstRun && !known {
 				// Forward-only seed: remember the current end, emit nothing.
 				state.Files[path] = claudeFileState{Offset: size, MTimeNano: mtime, Size: size}
@@ -150,7 +182,7 @@ func (c *claudeCollector) Scan(ctx context.Context, prevState json.RawMessage) (
 				}
 			}
 
-			newOffset, fileEntries := c.tailFile(path, start, seen)
+			newOffset, fileEntries := c.tailFile(path, start, time.Time{}, seen)
 			entries = append(entries, fileEntries...)
 			state.Files[path] = claudeFileState{Offset: newOffset, MTimeNano: mtime, Size: size}
 			return nil
@@ -166,6 +198,9 @@ func (c *claudeCollector) Scan(ctx context.Context, prevState json.RawMessage) (
 	}
 
 	state.Seeded = true
+	if needsBackfill {
+		state.BackfillVersion = ambientBackfillVersion
+	}
 	next, err := json.Marshal(state)
 	if err != nil {
 		return nil, prevState, err
@@ -177,7 +212,11 @@ func (c *claudeCollector) Scan(ctx context.Context, prevState json.RawMessage) (
 // entries, and returns the offset of the last COMPLETE line so a half-written
 // trailing line (an actively-appending session) is re-read next scan rather
 // than parsed truncated and lost. Per-line failures are skipped, never fatal.
-func (c *claudeCollector) tailFile(path string, start int64, seen map[string]struct{}) (int64, []AmbientUsageEntry) {
+//
+// When cutoff is non-zero (the backfill pass), a parsed line is dropped unless
+// its EventAt is at or after cutoff, bounding the historical window. A zero
+// cutoff (the steady-state tail) keeps every parsed line.
+func (c *claudeCollector) tailFile(path string, start int64, cutoff time.Time, seen map[string]struct{}) (int64, []AmbientUsageEntry) {
 	f, err := os.Open(path)
 	if err != nil {
 		return start, nil
@@ -204,6 +243,9 @@ func (c *claudeCollector) tailFile(path string, start int64, seen map[string]str
 			continue
 		}
 		if entry, ok := parseClaudeUsageLine(raw); ok {
+			if !cutoff.IsZero() && !claudeEventAtAtOrAfter(entry.EventAt, cutoff) {
+				continue // outside the backfill window
+			}
 			key := entry.MessageID + "\x00" + entry.RequestID
 			if _, dup := seen[key]; dup {
 				continue
@@ -213,6 +255,18 @@ func (c *claudeCollector) tailFile(path string, start int64, seen map[string]str
 		}
 	}
 	return newOffset, entries
+}
+
+// claudeEventAtAtOrAfter reports whether the RFC3339 timestamp ts is at or after
+// cutoff. An unparseable timestamp is treated as in-window (kept): the backfill
+// is best-effort and the uq key still dedups, so a kept-but-old line is at worst
+// a one-time over-inclusion, never a crash.
+func claudeEventAtAtOrAfter(ts string, cutoff time.Time) bool {
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		return true
+	}
+	return !t.Before(cutoff)
 }
 
 // parseClaudeUsageLine decodes one line into the numbers-only claudeLine and,
