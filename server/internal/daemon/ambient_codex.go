@@ -8,8 +8,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // codexSource is the collector / provider id for Codex CLI rollout transcripts.
@@ -18,13 +20,17 @@ const codexSource = "codex"
 // codexCollector scans ~/.codex/{sessions,archived_sessions}/**/rollout-*.jsonl
 // for per-session cumulative token usage. It is the second concrete Collector;
 // it mirrors claudeCollector — adding it changed nothing in the framework, only
-// appended one entry to ambientCollectors.
+// appended one entry to defaultAmbientCollectors.
 //
 // Counting model differs from Claude. Codex emits a `token_count` event whose
 // `info.total_token_usage` is a per-session RUNNING TOTAL (cumulative), and the
 // same total is typically emitted multiple times per turn. So we never sum
-// events — per session we take the FINAL/max cumulative seen this scan and emit
-// the DELTA against the watermarked cumulative. This is the only counting path.
+// events. Per session we reconstruct the time-ordered sequence of distinct
+// cumulative SNAPSHOTS, hold a watermark = the last cumulative already emitted,
+// and emit one DELTA (snapshot − watermark) per snapshot above the watermark,
+// stamped with that snapshot's own timestamp. This keeps each turn's tokens on
+// its real event time instead of collapsing a whole session onto one timestamp,
+// and Σ(deltas) over a session equals (final cumulative − baseline) exactly.
 //
 // Privacy doctrine (decisions/2026-06-03-local-log-privacy.md): a rollout line
 // is decoded ONLY into codexRolloutLine, whose fields are numbers and ids. The
@@ -33,14 +39,21 @@ const codexSource = "codex"
 type codexCollector struct {
 	logger *slog.Logger
 	root   string // ~/.codex; overridable in tests
+	// backfillDays is the one-time historical window (days). <=0 disables
+	// backfill and restores the legacy forward-only seed (seed at current
+	// cumulative, emit nothing on first scan).
+	backfillDays int
+	// now returns the reference time used to derive the backfill cutoff;
+	// defaults to time.Now, overridable in tests for a fixed instant.
+	now func() time.Time
 }
 
-func newCodexCollector(logger *slog.Logger) *codexCollector {
+func newCodexCollector(logger *slog.Logger, backfillDays int) *codexCollector {
 	root := ""
 	if home, err := os.UserHomeDir(); err == nil {
 		root = filepath.Join(home, ".codex")
 	}
-	return &codexCollector{logger: logger, root: root}
+	return &codexCollector{logger: logger, root: root, backfillDays: backfillDays, now: time.Now}
 }
 
 func (c *codexCollector) Source() string { return codexSource }
@@ -54,24 +67,43 @@ type codexFileState struct {
 	Size      int64 `json:"size"`
 }
 
-// codexSessionWatermark is the last-reported cumulative tuple for one session.
-// The next scan's emitted delta is (current final cumulative − this).
+// codexSessionWatermark is the last-emitted cumulative tuple for one session.
+// The next snapshot delta is (snapshot cumulative − this).
 type codexSessionWatermark struct {
 	Input     int64 `json:"input"`
 	Output    int64 `json:"output"`
 	CacheRead int64 `json:"cache_read"`
 }
 
+func (w codexSessionWatermark) total() int64 { return w.Input + w.Output + w.CacheRead }
+
 // codexState is the collector's opaque, serialized watermark. Seeded gates the
-// forward-only contract: the very first scan records every existing session's
-// current cumulative WITHOUT emitting (we do not backfill history — plan
-// decision "只向前"); only growth after that, and sessions created after that,
-// are reported.
+// legacy forward-only seed (kept for backfillDays<=0 and as a marker the state
+// has been written). BackfillVersion gates the one-time windowed backfill: a
+// state below ambientBackfillVersion runs a single historical pass that, per
+// session, baselines the watermark at the last pre-cutoff cumulative and emits
+// every in-window snapshot delta. The monotonic "cum:"+total key makes a re-scan
+// a server-side no-op, so an upgrade of an already-Seeded daemon backfills the
+// window without double-counting.
 type codexState struct {
-	Seeded   bool                             `json:"seeded"`
-	Files    map[string]codexFileState        `json:"files"`
-	Sessions map[string]codexSessionWatermark `json:"sessions"`
+	Seeded          bool                             `json:"seeded"`
+	BackfillVersion int                              `json:"backfill_version"`
+	Files           map[string]codexFileState        `json:"files"`
+	Sessions        map[string]codexSessionWatermark `json:"sessions"`
 }
+
+// codexCumSnapshot is one cumulative reading observed in a token_count event:
+// the per-session running totals at that event's timestamp. The collector
+// reconstructs the time-ordered, deduped sequence of these per session and emits
+// a delta per snapshot above the watermark.
+type codexCumSnapshot struct {
+	input   int64
+	output  int64 // output_tokens + reasoning_output_tokens
+	cache   int64
+	eventAt string
+}
+
+func (s codexCumSnapshot) total() int64 { return s.input + s.output + s.cache }
 
 // codexRolloutLine is the ONLY shape a rollout line is decoded into — numbers
 // and ids, never content. Mirrors the codexSessionTokenCount struct in
@@ -104,13 +136,12 @@ type codexTokenUsage struct {
 // codexSessionScan accumulates the per-session facts gathered from one or more
 // rollout files during a single scan, before deltas are computed.
 type codexSessionScan struct {
-	id      string
-	model   string // turn_context.payload.model (precedence) or token_count info.model
-	hasCum  bool
-	input   int64 // final/max cumulative this scan
-	output  int64
-	cache   int64
-	eventAt string // timestamp of the LAST token_count event observed
+	id    string
+	model string // turn_context.payload.model (precedence) or token_count info.model
+	// snapshots holds every cumulative reading observed across the session's
+	// files this scan, unordered. Scan sorts + dedups them into a monotonic
+	// sequence before emitting per-snapshot deltas.
+	snapshots []codexCumSnapshot
 	// active marks a session seen under sessions/ (vs archived_sessions/). When a
 	// session UUID appears in both dirs, the active copy wins.
 	active bool
@@ -131,10 +162,19 @@ func (c *codexCollector) Scan(ctx context.Context, prevState json.RawMessage) ([
 		}
 	}
 	firstRun := !state.Seeded
+	// needsBackfill triggers exactly one windowed historical pass: a brand-new
+	// daemon (empty state, BackfillVersion 0) and an already-Seeded daemon that
+	// upgraded into this version (BackfillVersion 0) both qualify. Disabled when
+	// backfillDays<=0, which keeps the legacy forward-only seed intact.
+	needsBackfill := c.backfillDays > 0 && state.BackfillVersion < ambientBackfillVersion
+	var cutoff time.Time
+	if needsBackfill {
+		cutoff = c.now().Add(-time.Duration(c.backfillDays) * 24 * time.Hour)
+	}
 
 	// Per-session accumulation across both subtrees. A session resume can write a
 	// new file but Codex keys cumulative usage per session UUID, so we fold all
-	// files of a session into one final cumulative.
+	// files' snapshots of a session into one time-ordered sequence.
 	sessions := map[string]*codexSessionScan{}
 	present := map[string]struct{}{}
 
@@ -175,27 +215,13 @@ func (c *codexCollector) Scan(ctx context.Context, prevState json.RawMessage) ([
 
 			size := info.Size()
 			mtime := info.ModTime().UnixNano()
-			prev, known := state.Files[path]
 
-			if firstRun && !known {
-				// Forward-only seed: parse to capture the session's current
-				// cumulative as the watermark, then remember the file end and
-				// emit nothing (the seed is committed via the sessions map
-				// after the walk).
-				c.scanFile(path, active, sessions)
-				state.Files[path] = codexFileState{Offset: size, MTimeNano: mtime, Size: size}
-				return nil
-			}
-			if known && prev.MTimeNano == mtime && prev.Size == size {
-				// Unchanged file: still register the session's known cumulative so
-				// the post-walk delta uses the true current total (a session can
-				// span multiple files; an unchanged file still contributes its
-				// final cumulative).
-				c.scanFile(path, active, sessions)
-				state.Files[path] = prev
-				return nil
-			}
-
+			// Always parse from the start: the cumulative model needs the
+			// session's full snapshot sequence (a session can span multiple
+			// files; an unchanged file still contributes its snapshots to the
+			// session total), and the per-snapshot watermark — not the file
+			// offset — is what gates emission. The mtime/size stat is recorded
+			// for the bounded-map drop logic only.
 			c.scanFile(path, active, sessions)
 			state.Files[path] = codexFileState{Offset: size, MTimeNano: mtime, Size: size}
 			return nil
@@ -213,59 +239,73 @@ func (c *codexCollector) Scan(ctx context.Context, prevState json.RawMessage) ([
 	liveSessions := map[string]struct{}{}
 	for id, s := range sessions {
 		liveSessions[id] = struct{}{}
-		if !s.hasCum {
+		// Build the monotonic, deduped cumulative sequence for this session.
+		seq := codexMonotonicSnapshots(s.snapshots)
+		if len(seq) == 0 {
 			continue // no token_count seen → nothing to watermark or emit
 		}
-		// Skip a session the server would reject anyway (empty model or id).
-		if s.id == "" || s.model == "" {
-			continue
+		final := seq[len(seq)-1]
+
+		// Resolve the per-session baseline watermark = the last cumulative
+		// already accounted for; deltas are emitted for snapshots above it.
+		var prev codexSessionWatermark
+		switch {
+		case needsBackfill:
+			// Windowed backfill: baseline at the last snapshot strictly before
+			// the cutoff (the last pre-window cumulative). A session whose first
+			// snapshot is already in-window baselines at zero (emit all); a
+			// session entirely before the window baselines at its final
+			// cumulative (emit nothing). This makes the first cross-boundary
+			// delta = (first in-window cumulative − last pre-window cumulative)
+			// and Σ(deltas) == final − pre-window baseline.
+			base := codexBaselineBeforeCutoff(seq, cutoff)
+			prev = codexSessionWatermark{Input: base.input, Output: base.output, CacheRead: base.cache}
+		case firstRun:
+			// Legacy forward-only seed (backfillDays<=0): baseline at the current
+			// final cumulative, emit nothing. Seeding at zero would dump the whole
+			// session history as one delta on the next scan.
+			prev = codexSessionWatermark{Input: final.input, Output: final.output, CacheRead: final.cache}
+		default:
+			// Steady state: baseline at the persisted watermark (zero for a
+			// never-seen session).
+			prev = state.Sessions[id]
 		}
 
-		if firstRun {
-			// HIGHEST-RISK PATH: seed at the CURRENT final cumulative, never zero.
-			// Seeding at zero would make the first post-seed scan emit the whole
-			// session history as one delta.
-			state.Sessions[id] = codexSessionWatermark{Input: s.input, Output: s.output, CacheRead: s.cache}
-			continue
-		}
+		// Skip a session the server would reject anyway (empty model or id). We
+		// still record its watermark below so a later scan that resolves a model
+		// does not treat the whole accumulated history as new growth.
+		emit := s.id != "" && s.model != ""
 
-		prev := state.Sessions[id] // zero value for a never-seen (new) session
-		dInput := s.input - prev.Input
-		dOutput := s.output - prev.Output
-		dCache := s.cache - prev.CacheRead
-		// Negative deltas shouldn't happen (cumulative is monotonic) but clamp
-		// defensively so a reset/rotation can't emit a negative token count.
-		if dInput < 0 {
-			dInput = 0
+		// Walk snapshots in order, emitting one delta per snapshot whose
+		// cumulative total exceeds the running watermark. The watermark advances
+		// snapshot by snapshot so each turn lands on its own EventAt; the
+		// monotonic "cum:"+total key dedups re-scans server-side.
+		for _, snap := range seq {
+			if snap.total() <= prev.total() {
+				continue // not past the watermark (duplicate or pre-baseline)
+			}
+			if emit {
+				entries = append(entries, AmbientUsageEntry{
+					SessionID:        s.id,
+					MessageID:        s.id,
+					RequestID:        "cum:" + strconv.FormatInt(snap.total(), 10),
+					Provider:         codexSource,
+					Model:            s.model,
+					EventAt:          snap.eventAt,
+					InputTokens:      clampDelta(snap.input, prev.Input),
+					OutputTokens:     clampDelta(snap.output, prev.Output),
+					CacheReadTokens:  clampDelta(snap.cache, prev.CacheRead),
+					CacheWriteTokens: 0, // Codex has no separate cache-write signal
+					Source:           codexSource,
+				})
+			}
+			prev = codexSessionWatermark{Input: snap.input, Output: snap.output, CacheRead: snap.cache}
 		}
-		if dOutput < 0 {
-			dOutput = 0
-		}
-		if dCache < 0 {
-			dCache = 0
-		}
-		if dInput > 0 || dOutput > 0 || dCache > 0 {
-			total := s.input + s.output + s.cache
-			entries = append(entries, AmbientUsageEntry{
-				SessionID: s.id,
-				MessageID: s.id,
-				// Monotonic cumulative total → re-scan same total = same key =
-				// server ON CONFLICT DO NOTHING; a new turn = larger total = new
-				// key = new row.
-				RequestID:        "cum:" + strconv.FormatInt(total, 10),
-				Provider:         codexSource,
-				Model:            s.model,
-				EventAt:          s.eventAt,
-				InputTokens:      dInput,
-				OutputTokens:     dOutput,
-				CacheReadTokens:  dCache,
-				CacheWriteTokens: 0, // Codex has no separate cache-write signal
-				Source:           codexSource,
-			})
-		}
-		// Advance the watermark to the current cumulative regardless of whether a
-		// positive delta was emitted (idempotent re-scans then see delta 0).
-		state.Sessions[id] = codexSessionWatermark{Input: s.input, Output: s.output, CacheRead: s.cache}
+		// Persist the advanced watermark (== final cumulative once all qualifying
+		// snapshots are consumed, or the seed/backfill baseline when nothing was
+		// past it), so the next steady-state scan computes deltas from here and an
+		// idempotent re-scan emits nothing.
+		state.Sessions[id] = prev
 	}
 
 	// Drop watermarks for sessions whose files all disappeared, to keep state
@@ -285,6 +325,9 @@ func (c *codexCollector) Scan(ctx context.Context, prevState json.RawMessage) ([
 	}
 
 	state.Seeded = true
+	if needsBackfill {
+		state.BackfillVersion = ambientBackfillVersion
+	}
 	next, err := json.Marshal(state)
 	if err != nil {
 		return nil, prevState, err
@@ -292,11 +335,82 @@ func (c *codexCollector) Scan(ctx context.Context, prevState json.RawMessage) ([
 	return entries, next, nil
 }
 
-// scanFile reads a whole rollout file and folds its facts into the per-session
-// accumulator. It always reads from the start: the cumulative model means we
-// need the session's CURRENT final total, not a tail delta — re-reading is cheap
-// and the per-file mtime/size guard already skips truly unchanged files. Per-line
-// failures are skipped, never fatal.
+// codexMonotonicSnapshots sorts the raw cumulative readings into time order and
+// returns a strictly-increasing-by-total sequence, collapsing duplicate and
+// out-of-order readings. Sorting is by (eventAt, total) so equal timestamps keep
+// the lower cumulative first; the walk then keeps only readings whose total
+// exceeds the running max, carrying the per-field running max forward so a single
+// field that regresses while the total grows can never lower an emitted count.
+func codexMonotonicSnapshots(raw []codexCumSnapshot) []codexCumSnapshot {
+	if len(raw) == 0 {
+		return nil
+	}
+	sorted := make([]codexCumSnapshot, len(raw))
+	copy(sorted, raw)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].eventAt != sorted[j].eventAt {
+			return sorted[i].eventAt < sorted[j].eventAt
+		}
+		return sorted[i].total() < sorted[j].total()
+	})
+
+	out := make([]codexCumSnapshot, 0, len(sorted))
+	var maxIn, maxOut, maxCache, maxTotal int64
+	for _, s := range sorted {
+		maxIn = max64(maxIn, s.input)
+		maxOut = max64(maxOut, s.output)
+		maxCache = max64(maxCache, s.cache)
+		total := maxIn + maxOut + maxCache
+		if total <= maxTotal {
+			continue // duplicate or non-advancing reading
+		}
+		maxTotal = total
+		out = append(out, codexCumSnapshot{input: maxIn, output: maxOut, cache: maxCache, eventAt: s.eventAt})
+	}
+	return out
+}
+
+// codexBaselineBeforeCutoff returns the cumulative of the last snapshot strictly
+// before cutoff — the backfill baseline. If the first snapshot is already at or
+// after cutoff (session created in-window) it returns the zero snapshot so the
+// whole session is emitted; seq must be the monotonic sequence.
+func codexBaselineBeforeCutoff(seq []codexCumSnapshot, cutoff time.Time) codexCumSnapshot {
+	var base codexCumSnapshot
+	for _, s := range seq {
+		if codexEventAtBefore(s.eventAt, cutoff) {
+			base = s
+			continue
+		}
+		break
+	}
+	return base
+}
+
+// codexEventAtBefore reports whether the RFC3339 timestamp ts is strictly before
+// cutoff. An unparseable timestamp is treated as in-window (NOT before cutoff),
+// so a snapshot with a garbled time is emitted rather than silently folded into
+// the pre-window baseline.
+func codexEventAtBefore(ts string, cutoff time.Time) bool {
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		return false
+	}
+	return t.Before(cutoff)
+}
+
+// clampDelta returns cum-prev, floored at zero. Cumulative is monotonic so this
+// is only defensive against a reset/rotation emitting a negative count.
+func clampDelta(cum, prev int64) int64 {
+	if cum < prev {
+		return 0
+	}
+	return cum - prev
+}
+
+// scanFile reads a whole rollout file and folds its token_count snapshots into
+// the per-session accumulator. It always reads from the start: the cumulative
+// model needs the session's full snapshot sequence (sort/dedup happens later in
+// Scan), and re-reading is cheap. Per-line failures are skipped, never fatal.
 func (c *codexCollector) scanFile(path string, active bool, sessions map[string]*codexSessionScan) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -311,11 +425,7 @@ func (c *codexCollector) scanFile(path string, active bool, sessions map[string]
 		sessionID  string
 		model      string // from turn_context (precedence)
 		infoModel  string // from token_count info.model (fallback)
-		hasCum     bool
-		curInput   int64
-		curOutput  int64
-		curCache   int64
-		lastEvtAt  string
+		snapshots  []codexCumSnapshot
 		sawSession bool
 	)
 
@@ -347,24 +457,18 @@ func (c *codexCollector) scanFile(path string, active bool, sessions map[string]
 			if cache == 0 {
 				cache = u.CacheReadInputTokens
 			}
-			// Cumulative is monotonic; keep the max so out-of-order or duplicate
-			// lines can't lower the running total.
-			if u.InputTokens >= curInput {
-				curInput = u.InputTokens
-			}
-			if out := u.OutputTokens + u.ReasoningOutputTokens; out >= curOutput {
-				curOutput = out
-			}
-			if cache >= curCache {
-				curCache = cache
-			}
+			// One snapshot per token_count event, carrying its own timestamp.
+			// Ordering/dedup/monotonicity are resolved later across the session's
+			// files in codexMonotonicSnapshots.
+			snapshots = append(snapshots, codexCumSnapshot{
+				input:   u.InputTokens,
+				output:  u.OutputTokens + u.ReasoningOutputTokens,
+				cache:   cache,
+				eventAt: line.Timestamp,
+			})
 			if line.Payload.Info.Model != "" {
 				infoModel = line.Payload.Info.Model
 			}
-			if line.Timestamp != "" {
-				lastEvtAt = line.Timestamp
-			}
-			hasCum = true
 		}
 	}
 
@@ -392,19 +496,9 @@ func (c *codexCollector) scanFile(path string, active bool, sessions map[string]
 	if resolvedModel != "" && (preferActive || s.model == "") {
 		s.model = resolvedModel
 	}
-	if hasCum {
-		// Fold this file's cumulative into the session max (a resumed session may
-		// span files; the true session total is the largest cumulative seen).
-		s.input = max64(s.input, curInput)
-		s.output = max64(s.output, curOutput)
-		s.cache = max64(s.cache, curCache)
-		// EventAt tracks the latest token_count timestamp across the session's
-		// files; prefer a non-empty one, later wins lexically (RFC3339 sorts).
-		if lastEvtAt != "" && lastEvtAt >= s.eventAt {
-			s.eventAt = lastEvtAt
-		}
-		s.hasCum = true
-	}
+	// Fold this file's snapshots into the session's pool (a resumed session may
+	// span files; the full sequence is reconstructed across all of them).
+	s.snapshots = append(s.snapshots, snapshots...)
 }
 
 func max64(a, b int64) int64 {

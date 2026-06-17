@@ -909,6 +909,50 @@ func TestLoadConfig_UpdateMirrorBase_EnvOverride(t *testing.T) {
 	}
 }
 
+// TestLoadConfig_AmbientBackfillDays_Default proves the env defaults to the
+// 7-day window when unset.
+func TestLoadConfig_AmbientBackfillDays_Default(t *testing.T) {
+	stageFakeAgent(t)
+	t.Setenv("MULTICA_AMBIENT_BACKFILL_DAYS", "")
+	cfg, err := LoadConfig(Overrides{
+		ServerURL:      "http://localhost:8080",
+		WorkspacesRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.AmbientBackfillDays != DefaultAmbientBackfillDays {
+		t.Fatalf("AmbientBackfillDays = %d, want default %d", cfg.AmbientBackfillDays, DefaultAmbientBackfillDays)
+	}
+}
+
+// TestLoadConfig_AmbientBackfillDays_EnvOverride proves the env is honored,
+// including 0 (which disables backfill → legacy forward-only seed).
+func TestLoadConfig_AmbientBackfillDays_EnvOverride(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want int
+	}{
+		{"14", 14},
+		{"0", 0},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			stageFakeAgent(t)
+			t.Setenv("MULTICA_AMBIENT_BACKFILL_DAYS", tc.raw)
+			cfg, err := LoadConfig(Overrides{
+				ServerURL:      "http://localhost:8080",
+				WorkspacesRoot: t.TempDir(),
+			})
+			if err != nil {
+				t.Fatalf("LoadConfig: %v", err)
+			}
+			if cfg.AmbientBackfillDays != tc.want {
+				t.Fatalf("AmbientBackfillDays = %d, want %d", cfg.AmbientBackfillDays, tc.want)
+			}
+		})
+	}
+}
+
 // agentKeys is a tiny helper to make agent-map missing-key error messages
 // readable. Returns sorted keys.
 func agentKeys(m map[string]AgentEntry) []string {

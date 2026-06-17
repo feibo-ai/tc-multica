@@ -229,16 +229,38 @@ func (c *Client) ReportTaskUsage(ctx context.Context, taskID string, usage []Tas
 	}, nil)
 }
 
+// ambientUsageBatchSize caps how many ambient usage entries go in a single POST.
+// A windowed backfill can produce thousands of entries; chunking bounds the
+// request body so one oversized payload can't trip a server/proxy size limit.
+const ambientUsageBatchSize = 1000
+
 // ReportRuntimeUsage uploads ambient (task-less local-session) usage for a
-// runtime. The server resolves workspace + owner from the runtime and dedups on
-// the composite key, so re-sending an overlapping batch is a safe no-op.
+// runtime, in fixed-size batches. The server resolves workspace + owner from the
+// runtime and dedups on the composite key, so re-sending an overlapping batch is
+// a safe no-op.
+//
+// Batching only bounds the per-request payload — it does NOT introduce a partial
+// watermark. Any batch failing returns immediately (later batches are not sent);
+// the caller treats a non-nil error as "nothing committed" and re-scans + re-sends
+// the whole set next tick, which the composite-key dedup makes idempotent for the
+// batches that already landed.
 func (c *Client) ReportRuntimeUsage(ctx context.Context, runtimeID string, usage []AmbientUsageEntry) error {
 	if len(usage) == 0 {
 		return nil
 	}
-	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/runtimes/%s/usage", runtimeID), map[string]any{
-		"usage": usage,
-	}, nil)
+	path := fmt.Sprintf("/api/daemon/runtimes/%s/usage", runtimeID)
+	for start := 0; start < len(usage); start += ambientUsageBatchSize {
+		end := start + ambientUsageBatchSize
+		if end > len(usage) {
+			end = len(usage)
+		}
+		if err := c.postJSON(ctx, path, map[string]any{
+			"usage": usage[start:end],
+		}, nil); err != nil {
+			return err // stop on first failure; caller re-sends the whole set next tick
+		}
+	}
+	return nil
 }
 
 func (c *Client) FailTask(ctx context.Context, taskID, errMsg, sessionID, workDir, failureReason string) error {

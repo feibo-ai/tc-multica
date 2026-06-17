@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // codexSessionMeta builds a session_meta line. `cwd` is a privacy probe — it
@@ -504,6 +505,324 @@ func TestCodexCollector_ArchiveMovePreservesWatermark(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("archive move must not re-emit (UUID-keyed watermark survives), got %d: %+v", len(entries), entries)
+	}
+}
+
+// fixedNow returns a now() func pinned to ts for deterministic cutoff math.
+func fixedNow(ts string) func() time.Time {
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		panic(err)
+	}
+	return func() time.Time { return t }
+}
+
+// backfillCodex builds a codex collector with the one-time backfill enabled and
+// a fixed clock, so cutoff = nowTS - days*24h is deterministic.
+func backfillCodex(root string, days int, nowTS string) *codexCollector {
+	return &codexCollector{logger: discardLogger(), root: root, backfillDays: days, now: fixedNow(nowTS)}
+}
+
+// TestCodexCollector_PerSnapshotMultiEmit proves the per-snapshot model: a single
+// scan that observes multiple distinct cumulative snapshots emits ONE delta per
+// snapshot (each on its own EventAt), and Σ(deltas) == the session's final
+// cumulative when baselined at zero. This is the steady-state regression for the
+// W4 "种子后新建会话全量压单一时间戳" fix.
+func TestCodexCollector_PerSnapshotMultiEmit(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	// Forward-only (no backfill): a brand-new session created AFTER the seed.
+	c := &codexCollector{logger: discardLogger(), root: root}
+
+	sid := "per-snapshot-uuid"
+	ts := "2026-06-15T01:30:00.000Z"
+	// Seed scan over an empty tree → nothing, Seeded=true.
+	_, state, err := c.Scan(ctx, nil)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// A new session file appears with THREE distinct cumulative snapshots at
+	// three timestamps, all in one tick.
+	writeCodexRollout(t, root, "sessions", "rollout-multi-"+sid+".jsonl",
+		codexSessionMeta(sid, ts),
+		codexTurnContext("gpt-5.5", ts, ""),
+		codexTokenCount("2026-06-15T01:30:05.000Z", 100, 10, 80, 2),
+		codexTokenCount("2026-06-15T01:30:06.000Z", 300, 25, 240, 5),
+		codexTokenCount("2026-06-15T01:30:07.000Z", 700, 60, 560, 11),
+	)
+	entries, _, err := c.Scan(ctx, state)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	// A new session baselines at zero in steady state → one delta per snapshot.
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 per-snapshot deltas, got %d: %+v", len(entries), entries)
+	}
+	// Each delta carries its OWN snapshot timestamp, not a single collapsed one.
+	wantTS := []string{"2026-06-15T01:30:05.000Z", "2026-06-15T01:30:06.000Z", "2026-06-15T01:30:07.000Z"}
+	for i, e := range entries {
+		if e.EventAt != wantTS[i] {
+			t.Errorf("delta %d EventAt = %q, want %q", i, e.EventAt, wantTS[i])
+		}
+	}
+	// Σ deltas == final cumulative (input=700, output=60+11=71, cache=560).
+	gotIn, gotOut, gotCr := sumDeltas(entries)
+	if gotIn != 700 || gotOut != 71 || gotCr != 560 {
+		t.Fatalf("Σ deltas = (in=%d out=%d cr=%d), want final (700/71/560)", gotIn, gotOut, gotCr)
+	}
+}
+
+// TestCodexCollector_BackfillWindowStraddle is the cross-window-boundary
+// invariant: a session with snapshots both before and after the cutoff baselines
+// at the last pre-window cumulative, so the first emitted delta bridges the
+// boundary and Σ(deltas) == final − pre-window baseline (NOT final from zero).
+func TestCodexCollector_BackfillWindowStraddle(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	// now = day 20; cutoff = day 13 (7-day window). Snapshots on day 10/11 are
+	// pre-window; day 14/15 are in-window.
+	c := backfillCodex(root, 7, "2026-06-20T00:00:00Z")
+
+	sid := "straddle-uuid"
+	meta := "2026-06-10T00:00:00Z"
+	writeCodexRollout(t, root, "sessions", "rollout-straddle-"+sid+".jsonl",
+		codexSessionMeta(sid, meta),
+		codexTurnContext("gpt-5.5", meta, ""),
+		// pre-window
+		codexTokenCount("2026-06-10T00:00:00Z", 1000, 100, 800, 0),
+		codexTokenCount("2026-06-11T00:00:00Z", 2000, 200, 1600, 0),
+		// in-window
+		codexTokenCount("2026-06-14T00:00:00Z", 3000, 300, 2400, 0),
+		codexTokenCount("2026-06-15T00:00:00Z", 5000, 500, 4000, 0),
+	)
+
+	entries, state, err := c.Scan(ctx, nil)
+	if err != nil {
+		t.Fatalf("backfill scan: %v", err)
+	}
+	// Two in-window snapshots → two deltas. The first bridges the boundary:
+	// (3000−2000, 300−200, 2400−1600) = (1000,100,800). The second:
+	// (5000−3000, 500−300, 4000−2400) = (2000,200,1600).
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 in-window deltas, got %d: %+v", len(entries), entries)
+	}
+	if entries[0].EventAt != "2026-06-14T00:00:00Z" || entries[1].EventAt != "2026-06-15T00:00:00Z" {
+		t.Errorf("delta timestamps wrong: %q, %q", entries[0].EventAt, entries[1].EventAt)
+	}
+	if entries[0].InputTokens != 1000 || entries[0].OutputTokens != 100 || entries[0].CacheReadTokens != 800 {
+		t.Errorf("boundary delta wrong: %+v, want 1000/100/800", entries[0])
+	}
+	// Σ == final − pre-window baseline = (5000−2000, 500−200, 4000−1600) = (3000,300,2400).
+	gotIn, gotOut, gotCr := sumDeltas(entries)
+	if gotIn != 3000 || gotOut != 300 || gotCr != 2400 {
+		t.Fatalf("Σ deltas = (in=%d out=%d cr=%d), want (3000/300/2400) = final − pre-window baseline", gotIn, gotOut, gotCr)
+	}
+
+	// Re-scan with no change → idempotent (watermark advanced to final).
+	entries, _, err = c.Scan(ctx, state)
+	if err != nil {
+		t.Fatalf("rescan: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("idempotent re-scan after backfill must emit nothing, got %d", len(entries))
+	}
+}
+
+// TestCodexCollector_BackfillSessionEntirelyInWindow proves a session whose first
+// snapshot is already in-window baselines at zero → the whole session is emitted.
+func TestCodexCollector_BackfillSessionEntirelyInWindow(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	c := backfillCodex(root, 7, "2026-06-20T00:00:00Z") // cutoff = day 13
+
+	sid := "in-window-uuid"
+	meta := "2026-06-16T00:00:00Z"
+	writeCodexRollout(t, root, "sessions", "rollout-inwin-"+sid+".jsonl",
+		codexSessionMeta(sid, meta),
+		codexTurnContext("gpt-5.5", meta, ""),
+		codexTokenCount("2026-06-16T00:00:00Z", 500, 50, 400, 0),
+		codexTokenCount("2026-06-17T00:00:00Z", 900, 90, 720, 0),
+	)
+	entries, _, err := c.Scan(ctx, nil)
+	if err != nil {
+		t.Fatalf("backfill scan: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 deltas (whole session in-window), got %d", len(entries))
+	}
+	// Σ == final from zero baseline = (900,90,720).
+	gotIn, gotOut, gotCr := sumDeltas(entries)
+	if gotIn != 900 || gotOut != 90 || gotCr != 720 {
+		t.Fatalf("Σ deltas = (in=%d out=%d cr=%d), want final-from-zero (900/90/720)", gotIn, gotOut, gotCr)
+	}
+}
+
+// TestCodexCollector_BackfillSessionEntirelyOutOfWindow proves a session whose
+// snapshots are all before the cutoff baselines at its final cumulative → emits
+// nothing, but the watermark is still set to final so later growth is correct.
+func TestCodexCollector_BackfillSessionEntirelyOutOfWindow(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	c := backfillCodex(root, 7, "2026-06-20T00:00:00Z") // cutoff = day 13
+
+	sid := "out-window-uuid"
+	meta := "2026-06-01T00:00:00Z"
+	path := writeCodexRollout(t, root, "sessions", "rollout-outwin-"+sid+".jsonl",
+		codexSessionMeta(sid, meta),
+		codexTurnContext("gpt-5.5", meta, ""),
+		codexTokenCount("2026-06-05T00:00:00Z", 1000, 100, 800, 0),
+		codexTokenCount("2026-06-06T00:00:00Z", 2000, 200, 1600, 0),
+	)
+	entries, state, err := c.Scan(ctx, nil)
+	if err != nil {
+		t.Fatalf("backfill scan: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("session entirely before cutoff must emit nothing, got %d: %+v", len(entries), entries)
+	}
+
+	// New growth AFTER the backfill scan: only the +delta beyond the seeded final
+	// (2000/200/1600) is reported, never the pre-window 2000.
+	appendToFile(t, path, codexTokenCount("2026-06-21T00:00:00Z", 2100, 210, 1680, 0)+"\n")
+	entries, _, err = c.Scan(ctx, state)
+	if err != nil {
+		t.Fatalf("post-backfill growth scan: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 growth delta, got %d", len(entries))
+	}
+	e := entries[0]
+	if e.InputTokens != 100 || e.OutputTokens != 10 || e.CacheReadTokens != 80 {
+		t.Fatalf("growth delta wrong: in=%d out=%d cr=%d, want 100/10/80", e.InputTokens, e.OutputTokens, e.CacheReadTokens)
+	}
+}
+
+// TestCodexCollector_AdjacentEqualCumulativeDedup proves identical adjacent
+// cumulative snapshots (the real duplicate-emission pattern) collapse to one
+// snapshot, so a single growth step yields exactly one delta even when emitted
+// many times across the file — in a backfill pass.
+func TestCodexCollector_AdjacentEqualCumulativeDedup(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	c := backfillCodex(root, 30, "2026-06-20T00:00:00Z") // wide window: everything in
+
+	sid := "dedup-window-uuid"
+	meta := "2026-06-18T00:00:00Z"
+	// Same cumulative 500/50/400 emitted 4×, then a single growth to 800/80/640.
+	writeCodexRollout(t, root, "sessions", "rollout-dedupwin-"+sid+".jsonl",
+		codexSessionMeta(sid, meta),
+		codexTurnContext("gpt-5.5", meta, ""),
+		codexTokenCount("2026-06-18T00:00:01Z", 500, 50, 400, 0),
+		codexTokenCount("2026-06-18T00:00:02Z", 500, 50, 400, 0),
+		codexTokenCount("2026-06-18T00:00:03Z", 500, 50, 400, 0),
+		codexTokenCount("2026-06-18T00:00:04Z", 500, 50, 400, 0),
+		codexTokenCount("2026-06-18T00:00:05Z", 800, 80, 640, 0),
+	)
+	entries, _, err := c.Scan(ctx, nil)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	// Two distinct cumulative levels (500 then 800) from zero baseline → 2 deltas.
+	if len(entries) != 2 {
+		t.Fatalf("adjacent-equal cumulative must collapse to distinct levels (2 deltas), got %d: %+v", len(entries), entries)
+	}
+	gotIn, gotOut, gotCr := sumDeltas(entries)
+	if gotIn != 800 || gotOut != 80 || gotCr != 640 {
+		t.Fatalf("Σ deltas = (in=%d out=%d cr=%d), want final (800/80/640)", gotIn, gotOut, gotCr)
+	}
+}
+
+// TestCodexCollector_BackfillVersionTriggerOnce locks the one-time trigger: a
+// state whose BackfillVersion is behind runs the windowed backfill once, stamps
+// the version, and a subsequent unchanged scan does NOT re-backfill.
+func TestCodexCollector_BackfillVersionTriggerOnce(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	c := backfillCodex(root, 7, "2026-06-20T00:00:00Z")
+
+	sid := "trigger-uuid"
+	meta := "2026-06-15T00:00:00Z"
+	writeCodexRollout(t, root, "sessions", "rollout-trig-"+sid+".jsonl",
+		codexSessionMeta(sid, meta),
+		codexTurnContext("gpt-5.5", meta, ""),
+		codexTokenCount("2026-06-15T00:00:01Z", 400, 40, 320, 0),
+	)
+
+	// First scan: backfill runs (session in-window) → emits, stamps version.
+	entries, state, err := c.Scan(ctx, nil)
+	if err != nil {
+		t.Fatalf("first scan: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatalf("backfill-behind state must emit on first scan")
+	}
+	var st codexState
+	if err := json.Unmarshal(state, &st); err != nil {
+		t.Fatalf("unmarshal state: %v", err)
+	}
+	if st.BackfillVersion != ambientBackfillVersion {
+		t.Fatalf("BackfillVersion = %d, want %d after backfill pass", st.BackfillVersion, ambientBackfillVersion)
+	}
+
+	// Second scan, no change: must NOT re-backfill (idempotent).
+	entries, _, err = c.Scan(ctx, state)
+	if err != nil {
+		t.Fatalf("second scan: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("backfill must run once; second unchanged scan emitted %d", len(entries))
+	}
+}
+
+// TestCodexCollector_BackfillUpgradeFromSeededState proves the upgrade path: an
+// already-Seeded state with BackfillVersion 0 (a daemon that previously ran the
+// legacy forward-only seed) triggers the windowed backfill on the next scan
+// WITHOUT anyone deleting the state file.
+func TestCodexCollector_BackfillUpgradeFromSeededState(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+
+	sid := "upgrade-uuid"
+	meta := "2026-06-15T00:00:00Z"
+	writeCodexRollout(t, root, "sessions", "rollout-upg-"+sid+".jsonl",
+		codexSessionMeta(sid, meta),
+		codexTurnContext("gpt-5.5", meta, ""),
+		codexTokenCount("2026-06-16T00:00:00Z", 600, 60, 480, 0),
+		codexTokenCount("2026-06-17T00:00:00Z", 900, 90, 720, 0),
+	)
+
+	// Simulate a pre-upgrade daemon: backfillDays<=0 → legacy forward-only seed.
+	legacy := &codexCollector{logger: discardLogger(), root: root}
+	entries, seededState, err := legacy.Scan(ctx, nil)
+	if err != nil {
+		t.Fatalf("legacy seed: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("legacy forward-only seed must emit nothing, got %d", len(entries))
+	}
+	var st codexState
+	if err := json.Unmarshal(seededState, &st); err != nil {
+		t.Fatalf("unmarshal seeded: %v", err)
+	}
+	if !st.Seeded || st.BackfillVersion != 0 {
+		t.Fatalf("pre-upgrade state should be Seeded with BackfillVersion 0, got seeded=%v ver=%d", st.Seeded, st.BackfillVersion)
+	}
+
+	// Upgrade: same on-disk state, now fed to a backfill-enabled collector.
+	upgraded := backfillCodex(root, 7, "2026-06-20T00:00:00Z") // cutoff day 13; both snapshots in-window
+	entries, _, err = upgraded.Scan(ctx, seededState)
+	if err != nil {
+		t.Fatalf("upgrade scan: %v", err)
+	}
+	// The whole in-window session is emitted even though the state was already
+	// Seeded forward-only (uq key dedups any server-side overlap).
+	if len(entries) != 2 {
+		t.Fatalf("upgrade backfill must emit the in-window history, got %d: %+v", len(entries), entries)
+	}
+	gotIn, gotOut, gotCr := sumDeltas(entries)
+	if gotIn != 900 || gotOut != 90 || gotCr != 720 {
+		t.Fatalf("Σ deltas = (in=%d out=%d cr=%d), want final (900/90/720)", gotIn, gotOut, gotCr)
 	}
 }
 

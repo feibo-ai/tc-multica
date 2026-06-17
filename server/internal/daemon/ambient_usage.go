@@ -16,7 +16,7 @@ import (
 // and so invisible to every task-based report today.
 //
 // Adding a new CLI (e.g. Codex) is a drop-in: implement Collector in a new file
-// and append it to ambientCollectors. The loop, the wire type
+// and append it to defaultAmbientCollectors. The loop, the wire type
 // (AmbientUsageEntry), the endpoint, and the server rollup are all untouched —
 // the whole point of the framework (completion criterion "pluggable").
 //
@@ -34,11 +34,22 @@ type Collector interface {
 	Scan(ctx context.Context, prevState json.RawMessage) (entries []AmbientUsageEntry, nextState json.RawMessage, err error)
 }
 
-// ambientCollectors is the registry of active collectors.
-func (d *Daemon) ambientCollectors() []Collector {
+// ambientBackfillVersion is the schema version of the one-time historical
+// backfill. It is stamped on each collector state once that state's backfill
+// pass has run. A state whose BackfillVersion is below this constant triggers a
+// single windowed backfill on the next scan — which covers BOTH a brand-new
+// daemon (empty state) AND an already-seeded daemon upgrading into this version
+// (forward-only watermark present, BackfillVersion 0). Bumping the constant
+// re-runs the backfill fleet-wide without anyone deleting state files.
+const ambientBackfillVersion = 1
+
+// defaultAmbientCollectors is the registry of active collectors. New() assigns
+// it to d.collectorsFn; runAmbientUsage goes through that field so tests can
+// substitute a deterministic fake.
+func (d *Daemon) defaultAmbientCollectors() []Collector {
 	return []Collector{
-		newClaudeCollector(d.logger),
-		newCodexCollector(d.logger),
+		newClaudeCollector(d.logger, d.cfg.AmbientBackfillDays),
+		newCodexCollector(d.logger, d.cfg.AmbientBackfillDays),
 	}
 }
 
@@ -159,7 +170,7 @@ func (d *Daemon) runAmbientUsage(ctx context.Context) {
 	store := d.loadCollectorStore()
 	changed := false
 
-	for _, c := range d.ambientCollectors() {
+	for _, c := range d.collectorsFn() {
 		target := d.selectAmbientRuntime(c.Source())
 		if target == "" {
 			// Nothing to attribute to yet — skip without advancing the
