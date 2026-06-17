@@ -1,5 +1,18 @@
 # Releases
 
+## v0.4.23
+
+dashboard「用户」用量页的「工具」拆分改为按真实 model 计算(TEA-618 W1)。
+
+### 工具拆分不再写死 Claude Code 100%
+用户 tab 右侧的「工具」面板此前是 Codex 采集（v0.4.20）上线前的写死占位符，对所有人显示「Claude Code 100%」，有 Codex 用量的人被误报。本版改为按所选用户的真实 model 分布折算 Claude Code / Codex / 其他 的百分比（降序、和为 100%）。新增 `classifyModelTool` 分类器，复用定价用的归一化（大小写 / provider 前缀 / 日期快照 / context tag 一致处理）：`claude-*` → Claude Code，`gpt-*`/`o3`/`o4`/含 `codex` → Codex，其余 → 其他。
+
+> 这是「ambient 用量看板准确性与覆盖」(TEA-618) 的第一项；回填最近 7 天历史（claude + codex）、全员 daemon 覆盖等后续项另发。
+
+### 升级
+- 本版为**前端改动**，部署后即生效，无需 daemon 配合。
+- 自更：daemon 设 `MULTICA_DAEMON_AUTO_UPDATE=true` 后自动升级；手动 `multica update` 或重跑 `scripts/install.sh`。
+
 ## v0.4.22
 
 fleet 分发去 GitHub 热路径(验签镜像 · TEA-115):修复 TEA-113 一键更新在全机群同时触发时,多 daemon(含同主机多 agent 共享 IP)同时打 api.github.com release/attestations API 触发 504/403/timeout 的雷群。daemon 自更新的二进制锚工件分发改从 multica 服务端的验签镜像 download 端点拉取,GitHub 退出分发热路径。
