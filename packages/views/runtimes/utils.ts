@@ -268,6 +268,40 @@ function resolvePricing(model: string) {
   return undefined;
 }
 
+// ---------------------------------------------------------------------------
+// Model-string normalization helpers — shared by pricing resolution
+// (`canonicalCandidates`) and tool classification (`classifyModelTool`) so
+// both read the SKU off the same canonical form. Keeping one normalization
+// path means a model string that prices correctly also classifies correctly;
+// a second hand-rolled copy would drift the two apart.
+// ---------------------------------------------------------------------------
+
+// Trailing dated snapshot (`claude-sonnet-4-5-20250929`, `gpt-5-2025-08-07`)
+// or a "latest" tag — the family is what we key on, the date is volatile.
+function stripModelDate(s: string): string {
+  return s.replace(/-(20\d{2}-\d{2}-\d{2}|20\d{6}|latest)$/, "");
+}
+
+// Provider routing prefix (`anthropic/claude-opus-4.7`, `openai/gpt-5.5`) —
+// the `<provider>/` segment is metadata, not part of the SKU.
+function stripModelProvider(s: string): string {
+  const i = s.indexOf("/");
+  return i > 0 && /^[a-z][a-z0-9_-]*$/i.test(s.slice(0, i)) ? s.slice(i + 1) : s;
+}
+
+// Only Anthropic IDs are dot↔dash equivalent. OpenAI separators are
+// semantic, so we leave `gpt-5.4` etc. alone.
+function canonAnthropicModel(s: string): string {
+  return s.startsWith("claude-") ? s.replace(/\./g, "-") : s;
+}
+
+// Trailing context-window tag (`claude-opus-4-7[1m]`). Same family,
+// same price tier — see resolver comment above for the 1M-context
+// pricing trade-off.
+function stripModelContextTag(s: string): string {
+  return s.replace(/\[[^\]]+\]$/, "");
+}
+
 // Generate the lookup candidates for a model string, in priority order:
 // the raw string first (preserves explicit user / catalog spellings),
 // then the canonicalized forms. Deduped so we don't repeat lookups.
@@ -279,35 +313,52 @@ function canonicalCandidates(model: string): string[] {
     seen.add(s);
     out.push(s);
   };
-  const stripDate = (s: string) =>
-    s.replace(/-(20\d{2}-\d{2}-\d{2}|20\d{6}|latest)$/, "");
-  const stripProvider = (s: string) => {
-    const i = s.indexOf("/");
-    return i > 0 && /^[a-z][a-z0-9_-]*$/i.test(s.slice(0, i)) ? s.slice(i + 1) : s;
-  };
-  // Only Anthropic IDs are dot↔dash equivalent. OpenAI separators are
-  // semantic, so we leave `gpt-5.4` etc. alone.
-  const canonAnthropic = (s: string) =>
-    s.startsWith("claude-") ? s.replace(/\./g, "-") : s;
-  // Trailing context-window tag (`claude-opus-4-7[1m]`). Same family,
-  // same price tier — see resolver comment above for the 1M-context
-  // pricing trade-off.
-  const stripContextTag = (s: string) => s.replace(/\[[^\]]+\]$/, "");
 
   const raw = model;
-  const noProvider = stripProvider(raw);
-  const dashed = canonAnthropic(noProvider);
-  const noTag = stripContextTag(dashed);
+  const noProvider = stripModelProvider(raw);
+  const dashed = canonAnthropicModel(noProvider);
+  const noTag = stripModelContextTag(dashed);
 
   push(raw);
   push(noProvider);
   push(dashed);
   push(noTag);
-  push(stripDate(raw));
-  push(stripDate(noProvider));
-  push(stripDate(dashed));
-  push(stripDate(noTag));
+  push(stripModelDate(raw));
+  push(stripModelDate(noProvider));
+  push(stripModelDate(dashed));
+  push(stripModelDate(noTag));
   return out;
+}
+
+// The agentic CLI tool a model string belongs to, for the user-tab tool
+// breakdown. Local-CLI ambient usage doesn't record which tool produced a
+// turn, so we infer it from the model family:
+//   - `claude-*`           → Claude Code (Anthropic's CLI)
+//   - `gpt-*` / `o3*` / `o4*` / anything containing `codex` → Codex (OpenAI's CLI)
+//   - everything else      → Other (DeepSeek / Moonshot / Zhipu / unknown)
+//
+// Normalization mirrors the pricing path (lowercase + strip provider prefix +
+// context tag + date snapshot) so `GPT-5.5`, `openai/gpt-5.5`,
+// `gpt-5-2025-08-07` and `claude-opus-4-7[1m]` all classify the same way they
+// price. Reusing the helpers keeps tool classification from drifting away
+// from pricing.
+export function classifyModelTool(
+  model: string,
+): "claude_code" | "codex" | "other" {
+  if (!model) return "other";
+  const normalized = stripModelDate(
+    stripModelContextTag(stripModelProvider(model.toLowerCase())),
+  );
+  if (normalized.startsWith("claude-")) return "claude_code";
+  if (
+    normalized.startsWith("gpt-") ||
+    normalized.startsWith("o3") ||
+    normalized.startsWith("o4") ||
+    normalized.includes("codex")
+  ) {
+    return "codex";
+  }
+  return "other";
 }
 
 // Cheap predicate for the empty-state diagnostic: which model strings in a

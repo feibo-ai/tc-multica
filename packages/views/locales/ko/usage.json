@@ -67,6 +67,8 @@
     "unattributed": "미할당",
     "tools_label": "도구",
     "tool_claude_code": "Claude Code",
+    "tool_codex": "Codex",
+    "tool_unknown": "기타",
     "no_data": "이 기간에는 로컬 CLI 사용량이 없습니다."
   },
   "empty": {

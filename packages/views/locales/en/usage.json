@@ -67,6 +67,8 @@
     "unattributed": "Unattributed",
     "tools_label": "Tools",
     "tool_claude_code": "Claude Code",
+    "tool_codex": "Codex",
+    "tool_unknown": "Other",
     "no_data": "No local CLI usage in this window."
   },
   "empty": {

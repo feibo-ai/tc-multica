@@ -50,6 +50,7 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import {
   addDaysIso,
   aggregateByWeek,
+  classifyModelTool,
   formatTokens,
   todayIso,
 } from "../../runtimes/utils";
@@ -117,6 +118,59 @@ const EMPTY_RUNTIME_DAILY: import("@multica/core/types").DashboardRunTimeDaily[]
 function fmtMoney(n: number): string {
   if (n >= 100) return `$${n.toFixed(0)}`;
   return `$${n.toFixed(2)}`;
+}
+
+// Tool-breakdown share: a tool family and its whole-number percentage of the
+// selected owner's ambient tokens. Rendered in the user-tab tools bar.
+type ToolKind = "claude_code" | "codex" | "other";
+interface ToolShare {
+  tool: ToolKind;
+  pct: number;
+}
+
+// Locale leaf key per tool family (under `by_user`). Static union → the typed
+// `t($ => $.by_user[key])` selector stays type-safe. The "other" key is
+// `tool_unknown`, NOT `tool_other` — i18next reads a trailing `_other` as the
+// plural form of a base `tool` key, which collapses the literal away and
+// breaks this index type.
+const TOOL_LABEL_KEY = {
+  claude_code: "tool_claude_code",
+  codex: "tool_codex",
+  other: "tool_unknown",
+} as const;
+
+// Fold per-(owner, model) rows into descending tool-family percentages. Token
+// convention matches the user leaderboard (aggregateOwnerAmbient): the sum of
+// input + output + cache_read + cache_write. Rows already scoped to one owner
+// by the caller. Returns [] when the owner has zero tokens (avoids 0/0); a
+// single tool reads 100. Percentages are whole numbers and re-balanced so they
+// always total 100 — the largest share absorbs any rounding remainder.
+function computeToolShares(
+  rows: readonly import("@multica/core/types").DashboardAmbientUsageByPerson[],
+): ToolShare[] {
+  const byTool = new Map<ToolKind, number>();
+  let total = 0;
+  for (const r of rows) {
+    const tokens =
+      r.input_tokens + r.output_tokens + r.cache_read_tokens + r.cache_write_tokens;
+    if (tokens === 0) continue;
+    const tool = classifyModelTool(r.model);
+    byTool.set(tool, (byTool.get(tool) ?? 0) + tokens);
+    total += tokens;
+  }
+  if (total === 0) return [];
+
+  const shares = [...byTool.entries()]
+    .map(([tool, tokens]) => ({ tool, tokens, pct: Math.round((tokens / total) * 100) }))
+    .toSorted((a, b) => b.tokens - a.tokens);
+
+  // Re-balance rounding so the column sums to exactly 100 — drop the drift on
+  // the largest share, which is the least visually jarring place for ±1%.
+  const sum = shares.reduce((acc, s) => acc + s.pct, 0);
+  if (sum !== 100 && shares.length > 0 && shares[0]) {
+    shares[0].pct += 100 - sum;
+  }
+  return shares.map(({ tool, pct }) => ({ tool, pct }));
 }
 
 // Local segmented control — same visual language the runtime usage section
@@ -934,6 +988,20 @@ export function UserUsagePanel({
     dashboardAmbientUsageDailyOptions(wsId, effectiveOwnerId, viewTZ),
   );
 
+  // Tool breakdown for the selected owner — fold that owner's per-(owner,
+  // model) rows by tool family and turn the token sums into descending
+  // percentages. Same window + token convention as the leaderboard
+  // (aggregateOwnerAmbient: input + output + cache_read + cache_write), so the
+  // breakdown lines up with the row the user clicked. Empty when nothing is
+  // selected; a single tool reads 100%.
+  const toolBreakdown = useMemo<ToolShare[]>(
+    () =>
+      effectiveOwnerId === null
+        ? []
+        : computeToolShares(rows.filter((r) => r.owner_id === effectiveOwnerId)),
+    [rows, effectiveOwnerId],
+  );
+
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
       <div className="rounded-lg border bg-card">
@@ -1007,18 +1075,27 @@ export function UserUsagePanel({
         isLoading={heatmapQuery.isLoading}
         viewTZ={viewTZ}
         extra={
-          effectiveOwnerId !== null ? (
-            // Static placeholder for now — ambient_usage_hourly has no source
-            // column, so a real tool breakdown is Phase 2 (rollup key change).
+          effectiveOwnerId !== null && toolBreakdown.length > 0 ? (
+            // Real tool breakdown — the selected owner's ambient tokens folded
+            // by model family (Claude Code / Codex / Other), descending.
             <div className="mt-4 border-t pt-3">
               <div className="mb-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
                 {t(($) => $.by_user.tools_label)}
               </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-medium">
-                  {t(($) => $.by_user.tool_claude_code)}
-                </span>
-                <span className="tabular-nums text-muted-foreground">100%</span>
+              <div className="space-y-1">
+                {toolBreakdown.map((share) => (
+                  <div
+                    key={share.tool}
+                    className="flex items-center justify-between text-xs"
+                  >
+                    <span className="font-medium">
+                      {t(($) => $.by_user[TOOL_LABEL_KEY[share.tool]])}
+                    </span>
+                    <span className="tabular-nums text-muted-foreground">
+                      {share.pct}%
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           ) : null

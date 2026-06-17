@@ -67,6 +67,8 @@
     "unattributed": "帰属不明",
     "tools_label": "ツール",
     "tool_claude_code": "Claude Code",
+    "tool_codex": "Codex",
+    "tool_unknown": "その他",
     "no_data": "この期間にローカル CLI の使用量はありません。"
   },
   "empty": {
