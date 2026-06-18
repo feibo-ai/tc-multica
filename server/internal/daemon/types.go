@@ -14,6 +14,12 @@ type Runtime struct {
 	Name     string `json:"name"`
 	Provider string `json:"provider"`
 	Status   string `json:"status"`
+	// WorkspaceID is the workspace this runtime belongs to. The server already
+	// sends it in the registration response (handler.AgentRuntimeResponse), so
+	// it deserializes automatically at every runtimeIndex fill point. Used by
+	// selectAmbientRuntime to prefer the daemon's designated ambient workspace
+	// when a member runs runtimes of one provider across several workspaces.
+	WorkspaceID string `json:"workspace_id"`
 }
 
 // RepoData holds repository information from the workspace.

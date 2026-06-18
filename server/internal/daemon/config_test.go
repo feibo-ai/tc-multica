@@ -953,6 +953,79 @@ func TestLoadConfig_AmbientBackfillDays_EnvOverride(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// TEA-922 ambient workspace attribution: AmbientWorkspaceID resolution
+// =============================================================================
+
+// TestLoadConfig_AmbientWorkspaceID_EnvWinsOverCLIDefault proves the precedence
+// contract: MULTICA_AMBIENT_WORKSPACE_ID overrides the CLI config's default
+// workspace_id. We write a CLI config with one workspace and export the env
+// pointing at a different one; the resolved Config must carry the env value.
+func TestLoadConfig_AmbientWorkspaceID_EnvWinsOverCLIDefault(t *testing.T) {
+	stageFakeAgent(t)
+	// stageFakeAgent set HOME to a temp dir and PATH to a dir holding `claude`.
+	// Re-point HOME (PATH survives, it's an independent env var) and drop a CLI
+	// config there so LoadCLIConfigForProfile reads our workspace_id.
+	t.Setenv("HOME", t.TempDir())
+	if err := cli.SaveCLIConfig(cli.CLIConfig{WorkspaceID: "cli-default-ws"}); err != nil {
+		t.Fatalf("save cli config: %v", err)
+	}
+	t.Setenv("MULTICA_AMBIENT_WORKSPACE_ID", "env-ws")
+
+	cfg, err := LoadConfig(Overrides{
+		ServerURL:      "http://localhost:8080",
+		WorkspacesRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.AmbientWorkspaceID != "env-ws" {
+		t.Fatalf("AmbientWorkspaceID = %q, want env value %q (env must win over CLI default)", cfg.AmbientWorkspaceID, "env-ws")
+	}
+}
+
+// TestLoadConfig_AmbientWorkspaceID_FallsBackToCLIDefault proves that with the
+// env unset, the CLI config's workspace_id becomes the ambient default.
+func TestLoadConfig_AmbientWorkspaceID_FallsBackToCLIDefault(t *testing.T) {
+	stageFakeAgent(t)
+	t.Setenv("HOME", t.TempDir())
+	if err := cli.SaveCLIConfig(cli.CLIConfig{WorkspaceID: "cli-default-ws"}); err != nil {
+		t.Fatalf("save cli config: %v", err)
+	}
+	t.Setenv("MULTICA_AMBIENT_WORKSPACE_ID", "")
+
+	cfg, err := LoadConfig(Overrides{
+		ServerURL:      "http://localhost:8080",
+		WorkspacesRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.AmbientWorkspaceID != "cli-default-ws" {
+		t.Fatalf("AmbientWorkspaceID = %q, want CLI default %q", cfg.AmbientWorkspaceID, "cli-default-ws")
+	}
+}
+
+// TestLoadConfig_AmbientWorkspaceID_EmptyWhenNeitherSet is the backward-compat
+// guard: no env and no CLI workspace_id → empty, which keeps
+// selectAmbientRuntime on the legacy global-lowest-id path.
+func TestLoadConfig_AmbientWorkspaceID_EmptyWhenNeitherSet(t *testing.T) {
+	stageFakeAgent(t)
+	t.Setenv("HOME", t.TempDir()) // empty HOME → no CLI config file
+	t.Setenv("MULTICA_AMBIENT_WORKSPACE_ID", "")
+
+	cfg, err := LoadConfig(Overrides{
+		ServerURL:      "http://localhost:8080",
+		WorkspacesRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.AmbientWorkspaceID != "" {
+		t.Fatalf("AmbientWorkspaceID = %q, want empty when neither env nor CLI config set it", cfg.AmbientWorkspaceID)
+	}
+}
+
 // agentKeys is a tiny helper to make agent-map missing-key error messages
 // readable. Returns sorted keys.
 func agentKeys(m map[string]AgentEntry) []string {

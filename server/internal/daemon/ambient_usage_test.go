@@ -253,3 +253,100 @@ func TestRunAmbientUsage_NoRuntimeSkipsWithoutCommit(t *testing.T) {
 		t.Fatal("nothing should be committed when there is no runtime")
 	}
 }
+
+// newSelectRuntimeDaemon builds a bare Daemon with a fixed AmbientWorkspaceID
+// and a set of runtimes in runtimeIndex, for selectAmbientRuntime branch tests.
+// It does not touch the network or disk — selectAmbientRuntime only reads
+// d.cfg.AmbientWorkspaceID and d.runtimeIndex under d.mu.
+func newSelectRuntimeDaemon(t *testing.T, ambientWS string, runtimes ...Runtime) *Daemon {
+	t.Helper()
+	d := New(Config{AmbientWorkspaceID: ambientWS}, slog.Default())
+	for _, rt := range runtimes {
+		d.runtimeIndex[rt.ID] = rt
+	}
+	return d
+}
+
+// TestSelectAmbientRuntime_PrefersDesignatedWorkspace is the core TEA-922
+// invariant: with AmbientWorkspaceID=W, a matching-provider runtime in W is
+// chosen even though another workspace holds a globally-lower id. The legacy
+// code would return "a" (global lowest); the new code must return "z" (W's
+// lowest).
+func TestSelectAmbientRuntime_PrefersDesignatedWorkspace(t *testing.T) {
+	d := newSelectRuntimeDaemon(t, "W",
+		Runtime{ID: "z", Provider: "claude", WorkspaceID: "W"},
+		Runtime{ID: "a", Provider: "claude", WorkspaceID: "other"},
+	)
+	if got := d.selectAmbientRuntime("claude"); got != "z" {
+		t.Fatalf("selectAmbientRuntime = %q, want %q (designated workspace W, not global lowest 'a')", got, "z")
+	}
+}
+
+// TestSelectAmbientRuntime_NeverPicksNonDesignatedWorkspace asserts that when
+// both the designated and a non-designated workspace hold a matching runtime,
+// the result is NEVER the non-designated one — even when the non-designated
+// runtime has the lower id.
+func TestSelectAmbientRuntime_NeverPicksNonDesignatedWorkspace(t *testing.T) {
+	d := newSelectRuntimeDaemon(t, "W",
+		Runtime{ID: "a", Provider: "claude", WorkspaceID: "other"}, // lower id, wrong ws
+		Runtime{ID: "m", Provider: "claude", WorkspaceID: "W"},     // higher id, right ws
+		Runtime{ID: "b", Provider: "claude", WorkspaceID: "other2"},
+	)
+	got := d.selectAmbientRuntime("claude")
+	if got != "m" {
+		t.Fatalf("selectAmbientRuntime = %q, want %q (must stay inside designated ws W)", got, "m")
+	}
+}
+
+// TestSelectAmbientRuntime_FallsBackWhenDesignatedHasNoMatch proves the
+// fallback: AmbientWorkspaceID=W is set, but no claude runtime lives in W, so
+// the selector returns the global lowest-id matching runtime (legacy behavior).
+func TestSelectAmbientRuntime_FallsBackWhenDesignatedHasNoMatch(t *testing.T) {
+	d := newSelectRuntimeDaemon(t, "W",
+		Runtime{ID: "a", Provider: "claude", WorkspaceID: "other"},
+		Runtime{ID: "z", Provider: "claude", WorkspaceID: "other2"},
+		// A runtime IS in W, but it's a different provider — must not match.
+		Runtime{ID: "0", Provider: "codex", WorkspaceID: "W"},
+	)
+	if got := d.selectAmbientRuntime("claude"); got != "a" {
+		t.Fatalf("selectAmbientRuntime = %q, want global lowest %q (no claude runtime in W)", got, "a")
+	}
+}
+
+// TestSelectAmbientRuntime_NoDesignationIsLegacyGlobalLowest is the
+// backward-compat guard: AmbientWorkspaceID="" must reproduce the old behavior
+// exactly — global lowest id regardless of workspace.
+func TestSelectAmbientRuntime_NoDesignationIsLegacyGlobalLowest(t *testing.T) {
+	d := newSelectRuntimeDaemon(t, "",
+		Runtime{ID: "z", Provider: "claude", WorkspaceID: "W"},
+		Runtime{ID: "a", Provider: "claude", WorkspaceID: "other"},
+	)
+	if got := d.selectAmbientRuntime("claude"); got != "a" {
+		t.Fatalf("selectAmbientRuntime = %q, want global lowest %q with no designation", got, "a")
+	}
+}
+
+// TestSelectAmbientRuntime_DesignatedWorkspaceLowestIsDeterministic proves the
+// within-workspace pick is the lowest id among several runtimes in W.
+func TestSelectAmbientRuntime_DesignatedWorkspaceLowestIsDeterministic(t *testing.T) {
+	d := newSelectRuntimeDaemon(t, "W",
+		Runtime{ID: "rt-9", Provider: "claude", WorkspaceID: "W"},
+		Runtime{ID: "rt-3", Provider: "claude", WorkspaceID: "W"},
+		Runtime{ID: "rt-7", Provider: "claude", WorkspaceID: "W"},
+		Runtime{ID: "rt-0", Provider: "claude", WorkspaceID: "other"}, // lower overall, wrong ws
+	)
+	if got := d.selectAmbientRuntime("claude"); got != "rt-3" {
+		t.Fatalf("selectAmbientRuntime = %q, want within-W lowest %q", got, "rt-3")
+	}
+}
+
+// TestSelectAmbientRuntime_NoMatchingProviderReturnsEmpty keeps the existing
+// empty-result contract: no runtime of the requested provider → "".
+func TestSelectAmbientRuntime_NoMatchingProviderReturnsEmpty(t *testing.T) {
+	d := newSelectRuntimeDaemon(t, "W",
+		Runtime{ID: "x", Provider: "codex", WorkspaceID: "W"},
+	)
+	if got := d.selectAmbientRuntime("claude"); got != "" {
+		t.Fatalf("selectAmbientRuntime = %q, want empty (no claude runtime registered)", got)
+	}
+}

@@ -90,32 +90,39 @@ type Config struct {
 	// the daemon re-verifies every byte fail-closed against the embedded root +
 	// SAN triad (INV-16), so a misconfigured/empty mirror is at worst a DoS
 	// (fail-closed refuse + retry), never an RCE.
-	UpdateMirrorBase               string
-	DaemonID                       string
-	LegacyDaemonIDs                []string // historical daemon_ids this machine may have registered under; reported at register time so the server can merge old runtime rows
-	DeviceName                     string
-	RuntimeName                    string
-	CLIVersion                     string                // multica CLI version (e.g. "0.1.13")
-	LaunchedBy                     string                // "desktop" when spawned by the Electron app, empty for standalone
-	Profile                        string                // profile name (empty = default)
-	Agents                         map[string]AgentEntry // keyed by provider: claude, codex, copilot, opencode, openclaw, hermes, gemini, pi, cursor, kimi, kiro, antigravity
-	WorkspacesRoot                 string                // base path for execution envs (default: ~/multica_workspaces)
-	KeepEnvAfterTask               bool                  // preserve env after task for debugging
-	HealthPort                     int                   // local HTTP port for health checks (default: 19514)
-	MaxConcurrentTasks             int                   // max tasks running in parallel (default: 20)
-	GCEnabled                      bool                  // enable periodic workspace garbage collection (default: true)
-	GCInterval                     time.Duration         // how often the GC loop runs (default: 1h)
-	GCTTL                          time.Duration         // clean dirs whose issue is done/cancelled and updated_at < now()-TTL (default: 24h)
-	GCOrphanTTL                    time.Duration         // clean orphan dirs with no meta, or dirs whose issue gc-check returns 404, once they exceed this age (default: 72h). The 404 path uses the same TTL — a scoped-down token can't instantly wipe live workspaces.
-	GCArtifactTTL                  time.Duration         // when a task has been completed for at least this long but its issue is still open, drop regenerable artifacts (default: 12h, set 0 to disable)
-	GCArtifactPatterns             []string              // basename patterns whose subtrees are removed during artifact cleanup (default: node_modules, .next, .turbo)
-	AutoUpdateEnabled              bool                  // periodically check for a newer CLI release and self-update when idle (default: true on Multica Cloud, false on self-host)
-	AutoUpdateCheckInterval        time.Duration         // how often the auto-update loop polls for a new release (default: 6h)
-	SkillWriteEnabled              bool                  // periodically pull + verify + write the team skill bundle into ~/.claude (mini-ADR v4 ⑩c). New write capability — default OFF everywhere, opt-in only via MULTICA_DAEMON_SKILL_WRITE.
-	SkillSyncCheckInterval         time.Duration         // how often the skill-sync loop polls team-context for a newer skill bundle (default: 6h)
-	AmbientUsageEnabled            bool                  // periodically collect token usage from local CLI transcripts (ad-hoc sessions never dispatched as tasks) and report it per-runtime (default: true)
-	AmbientUsageInterval           time.Duration         // how often the ambient-usage collector scans transcripts (default: 1m)
-	AmbientBackfillDays            int                   // one-time historical backfill window in days for the ambient collectors' first scan (default: 7, <=0 disables backfill → legacy forward-only seed)
+	UpdateMirrorBase        string
+	DaemonID                string
+	LegacyDaemonIDs         []string // historical daemon_ids this machine may have registered under; reported at register time so the server can merge old runtime rows
+	DeviceName              string
+	RuntimeName             string
+	CLIVersion              string                // multica CLI version (e.g. "0.1.13")
+	LaunchedBy              string                // "desktop" when spawned by the Electron app, empty for standalone
+	Profile                 string                // profile name (empty = default)
+	Agents                  map[string]AgentEntry // keyed by provider: claude, codex, copilot, opencode, openclaw, hermes, gemini, pi, cursor, kimi, kiro, antigravity
+	WorkspacesRoot          string                // base path for execution envs (default: ~/multica_workspaces)
+	KeepEnvAfterTask        bool                  // preserve env after task for debugging
+	HealthPort              int                   // local HTTP port for health checks (default: 19514)
+	MaxConcurrentTasks      int                   // max tasks running in parallel (default: 20)
+	GCEnabled               bool                  // enable periodic workspace garbage collection (default: true)
+	GCInterval              time.Duration         // how often the GC loop runs (default: 1h)
+	GCTTL                   time.Duration         // clean dirs whose issue is done/cancelled and updated_at < now()-TTL (default: 24h)
+	GCOrphanTTL             time.Duration         // clean orphan dirs with no meta, or dirs whose issue gc-check returns 404, once they exceed this age (default: 72h). The 404 path uses the same TTL — a scoped-down token can't instantly wipe live workspaces.
+	GCArtifactTTL           time.Duration         // when a task has been completed for at least this long but its issue is still open, drop regenerable artifacts (default: 12h, set 0 to disable)
+	GCArtifactPatterns      []string              // basename patterns whose subtrees are removed during artifact cleanup (default: node_modules, .next, .turbo)
+	AutoUpdateEnabled       bool                  // periodically check for a newer CLI release and self-update when idle (default: true on Multica Cloud, false on self-host)
+	AutoUpdateCheckInterval time.Duration         // how often the auto-update loop polls for a new release (default: 6h)
+	SkillWriteEnabled       bool                  // periodically pull + verify + write the team skill bundle into ~/.claude (mini-ADR v4 ⑩c). New write capability — default OFF everywhere, opt-in only via MULTICA_DAEMON_SKILL_WRITE.
+	SkillSyncCheckInterval  time.Duration         // how often the skill-sync loop polls team-context for a newer skill bundle (default: 6h)
+	AmbientUsageEnabled     bool                  // periodically collect token usage from local CLI transcripts (ad-hoc sessions never dispatched as tasks) and report it per-runtime (default: true)
+	AmbientUsageInterval    time.Duration         // how often the ambient-usage collector scans transcripts (default: 1m)
+	AmbientBackfillDays     int                   // one-time historical backfill window in days for the ambient collectors' first scan (default: 7, <=0 disables backfill → legacy forward-only seed)
+	// AmbientWorkspaceID designates which workspace machine-global ambient usage
+	// is attributed to when this daemon serves runtimes of one provider across
+	// several workspaces. Resolved once at load: MULTICA_AMBIENT_WORKSPACE_ID
+	// (highest precedence) → the CLI config's default workspace_id. Empty when
+	// neither is set, in which case selectAmbientRuntime keeps the legacy global
+	// lowest-id behavior (backward compatible).
+	AmbientWorkspaceID             string
 	PollInterval                   time.Duration
 	HeartbeatInterval              time.Duration
 	AgentTimeout                   time.Duration
@@ -192,10 +199,12 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// Errors loading CLIConfig are non-fatal: a missing or malformed config
 	// file should not prevent daemon startup, since the daemon can still run
 	// purely from env-var configuration. We log a warning and proceed with
-	// no overrides.
-	if cliCfg, err := cli.LoadCLIConfigForProfile(overrides.Profile); err != nil {
+	// no overrides. We load it once here and reuse the result below for the
+	// ambient-workspace default, so a single read covers both consumers.
+	cliCfg, cliCfgErr := cli.LoadCLIConfigForProfile(overrides.Profile)
+	if cliCfgErr != nil {
 		slog.Warn("could not load CLI config for backend overrides; proceeding without",
-			"profile", overrides.Profile, "err", err)
+			"profile", overrides.Profile, "err", cliCfgErr)
 	} else if oc := openclawOverrideFrom(cliCfg); oc != nil {
 		applyOpenclawOverride(oc)
 	}
@@ -477,6 +486,14 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	// Ambient workspace attribution (TEA-922): env wins over the CLI default
+	// workspace. Empty when neither is set → legacy global lowest-id behavior.
+	// cliCfg is the zero value on a load error, so its WorkspaceID is "" and we
+	// degrade to the env-only (or empty) result without a second read.
+	ambientWorkspaceID := strings.TrimSpace(os.Getenv("MULTICA_AMBIENT_WORKSPACE_ID"))
+	if ambientWorkspaceID == "" {
+		ambientWorkspaceID = strings.TrimSpace(cliCfg.WorkspaceID)
+	}
 
 	// Auto-update config: default -> env override -> CLI override.
 	//
@@ -546,6 +563,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		AmbientUsageEnabled:            ambientUsageEnabled,
 		AmbientUsageInterval:           ambientUsageInterval,
 		AmbientBackfillDays:            ambientBackfillDays,
+		AmbientWorkspaceID:             ambientWorkspaceID,
 		AutoUpdateEnabled:              autoUpdateEnabled,
 		AutoUpdateCheckInterval:        autoUpdateInterval,
 		SkillWriteEnabled:              skillWriteEnabled,
