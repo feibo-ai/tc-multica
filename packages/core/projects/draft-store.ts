@@ -12,6 +12,8 @@ interface ProjectDraft {
   leadType?: "member" | "agent";
   leadId?: string;
   icon?: string;
+  startDate: string | null;
+  dueDate: string | null;
 }
 
 const EMPTY_DRAFT: ProjectDraft = {
@@ -22,6 +24,8 @@ const EMPTY_DRAFT: ProjectDraft = {
   leadType: undefined,
   leadId: undefined,
   icon: undefined,
+  startDate: null,
+  dueDate: null,
 };
 
 interface ProjectDraftStore {

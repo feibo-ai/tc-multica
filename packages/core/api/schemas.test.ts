@@ -240,6 +240,8 @@ describe("ProjectSchema (unified project tab)", () => {
     lead_type: "member",
     lead_id: "user-1",
     dri_user_id: "user-1",
+    start_date: "2026-05-01",
+    due_date: "2026-06-30",
     created_at: "2026-05-29T00:00:00Z",
     updated_at: "2026-05-29T00:00:00Z",
     issue_count: 5,
@@ -263,6 +265,35 @@ describe("ProjectSchema (unified project tab)", () => {
     expect(parsed.resource_count).toBe(0);
     expect(parsed.status).toBe("planned");
     expect(parsed.priority).toBe("none");
+  });
+
+  it("defaults start_date/due_date to null when an older backend omits them", () => {
+    const { start_date: _omitStart, due_date: _omitDue, ...withoutDates } = baseProject;
+    const parsed = ProjectSchema.parse(withoutDates);
+    expect(parsed.start_date).toBe(null);
+    expect(parsed.due_date).toBe(null);
+  });
+
+  it("preserves explicit calendar-day start_date/due_date strings", () => {
+    const parsed = ProjectSchema.parse(baseProject);
+    expect(parsed.start_date).toBe("2026-05-01");
+    expect(parsed.due_date).toBe("2026-06-30");
+  });
+
+  it("accepts a null due_date alongside a set start_date", () => {
+    const parsed = ProjectSchema.parse({ ...baseProject, due_date: null });
+    expect(parsed.start_date).toBe("2026-05-01");
+    expect(parsed.due_date).toBe(null);
+  });
+
+  it("fails closed to EMPTY_PROJECT when start_date is a wrong type (number)", () => {
+    const parsed = parseWithFallback(
+      { ...baseProject, start_date: 20260501 },
+      ProjectSchema,
+      EMPTY_PROJECT,
+      { endpoint: "GET /api/projects/:id" },
+    );
+    expect(parsed).toBe(EMPTY_PROJECT);
   });
 
   it("passes an unknown status enum through unchanged (drift downgrades, never crashes)", () => {
