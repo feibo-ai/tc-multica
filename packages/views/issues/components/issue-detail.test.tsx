@@ -597,9 +597,15 @@ describe("IssueDetail (shared)", () => {
     expect(screen.getByText("Assignee")).toBeInTheDocument();
     // "Project" appears twice (row label + picker stub), so disambiguate by id.
     expect(screen.getByTestId("project-picker")).toBeInTheDocument();
-    // priority="high" + due_date are set in the fixture, so both optional rows show.
-    expect(screen.getByText("Priority")).toBeInTheDocument();
+    // Start date / due date are always-rendered core rows now, regardless of
+    // whether the issue has a value. priority="high" is set so its optional
+    // row also shows. start_date is null in the fixture, so "Start date"
+    // appears both as the row label and as the picker's placeholder trigger —
+    // assert presence via getAllByText to allow the duplicate.
+    expect(screen.getAllByText("Start date").length).toBeGreaterThan(0);
+    // due_date is set, so only the row label renders "Due date".
     expect(screen.getByText("Due date")).toBeInTheDocument();
+    expect(screen.getByText("Priority")).toBeInTheDocument();
     // No labels are attached in the fixture — the Labels optional row
     // must stay hidden by default.
     expect(screen.queryByText("Labels")).not.toBeInTheDocument();
@@ -626,9 +632,14 @@ describe("IssueDetail (shared)", () => {
       expect(screen.getByText("Properties")).toBeInTheDocument();
     });
 
+    // Priority / labels remain optional and stay hidden when unset.
     expect(screen.queryByText("Priority")).not.toBeInTheDocument();
-    expect(screen.queryByText("Due date")).not.toBeInTheDocument();
     expect(screen.queryByText("Labels")).not.toBeInTheDocument();
+    // Start date / due date are always-rendered core rows now — present even
+    // when the issue has no value. With both unset, each string shows twice:
+    // once as the row label, once as the picker's placeholder trigger.
+    expect(screen.getAllByText("Start date").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Due date").length).toBeGreaterThan(0);
     // Project stays as a core row regardless of value.
     expect(screen.getByTestId("project-picker")).toBeInTheDocument();
     // No parent → no standalone Parent issue section either.

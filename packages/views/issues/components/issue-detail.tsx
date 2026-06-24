@@ -9,7 +9,6 @@ import {
   Archive,
   Calendar,
   CalendarClock,
-  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -285,10 +284,12 @@ const EMPTY_REPLIES: TimelineEntry[] = [];
 // ---------------------------------------------------------------------------
 //
 // Properties shown in the sidebar split into two groups:
-//   - core: always rendered (status / assignee / project)
+//   - core: always rendered (status / assignee / start date / due date /
+//     priority is core only insofar as it's wired below; the truly always-on
+//     rows are status / assignee / project / start_date / due_date)
 //   - optional: rendered only when the issue has a value for that field OR
 //     the user explicitly added it via "+ Add property" in this session
-//     (priority / due_date / labels)
+//     (priority / labels)
 //
 // Parent is not in either group — it has its own standalone section below
 // the Properties block, rendered only when the issue actually has a parent.
@@ -297,7 +298,7 @@ const EMPTY_REPLIES: TimelineEntry[] = [];
 // means appending here, wiring its row in the JSX switch below, and
 // adding a locale key. The picker, visibility rules, and add-property
 // menu all flow from this one list.
-const OPTIONAL_PROP_KEYS = ["priority", "start_date", "due_date", "labels"] as const;
+const OPTIONAL_PROP_KEYS = ["priority", "labels"] as const;
 type OptionalPropKey = (typeof OPTIONAL_PROP_KEYS)[number];
 
 function isOptionalPropSet(
@@ -308,10 +309,6 @@ function isOptionalPropSet(
   switch (key) {
     case "priority":
       return issue.priority !== "none";
-    case "start_date":
-      return !!issue.start_date;
-    case "due_date":
-      return !!issue.due_date;
     case "labels":
       return attachedLabelsCount > 0;
   }
@@ -1382,6 +1379,22 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             />
           </PropRow>
 
+          {/* Start / due date — always-rendered core rows. When the issue has
+              no value the picker renders its own placeholder trigger label, so
+              the row reads as an empty, editable affordance (matching Linear). */}
+          <PropRow label={t(($) => $.detail.prop_start_date)}>
+            <StartDatePicker
+              startDate={issue.start_date}
+              onUpdate={handleUpdateField}
+            />
+          </PropRow>
+          <PropRow label={t(($) => $.detail.prop_due_date)}>
+            <DueDatePicker
+              dueDate={issue.due_date}
+              onUpdate={handleUpdateField}
+            />
+          </PropRow>
+
           {/* Optional props — rendered only when set on the issue OR added
               via "+ Add property" in this session. Row order follows the
               order of `OPTIONAL_PROP_KEYS`. */}
@@ -1392,24 +1405,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 onUpdate={handleUpdateField}
                 align="start"
                 defaultOpen={autoOpenProp === "priority"}
-              />
-            </PropRow>
-          )}
-          {visibleOptionalProps.has("start_date") && (
-            <PropRow label={t(($) => $.detail.prop_start_date)}>
-              <StartDatePicker
-                startDate={issue.start_date}
-                onUpdate={handleUpdateField}
-                defaultOpen={autoOpenProp === "start_date"}
-              />
-            </PropRow>
-          )}
-          {visibleOptionalProps.has("due_date") && (
-            <PropRow label={t(($) => $.detail.prop_due_date)}>
-              <DueDatePicker
-                dueDate={issue.due_date}
-                onUpdate={handleUpdateField}
-                defaultOpen={autoOpenProp === "due_date"}
               />
             </PropRow>
           )}
@@ -1451,19 +1446,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                       {k === "priority" && (
                         <PriorityIcon priority="medium" inheritColor className="text-muted-foreground" />
                       )}
-                      {k === "start_date" && (
-                        <CalendarClock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      )}
-                      {k === "due_date" && (
-                        <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      )}
                       {k === "labels" && (
                         <Tag className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       )}
                       <span className="truncate">
                         {k === "priority" && t(($) => $.detail.prop_priority)}
-                        {k === "start_date" && t(($) => $.detail.prop_start_date)}
-                        {k === "due_date" && t(($) => $.detail.prop_due_date)}
                         {k === "labels" && t(($) => $.detail.prop_labels)}
                       </span>
                     </button>

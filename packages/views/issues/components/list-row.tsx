@@ -1,14 +1,18 @@
 "use client";
 
-import { memo, type Ref } from "react";
+import { useCallback, memo, type Ref } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSortable, defaultAnimateLayoutChanges } from "@dnd-kit/sortable";
 import type { AnimateLayoutChanges } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { toast } from "sonner";
+import { CalendarClock, CalendarDays } from "lucide-react";
 import { AppLink } from "../../navigation";
-import type { Issue } from "@multica/core/types";
-import { formatDateOnly } from "@multica/core/issues/date";
+import type { Issue, UpdateIssueRequest } from "@multica/core/types";
+import { formatDateOnly, isPastDateOnly } from "@multica/core/issues/date";
+import { useUpdateIssue } from "@multica/core/issues/mutations";
 import { useDateLocale } from "../../i18n";
+import { useT } from "../../i18n";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useIssueSelectionStore } from "@multica/core/issues/stores/selection-store";
 import { useWorkspacePaths } from "@multica/core/paths";
@@ -17,6 +21,7 @@ import { useViewStore } from "@multica/core/issues/stores/view-store-context";
 import { projectListOptions } from "@multica/core/projects/queries";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { PriorityIcon } from "./priority-icon";
+import { StartDatePicker, DueDatePicker } from "./pickers";
 import { ProgressRing } from "./progress-ring";
 import { IssueActionsContextMenu } from "../actions";
 import { LabelChip } from "../../labels/label-chip";
@@ -30,6 +35,20 @@ export interface ChildProgress {
 
 function formatDate(date: string, locale: string): string {
   return formatDateOnly(date, { month: "short", day: "numeric" }, locale);
+}
+
+/** Stops the date-picker trigger click from bubbling to the row's Link / open
+ *  handler (mirrors the same helper in board-card). */
+function PickerWrapper({ children, className }: { children: React.ReactNode; className?: string }) {
+  const stop = (e: React.SyntheticEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+  };
+  return (
+    <div onClick={stop} onMouseDown={stop} onPointerDown={stop} className={className}>
+      {children}
+    </div>
+  );
 }
 
 function ListRowContent({
@@ -49,10 +68,28 @@ function ListRowContent({
   containerProps?: Record<string, unknown>;
   checkboxProps?: Pick<React.HTMLAttributes<HTMLDivElement>, "onClick" | "onMouseDown" | "onPointerDown">;
 }) {
+  const { t } = useT("issues");
   const selected = useIssueSelectionStore((s) => s.selectedIds.has(issue.id));
   const toggle = useIssueSelectionStore((s) => s.toggle);
   const { locale } = useDateLocale();
   const pane = useIssuePane();
+  const updateIssueMutation = useUpdateIssue();
+  const handleUpdate = useCallback(
+    (updates: Partial<UpdateIssueRequest>) => {
+      updateIssueMutation.mutate(
+        { id: issue.id, ...updates },
+        {
+          onError: (err) =>
+            toast.error(
+              err instanceof Error && err.message
+                ? err.message
+                : t(($) => $.card.update_failed),
+            ),
+        },
+      );
+    },
+    [issue.id, updateIssueMutation, t],
+  );
   const isActive = pane?.activeIssueId === issue.id;
   const p = useWorkspacePaths();
   const storeProperties = useViewStore((s) => s.cardProperties);
@@ -108,14 +145,40 @@ function ListRowContent({
         </span>
       )}
       {showStartDate && (
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {formatDate(issue.start_date!, locale)}
-        </span>
+        <PickerWrapper className="shrink-0">
+          <StartDatePicker
+            startDate={issue.start_date}
+            onUpdate={handleUpdate}
+            align="end"
+            trigger={
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <CalendarClock className="size-3" />
+                {formatDate(issue.start_date!, locale)}
+              </span>
+            }
+          />
+        </PickerWrapper>
       )}
       {showDueDate && (
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {formatDate(issue.due_date!, locale)}
-        </span>
+        <PickerWrapper className="shrink-0">
+          <DueDatePicker
+            dueDate={issue.due_date}
+            onUpdate={handleUpdate}
+            align="end"
+            trigger={
+              <span
+                className={`flex items-center gap-1 text-xs ${
+                  isPastDateOnly(issue.due_date)
+                    ? "text-destructive"
+                    : "text-muted-foreground"
+                }`}
+              >
+                <CalendarDays className="size-3" />
+                {formatDate(issue.due_date!, locale)}
+              </span>
+            }
+          />
+        </PickerWrapper>
       )}
       {showAssignee && (
         <ActorAvatar
