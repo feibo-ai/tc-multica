@@ -27,7 +27,9 @@
     "status": "Status",
     "progress": "Progress",
     "lead": "Lead",
-    "created": "Created"
+    "created": "Created",
+    "start_date": "Start",
+    "due_date": "Due"
   },
   "status": {
     "planned": "Planned",
@@ -136,5 +138,15 @@
   },
   "chip": {
     "fallback_label": "Project"
+  },
+  "pickers": {
+    "start_date": {
+      "trigger_label": "Start date",
+      "clear_action": "Clear date"
+    },
+    "due_date": {
+      "trigger_label": "Due date",
+      "clear_action": "Clear date"
+    }
   }
 }

@@ -27,7 +27,9 @@
     "status": "ステータス",
     "progress": "進捗",
     "lead": "リード",
-    "created": "作成日"
+    "created": "作成日",
+    "start_date": "開始",
+    "due_date": "期限"
   },
   "status": {
     "planned": "計画中",
@@ -136,5 +138,15 @@
   },
   "chip": {
     "fallback_label": "プロジェクト"
+  },
+  "pickers": {
+    "start_date": {
+      "trigger_label": "開始日",
+      "clear_action": "日付をクリア"
+    },
+    "due_date": {
+      "trigger_label": "期限",
+      "clear_action": "日付をクリア"
+    }
   }
 }

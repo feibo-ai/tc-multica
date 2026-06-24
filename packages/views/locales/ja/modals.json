@@ -95,6 +95,8 @@
     "members_group": "メンバー",
     "agents_group": "エージェント",
     "no_results": "結果なし",
+    "start_date": "開始日",
+    "due_date": "期限",
     "submit": "プロジェクトを作成",
     "submitting": "作成中...",
     "toast_created": "プロジェクトを作成しました",

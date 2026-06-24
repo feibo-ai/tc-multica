@@ -29,8 +29,9 @@ import { useFormatRelativeDate } from "./labels";
 import { useProjectViewStore } from "@multica/core/projects";
 import { ProjectStatusBadge, ProjectPriorityBadge, ProjectHealthBadge } from "./project-badge";
 import { ProjectLeadPicker } from "./project-lead-picker";
+import { ProjectDatePicker } from "./project-date-picker";
 
-const COMPACT_GRID = "grid w-full min-w-[740px] grid-cols-[24px_minmax(200px,1fr)_96px_96px_80px_80px_80px]";
+const COMPACT_GRID = "grid w-full min-w-[908px] grid-cols-[24px_minmax(200px,1fr)_96px_96px_80px_80px_80px_88px_80px]";
 
 function ProjectCard({ project }: { project: Project }) {
   const { t } = useT("projects");
@@ -117,9 +118,27 @@ function ProjectCard({ project }: { project: Project }) {
           )}
         />
 
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <ProjectPriorityBadge project={project} handleUpdate={handleUpdate} align="start" />
-          <span className="text-[10px] text-muted-foreground">
+          {project.start_date && (
+            <span className="flex min-w-0 shrink items-center truncate text-[10px]">
+              <ProjectDatePicker
+                kind="start"
+                value={project.start_date}
+                onChange={(v) => handleUpdate({ start_date: v })}
+                align="end"
+              />
+            </span>
+          )}
+          <span className="flex min-w-0 shrink items-center truncate text-[10px]">
+            <ProjectDatePicker
+              kind="due"
+              value={project.due_date}
+              onChange={(v) => handleUpdate({ due_date: v })}
+              align="end"
+            />
+          </span>
+          <span className="shrink-0 text-[10px] text-muted-foreground">
             {formatRelativeDate(project.created_at)}
           </span>
         </div>
@@ -181,6 +200,24 @@ function ProjectCardCompact({ project }: { project: Project }) {
           </button>
         )}
       />
+
+      <div className="flex min-w-0 items-center justify-start">
+        <ProjectDatePicker
+          kind="start"
+          value={project.start_date}
+          onChange={(v) => handleUpdate({ start_date: v })}
+          align="end"
+        />
+      </div>
+
+      <div className="flex min-w-0 items-center justify-start">
+        <ProjectDatePicker
+          kind="due"
+          value={project.due_date}
+          onChange={(v) => handleUpdate({ due_date: v })}
+          align="end"
+        />
+      </div>
 
       <span className="text-left text-xs text-muted-foreground tabular-nums">
         {formatRelativeDate(project.created_at)}
@@ -334,7 +371,7 @@ export function ProjectsPage() {
           {isLoading ? (
             isCompact ? (
               <div className="pt-4 mx-5 overflow-x-auto rounded-md border pb-4 mb-5">
-                <div className="min-w-[740px]">
+                <div className="min-w-[908px]">
                   <div className={cn(COMPACT_GRID, "h-10 items-center gap-2 px-4 border-b")}>
                     <Skeleton className="h-6 w-6 rounded" />
                     <Skeleton className="h-4 w-48" />
@@ -392,7 +429,7 @@ export function ProjectsPage() {
             </div>
           ) : isCompact ? (
             <div className="mt-4 mx-5 rounded-md border mb-5 overflow-auto flex-1">
-              <div className="min-w-[740px]">
+              <div className="min-w-[908px]">
                 <div className={cn(COMPACT_GRID, "h-8 shrink-0 items-center gap-2 px-4 text-xs font-medium text-muted-foreground border-b bg-muted/30 backdrop-blur sticky top-0 z-10")}>
                   <span />
                   <span className="text-left">{t(($) => $.table.name)}</span>
@@ -400,6 +437,8 @@ export function ProjectsPage() {
                   <span className="text-left">{t(($) => $.table.status)}</span>
                   <span className="text-left">{t(($) => $.table.progress)}</span>
                   <span className="text-left">{t(($) => $.table.lead)}</span>
+                  <span className="text-left">{t(($) => $.table.start_date)}</span>
+                  <span className="text-left">{t(($) => $.table.due_date)}</span>
                   <span className="text-left">{t(($) => $.table.created)}</span>
                 </div>
                 <div className="pb-4">

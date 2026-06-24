@@ -96,6 +96,8 @@
     "members_group": "Members",
     "agents_group": "Agents",
     "no_results": "No results",
+    "start_date": "Start date",
+    "due_date": "Due date",
     "submit": "Create Project",
     "submitting": "Creating...",
     "toast_created": "Project created",
