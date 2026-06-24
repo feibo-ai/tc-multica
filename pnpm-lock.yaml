@@ -39,6 +39,9 @@ catalogs:
     clsx:
       specifier: ^2.1.1
       version: 2.1.1
+    date-fns:
+      specifier: ^4.1.0
+      version: 4.1.0
     eslint-plugin-i18next:
       specifier: ^6.1.4
       version: 6.1.4
@@ -837,7 +840,7 @@ importers:
         specifier: ^1.1.1
         version: 1.1.1(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       date-fns:
-        specifier: ^4.1.0
+        specifier: 'catalog:'
         version: 4.1.0
       embla-carousel-react:
         specifier: ^8.6.0
@@ -1035,6 +1038,9 @@ importers:
       cmdk:
         specifier: ^1.1.1
         version: 1.1.1(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      date-fns:
+        specifier: 'catalog:'
+        version: 4.1.0
       hast-util-to-html:
         specifier: ^9.0.5
         version: 9.0.5

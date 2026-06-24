@@ -8,6 +8,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { AppLink } from "../../navigation";
 import type { Issue } from "@multica/core/types";
 import { formatDateOnly } from "@multica/core/issues/date";
+import { useDateLocale } from "../../i18n";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useIssueSelectionStore } from "@multica/core/issues/stores/selection-store";
 import { useWorkspacePaths } from "@multica/core/paths";
@@ -27,8 +28,8 @@ export interface ChildProgress {
   total: number;
 }
 
-function formatDate(date: string): string {
-  return formatDateOnly(date, { month: "short", day: "numeric" }, "en-US");
+function formatDate(date: string, locale: string): string {
+  return formatDateOnly(date, { month: "short", day: "numeric" }, locale);
 }
 
 function ListRowContent({
@@ -50,6 +51,7 @@ function ListRowContent({
 }) {
   const selected = useIssueSelectionStore((s) => s.selectedIds.has(issue.id));
   const toggle = useIssueSelectionStore((s) => s.toggle);
+  const { locale } = useDateLocale();
   const pane = useIssuePane();
   const isActive = pane?.activeIssueId === issue.id;
   const p = useWorkspacePaths();
@@ -107,12 +109,12 @@ function ListRowContent({
       )}
       {showStartDate && (
         <span className="shrink-0 text-xs text-muted-foreground">
-          {formatDate(issue.start_date!)}
+          {formatDate(issue.start_date!, locale)}
         </span>
       )}
       {showDueDate && (
         <span className="shrink-0 text-xs text-muted-foreground">
-          {formatDate(issue.due_date!)}
+          {formatDate(issue.due_date!, locale)}
         </span>
       )}
       {showAssignee && (

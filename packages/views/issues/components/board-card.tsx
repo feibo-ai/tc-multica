@@ -15,7 +15,7 @@ import { useUpdateIssue } from "@multica/core/issues/mutations";
 import { useWorkspacePaths } from "@multica/core/paths";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useActorName } from "@multica/core/workspace/hooks";
-import { useTimeAgo } from "../../i18n";
+import { useDateLocale, useTimeAgo } from "../../i18n";
 import { projectListOptions } from "@multica/core/projects/queries";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { PriorityIcon } from "./priority-icon";
@@ -29,8 +29,8 @@ import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
 import { useIssuePane } from "./issue-pane";
 import { useT } from "../../i18n";
 
-function formatDate(date: string): string {
-  return formatDateOnly(date, { month: "short", day: "numeric" }, "en-US");
+function formatDate(date: string, locale: string): string {
+  return formatDateOnly(date, { month: "short", day: "numeric" }, locale);
 }
 
 function descriptionPreview(markdown: string): string {
@@ -67,6 +67,7 @@ export const BoardCardContent = memo(function BoardCardContent({
   childProgress?: ChildProgress;
 }) {
   const { t } = useT("issues");
+  const { locale } = useDateLocale();
   const timeAgo = useTimeAgo();
   const storeProperties = useViewStore((s) => s.cardProperties);
   const wsId = useWorkspaceId();
@@ -239,7 +240,7 @@ export const BoardCardContent = memo(function BoardCardContent({
                       trigger={
                         <span className="flex items-center gap-1 text-xs text-muted-foreground">
                           <CalendarClock className="size-3" />
-                          {formatDate(issue.start_date!)}
+                          {formatDate(issue.start_date!, locale)}
                         </span>
                       }
                     />
@@ -247,7 +248,7 @@ export const BoardCardContent = memo(function BoardCardContent({
                 ) : (
                   <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
                     <CalendarClock className="size-3" />
-                    {formatDate(issue.start_date!)}
+                    {formatDate(issue.start_date!, locale)}
                   </span>
                 )
               )}
@@ -266,7 +267,7 @@ export const BoardCardContent = memo(function BoardCardContent({
                           }`}
                         >
                           <CalendarDays className="size-3" />
-                          {formatDate(issue.due_date!)}
+                          {formatDate(issue.due_date!, locale)}
                         </span>
                       }
                     />
@@ -280,7 +281,7 @@ export const BoardCardContent = memo(function BoardCardContent({
                     }`}
                   >
                     <CalendarDays className="size-3" />
-                    {formatDate(issue.due_date!)}
+                    {formatDate(issue.due_date!, locale)}
                   </span>
                 )
               )}

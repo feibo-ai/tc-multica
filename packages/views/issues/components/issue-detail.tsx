@@ -80,7 +80,7 @@ import { useIssueSubscribers } from "../hooks/use-issue-subscribers";
 import { ReactionBar } from "@multica/ui/components/common/reaction-bar";
 import { useFileUpload } from "@multica/core/hooks/use-file-upload";
 import { api } from "@multica/core/api";
-import { useTimeAgo } from "../../i18n";
+import { useDateLocale, useTimeAgo } from "../../i18n";
 import { cn } from "@multica/ui/lib/utils";
 
 import { ProgressRing } from "./progress-ring";
@@ -169,9 +169,9 @@ function SubscriberPopoverContent({
   );
 }
 
-function shortDate(date: string | null): string {
+function shortDate(date: string | null, locale: string): string {
   if (!date) return "—";
-  return formatDateOnly(date, { month: "short", day: "numeric" }, "en-US");
+  return formatDateOnly(date, { month: "short", day: "numeric" }, locale);
 }
 
 type ActivityT = ReturnType<typeof useT<"issues">>["t"];
@@ -193,6 +193,7 @@ function priorityLabel(priority: string, t: ActivityT): string {
 function formatActivity(
   entry: TimelineEntry,
   t: ActivityT,
+  locale: string,
   resolveActorName?: (type: string, id: string) => string,
 ): string {
   const details = (entry.details ?? {}) as Record<string, string>;
@@ -221,12 +222,12 @@ function formatActivity(
     }
     case "start_date_changed": {
       if (!details.to) return t(($) => $.activity.start_date_removed);
-      const formatted = formatDateOnly(details.to, { month: "short", day: "numeric" }, "en-US");
+      const formatted = formatDateOnly(details.to, { month: "short", day: "numeric" }, locale);
       return t(($) => $.activity.start_date_set, { date: formatted });
     }
     case "due_date_changed": {
       if (!details.to) return t(($) => $.activity.due_date_removed);
-      const formatted = formatDateOnly(details.to, { month: "short", day: "numeric" }, "en-US");
+      const formatted = formatDateOnly(details.to, { month: "short", day: "numeric" }, locale);
       return t(($) => $.activity.due_date_set, { date: formatted });
     }
     case "title_changed":
@@ -407,6 +408,7 @@ function ActivityBlock({
   onToggleShowOlder,
   getActorName,
   t,
+  locale,
   timeAgo,
 }: {
   entries: TimelineEntry[];
@@ -420,6 +422,7 @@ function ActivityBlock({
   onToggleShowOlder: () => void;
   getActorName: (type: string, id: string) => string;
   t: ActivityT;
+  locale: string;
   timeAgo: (dateStr: string) => string;
 }) {
   if (!expanded) {
@@ -499,7 +502,7 @@ function ActivityBlock({
             </div>
             <div className="flex min-w-0 flex-1 items-center gap-1">
               <span className="shrink-0 font-medium">{getActorName(entry.actor_type, entry.actor_id)}</span>
-              <span className="truncate">{formatActivity(entry, t, getActorName)}</span>
+              <span className="truncate">{formatActivity(entry, t, locale, getActorName)}</span>
               {(entry.coalesced_count ?? 1) > 1 &&
                 entry.action !== "task_completed" &&
                 entry.action !== "task_failed" && (
@@ -657,6 +660,7 @@ interface IssueDetailProps {
 
 export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "multica_issue_detail_layout", highlightCommentId }: IssueDetailProps) {
   const { t } = useT("issues");
+  const { locale } = useDateLocale();
   const timeAgo = useTimeAgo();
   const id = issueId;
   const router = useNavigation();
@@ -1531,10 +1535,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             <span className="cursor-pointer truncate">{getActorName(issue.creator_type, issue.creator_id)}</span>
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_created)}>
-            <span className="text-muted-foreground">{shortDate(issue.created_at)}</span>
+            <span className="text-muted-foreground">{shortDate(issue.created_at, locale)}</span>
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_updated)}>
-            <span className="text-muted-foreground">{shortDate(issue.updated_at)}</span>
+            <span className="text-muted-foreground">{shortDate(issue.updated_at, locale)}</span>
           </PropRow>
         </div>}
       </div>
@@ -1668,6 +1672,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         onToggleShowOlder={() => showOlderActivities(item.id)}
         getActorName={getActorName}
         t={t}
+        locale={locale}
         timeAgo={timeAgo}
       />
     );
