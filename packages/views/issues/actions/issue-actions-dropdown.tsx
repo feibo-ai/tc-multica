@@ -13,6 +13,8 @@ import {
   dropdownPrimitives,
 } from "./issue-actions-menu-items";
 import { AssigneePicker } from "../components/pickers";
+import { CalendarDatePicker } from "../../common/calendar-date-picker";
+import { useT } from "../../i18n";
 
 interface IssueActionsDropdownProps {
   issue: Issue;
@@ -29,8 +31,11 @@ export function IssueActionsDropdown({
   align = "end",
   onDeletedNavigateTo,
 }: IssueActionsDropdownProps) {
+  const { t } = useT("issues");
   const actions = useIssueActions(issue);
   const [assigneeOpen, setAssigneeOpen] = useState(false);
+  const [startDateOpen, setStartDateOpen] = useState(false);
+  const [dueDateOpen, setDueDateOpen] = useState(false);
 
   // The outer `relative inline-flex` is the picker's anchor box: the
   // absolute, pointer-events-none span inside `triggerRender` fills it, so
@@ -46,6 +51,8 @@ export function IssueActionsDropdown({
             actions={actions}
             primitives={dropdownPrimitives}
             onOpenAssignee={() => setAssigneeOpen(true)}
+            onOpenStartDate={() => setStartDateOpen(true)}
+            onOpenDueDate={() => setDueDateOpen(true)}
             onDeletedNavigateTo={onDeletedNavigateTo}
           />
         </DropdownMenuContent>
@@ -65,6 +72,36 @@ export function IssueActionsDropdown({
               aria-hidden
               className="pointer-events-none absolute inset-0"
             />
+          }
+          trigger={<span />}
+          align={align}
+        />
+      )}
+      {/* Calendar pickers handed off from the date submenus' "Pick a date…"
+          item, anchored to the 3-dot button, mounted only while open. */}
+      {startDateOpen && (
+        <CalendarDatePicker
+          value={issue.start_date}
+          onChange={(v) => actions.updateField({ start_date: v })}
+          open={startDateOpen}
+          onOpenChange={setStartDateOpen}
+          clearLabel={t(($) => $.pickers.start_date.clear_action)}
+          triggerRender={
+            <span aria-hidden className="pointer-events-none absolute inset-0" />
+          }
+          trigger={<span />}
+          align={align}
+        />
+      )}
+      {dueDateOpen && (
+        <CalendarDatePicker
+          value={issue.due_date}
+          onChange={(v) => actions.updateField({ due_date: v })}
+          open={dueDateOpen}
+          onOpenChange={setDueDateOpen}
+          clearLabel={t(($) => $.pickers.due_date.clear_action)}
+          triggerRender={
+            <span aria-hidden className="pointer-events-none absolute inset-0" />
           }
           trigger={<span />}
           align={align}

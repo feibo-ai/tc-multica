@@ -13,6 +13,8 @@ import {
   contextPrimitives,
 } from "./issue-actions-menu-items";
 import { AssigneePicker } from "../components/pickers";
+import { CalendarDatePicker } from "../../common/calendar-date-picker";
+import { useT } from "../../i18n";
 
 interface IssueActionsContextMenuProps {
   issue: Issue;
@@ -24,8 +26,11 @@ export function IssueActionsContextMenu({
   issue,
   children,
 }: IssueActionsContextMenuProps) {
+  const { t } = useT("issues");
   const actions = useIssueActions(issue);
   const [assigneeOpen, setAssigneeOpen] = useState(false);
+  const [startDateOpen, setStartDateOpen] = useState(false);
+  const [dueDateOpen, setDueDateOpen] = useState(false);
   // Right-click coordinates captured during contextmenu so the AssigneePicker
   // opens where the context menu just was, instead of jumping to the row's
   // top-left corner. Reset between opens; only consulted while the picker is
@@ -49,6 +54,8 @@ export function IssueActionsContextMenu({
             actions={actions}
             primitives={contextPrimitives}
             onOpenAssignee={() => setAssigneeOpen(true)}
+            onOpenStartDate={() => setStartDateOpen(true)}
+            onOpenDueDate={() => setDueDateOpen(true)}
           />
         </ContextMenuContent>
       </ContextMenu>
@@ -62,6 +69,55 @@ export function IssueActionsContextMenu({
           onUpdate={actions.updateField}
           open={assigneeOpen}
           onOpenChange={setAssigneeOpen}
+          triggerRender={
+            <span
+              aria-hidden
+              className="pointer-events-none fixed"
+              style={{
+                left: clickPosRef.current.x,
+                top: clickPosRef.current.y,
+                width: 0,
+                height: 0,
+              }}
+            />
+          }
+          trigger={<span />}
+          align="start"
+        />
+      )}
+      {/* Calendar pickers handed off from the date submenus' "Pick a date…"
+          item. Anchored at the right-click position like the assignee picker,
+          mounted only while open. */}
+      {startDateOpen && (
+        <CalendarDatePicker
+          value={issue.start_date}
+          onChange={(v) => actions.updateField({ start_date: v })}
+          open={startDateOpen}
+          onOpenChange={setStartDateOpen}
+          clearLabel={t(($) => $.pickers.start_date.clear_action)}
+          triggerRender={
+            <span
+              aria-hidden
+              className="pointer-events-none fixed"
+              style={{
+                left: clickPosRef.current.x,
+                top: clickPosRef.current.y,
+                width: 0,
+                height: 0,
+              }}
+            />
+          }
+          trigger={<span />}
+          align="start"
+        />
+      )}
+      {dueDateOpen && (
+        <CalendarDatePicker
+          value={issue.due_date}
+          onChange={(v) => actions.updateField({ due_date: v })}
+          open={dueDateOpen}
+          onOpenChange={setDueDateOpen}
+          clearLabel={t(($) => $.pickers.due_date.clear_action)}
           triggerRender={
             <span
               aria-hidden
