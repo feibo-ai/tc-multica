@@ -165,6 +165,10 @@ export const ProjectSchema = z.object({
   // Older backends (pre-DRI feature) won't emit the field at all — default
   // to null so the loose schema fills it in without rejecting the row.
   dri_user_id: z.string().nullable().default(null),
+  // Calendar days as "YYYY-MM-DD" (or null). Older backends won't emit them —
+  // default to null so the loose schema fills them in without rejecting.
+  start_date: z.string().nullable().default(null),
+  due_date: z.string().nullable().default(null),
   created_at: z.string(),
   updated_at: z.string(),
   issue_count: z.number().default(0),
@@ -199,6 +203,8 @@ export const EMPTY_PROJECT: Project = {
   lead_type: null,
   lead_id: null,
   dri_user_id: null,
+  start_date: null,
+  due_date: null,
   created_at: "",
   updated_at: "",
   issue_count: 0,
