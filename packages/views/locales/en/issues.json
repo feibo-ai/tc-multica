@@ -404,6 +404,7 @@
     "priority": "Priority",
     "assignee": "Assignee",
     "start_date": "Start date",
+    "pick_date": "Pick a date…",
     "start_today": "Today",
     "start_tomorrow": "Tomorrow",
     "start_next_week": "Next week",

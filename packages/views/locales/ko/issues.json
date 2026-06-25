@@ -404,6 +404,7 @@
     "priority": "우선순위",
     "assignee": "담당자",
     "start_date": "시작일",
+    "pick_date": "날짜 선택…",
     "start_today": "오늘",
     "start_tomorrow": "내일",
     "start_next_week": "다음 주",

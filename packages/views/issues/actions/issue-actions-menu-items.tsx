@@ -85,6 +85,12 @@ interface IssueActionsMenuItemsProps {
    *  Decoupled this way so the same item can drive both the dropdown
    *  (3-dot button) and the context menu (right-click) wrappers. */
   onOpenAssignee: () => void;
+  /** Called when the user clicks "Pick a date…" under Start / Due date. The
+   *  parent closes this menu and opens the shared calendar picker, mirroring
+   *  the assignee handoff. Quick presets (today / tomorrow / next week) stay
+   *  inline; the calendar covers arbitrary dates. */
+  onOpenStartDate: () => void;
+  onOpenDueDate: () => void;
   /** If set, navigate here after the issue is deleted (used by the detail page). */
   onDeletedNavigateTo?: string;
 }
@@ -94,6 +100,8 @@ export function IssueActionsMenuItems({
   actions,
   primitives: P,
   onOpenAssignee,
+  onOpenStartDate,
+  onOpenDueDate,
   onDeletedNavigateTo,
 }: IssueActionsMenuItemsProps) {
   const { t } = useT("issues");
@@ -200,6 +208,11 @@ export function IssueActionsMenuItems({
           {t(($) => $.actions.start_date)}
         </P.SubTrigger>
         <P.SubContent>
+          <P.Item onClick={onOpenStartDate}>
+            <CalendarClock className="h-3.5 w-3.5" />
+            {t(($) => $.actions.pick_date)}
+          </P.Item>
+          <P.Separator />
           <P.Item onClick={() => updateField({ start_date: todayDateOnly() })}>
             {t(($) => $.actions.start_today)}
           </P.Item>
@@ -227,6 +240,11 @@ export function IssueActionsMenuItems({
           {t(($) => $.actions.due_date)}
         </P.SubTrigger>
         <P.SubContent>
+          <P.Item onClick={onOpenDueDate}>
+            <Calendar className="h-3.5 w-3.5" />
+            {t(($) => $.actions.pick_date)}
+          </P.Item>
+          <P.Separator />
           <P.Item onClick={() => updateField({ due_date: todayDateOnly() })}>
             {t(($) => $.actions.due_today)}
           </P.Item>
