@@ -9,7 +9,6 @@ import {
   Archive,
   Calendar,
   CalendarClock,
-  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -80,7 +79,7 @@ import { useIssueSubscribers } from "../hooks/use-issue-subscribers";
 import { ReactionBar } from "@multica/ui/components/common/reaction-bar";
 import { useFileUpload } from "@multica/core/hooks/use-file-upload";
 import { api } from "@multica/core/api";
-import { useTimeAgo } from "../../i18n";
+import { useDateLocale, useTimeAgo } from "../../i18n";
 import { cn } from "@multica/ui/lib/utils";
 
 import { ProgressRing } from "./progress-ring";
@@ -169,9 +168,9 @@ function SubscriberPopoverContent({
   );
 }
 
-function shortDate(date: string | null): string {
+function shortDate(date: string | null, locale: string): string {
   if (!date) return "—";
-  return formatDateOnly(date, { month: "short", day: "numeric" }, "en-US");
+  return formatDateOnly(date, { month: "short", day: "numeric" }, locale);
 }
 
 type ActivityT = ReturnType<typeof useT<"issues">>["t"];
@@ -193,6 +192,7 @@ function priorityLabel(priority: string, t: ActivityT): string {
 function formatActivity(
   entry: TimelineEntry,
   t: ActivityT,
+  locale: string,
   resolveActorName?: (type: string, id: string) => string,
 ): string {
   const details = (entry.details ?? {}) as Record<string, string>;
@@ -221,12 +221,12 @@ function formatActivity(
     }
     case "start_date_changed": {
       if (!details.to) return t(($) => $.activity.start_date_removed);
-      const formatted = formatDateOnly(details.to, { month: "short", day: "numeric" }, "en-US");
+      const formatted = formatDateOnly(details.to, { month: "short", day: "numeric" }, locale);
       return t(($) => $.activity.start_date_set, { date: formatted });
     }
     case "due_date_changed": {
       if (!details.to) return t(($) => $.activity.due_date_removed);
-      const formatted = formatDateOnly(details.to, { month: "short", day: "numeric" }, "en-US");
+      const formatted = formatDateOnly(details.to, { month: "short", day: "numeric" }, locale);
       return t(($) => $.activity.due_date_set, { date: formatted });
     }
     case "title_changed":
@@ -284,10 +284,12 @@ const EMPTY_REPLIES: TimelineEntry[] = [];
 // ---------------------------------------------------------------------------
 //
 // Properties shown in the sidebar split into two groups:
-//   - core: always rendered (status / assignee / project)
+//   - core: always rendered (status / assignee / start date / due date /
+//     priority is core only insofar as it's wired below; the truly always-on
+//     rows are status / assignee / project / start_date / due_date)
 //   - optional: rendered only when the issue has a value for that field OR
 //     the user explicitly added it via "+ Add property" in this session
-//     (priority / due_date / labels)
+//     (priority / labels)
 //
 // Parent is not in either group — it has its own standalone section below
 // the Properties block, rendered only when the issue actually has a parent.
@@ -296,7 +298,7 @@ const EMPTY_REPLIES: TimelineEntry[] = [];
 // means appending here, wiring its row in the JSX switch below, and
 // adding a locale key. The picker, visibility rules, and add-property
 // menu all flow from this one list.
-const OPTIONAL_PROP_KEYS = ["priority", "start_date", "due_date", "labels"] as const;
+const OPTIONAL_PROP_KEYS = ["priority", "labels"] as const;
 type OptionalPropKey = (typeof OPTIONAL_PROP_KEYS)[number];
 
 function isOptionalPropSet(
@@ -307,10 +309,6 @@ function isOptionalPropSet(
   switch (key) {
     case "priority":
       return issue.priority !== "none";
-    case "start_date":
-      return !!issue.start_date;
-    case "due_date":
-      return !!issue.due_date;
     case "labels":
       return attachedLabelsCount > 0;
   }
@@ -407,6 +405,7 @@ function ActivityBlock({
   onToggleShowOlder,
   getActorName,
   t,
+  locale,
   timeAgo,
 }: {
   entries: TimelineEntry[];
@@ -420,6 +419,7 @@ function ActivityBlock({
   onToggleShowOlder: () => void;
   getActorName: (type: string, id: string) => string;
   t: ActivityT;
+  locale: string;
   timeAgo: (dateStr: string) => string;
 }) {
   if (!expanded) {
@@ -499,7 +499,7 @@ function ActivityBlock({
             </div>
             <div className="flex min-w-0 flex-1 items-center gap-1">
               <span className="shrink-0 font-medium">{getActorName(entry.actor_type, entry.actor_id)}</span>
-              <span className="truncate">{formatActivity(entry, t, getActorName)}</span>
+              <span className="truncate">{formatActivity(entry, t, locale, getActorName)}</span>
               {(entry.coalesced_count ?? 1) > 1 &&
                 entry.action !== "task_completed" &&
                 entry.action !== "task_failed" && (
@@ -657,6 +657,7 @@ interface IssueDetailProps {
 
 export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "multica_issue_detail_layout", highlightCommentId }: IssueDetailProps) {
   const { t } = useT("issues");
+  const { locale } = useDateLocale();
   const timeAgo = useTimeAgo();
   const id = issueId;
   const router = useNavigation();
@@ -1378,6 +1379,22 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             />
           </PropRow>
 
+          {/* Start / due date — always-rendered core rows. When the issue has
+              no value the picker renders its own placeholder trigger label, so
+              the row reads as an empty, editable affordance (matching Linear). */}
+          <PropRow label={t(($) => $.detail.prop_start_date)}>
+            <StartDatePicker
+              startDate={issue.start_date}
+              onUpdate={handleUpdateField}
+            />
+          </PropRow>
+          <PropRow label={t(($) => $.detail.prop_due_date)}>
+            <DueDatePicker
+              dueDate={issue.due_date}
+              onUpdate={handleUpdateField}
+            />
+          </PropRow>
+
           {/* Optional props — rendered only when set on the issue OR added
               via "+ Add property" in this session. Row order follows the
               order of `OPTIONAL_PROP_KEYS`. */}
@@ -1388,24 +1405,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 onUpdate={handleUpdateField}
                 align="start"
                 defaultOpen={autoOpenProp === "priority"}
-              />
-            </PropRow>
-          )}
-          {visibleOptionalProps.has("start_date") && (
-            <PropRow label={t(($) => $.detail.prop_start_date)}>
-              <StartDatePicker
-                startDate={issue.start_date}
-                onUpdate={handleUpdateField}
-                defaultOpen={autoOpenProp === "start_date"}
-              />
-            </PropRow>
-          )}
-          {visibleOptionalProps.has("due_date") && (
-            <PropRow label={t(($) => $.detail.prop_due_date)}>
-              <DueDatePicker
-                dueDate={issue.due_date}
-                onUpdate={handleUpdateField}
-                defaultOpen={autoOpenProp === "due_date"}
               />
             </PropRow>
           )}
@@ -1447,19 +1446,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                       {k === "priority" && (
                         <PriorityIcon priority="medium" inheritColor className="text-muted-foreground" />
                       )}
-                      {k === "start_date" && (
-                        <CalendarClock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      )}
-                      {k === "due_date" && (
-                        <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      )}
                       {k === "labels" && (
                         <Tag className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       )}
                       <span className="truncate">
                         {k === "priority" && t(($) => $.detail.prop_priority)}
-                        {k === "start_date" && t(($) => $.detail.prop_start_date)}
-                        {k === "due_date" && t(($) => $.detail.prop_due_date)}
                         {k === "labels" && t(($) => $.detail.prop_labels)}
                       </span>
                     </button>
@@ -1531,10 +1522,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             <span className="cursor-pointer truncate">{getActorName(issue.creator_type, issue.creator_id)}</span>
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_created)}>
-            <span className="text-muted-foreground">{shortDate(issue.created_at)}</span>
+            <span className="text-muted-foreground">{shortDate(issue.created_at, locale)}</span>
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_updated)}>
-            <span className="text-muted-foreground">{shortDate(issue.updated_at)}</span>
+            <span className="text-muted-foreground">{shortDate(issue.updated_at, locale)}</span>
           </PropRow>
         </div>}
       </div>
@@ -1668,6 +1659,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         onToggleShowOlder={() => showOlderActivities(item.id)}
         getActorName={getActorName}
         t={t}
+        locale={locale}
         timeAgo={timeAgo}
       />
     );

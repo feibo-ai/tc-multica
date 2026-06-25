@@ -18,6 +18,11 @@ export interface Project {
   // null when unset. Surfacing a null here as red in the UI is the
   // P-5-risk signal the backend list/filter is built to support.
   dri_user_id: string | null;
+  // Calendar days as date-only "YYYY-MM-DD" (no time, no timezone). Use the
+  // helpers in @multica/core/issues/date to format/compare — never `new Date()`
+  // + local formatting, which shifts the day by the viewer's offset.
+  start_date: string | null;
+  due_date: string | null;
   created_at: string;
   updated_at: string;
   issue_count: number;
@@ -34,6 +39,8 @@ export interface CreateProjectRequest {
   lead_type?: "member" | "agent";
   lead_id?: string;
   dri_user_id?: string;
+  start_date?: string | null;
+  due_date?: string | null;
   // Resources to attach in the same transaction as the project. Server returns
   // 4xx (and rolls back) if any one is invalid or duplicate.
   resources?: CreateProjectResourceRequest[];
@@ -48,6 +55,8 @@ export interface UpdateProjectRequest {
   lead_type?: "member" | "agent" | null;
   lead_id?: string | null;
   dri_user_id?: string | null;
+  start_date?: string | null;
+  due_date?: string | null;
 }
 
 export interface ListProjectsResponse {

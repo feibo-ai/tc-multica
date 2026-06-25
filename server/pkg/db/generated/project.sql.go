@@ -26,10 +26,10 @@ func (q *Queries) CountIssuesByProject(ctx context.Context, projectID pgtype.UUI
 const createProject = `-- name: CreateProject :one
 INSERT INTO project (
     workspace_id, title, description, icon, status,
-    lead_type, lead_id, priority, dri_user_id
+    lead_type, lead_id, priority, dri_user_id, start_date, due_date
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
-) RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, dri_user_id
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+) RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, dri_user_id, start_date, due_date
 `
 
 type CreateProjectParams struct {
@@ -42,6 +42,8 @@ type CreateProjectParams struct {
 	LeadID      pgtype.UUID `json:"lead_id"`
 	Priority    string      `json:"priority"`
 	DriUserID   pgtype.UUID `json:"dri_user_id"`
+	StartDate   pgtype.Date `json:"start_date"`
+	DueDate     pgtype.Date `json:"due_date"`
 }
 
 func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error) {
@@ -55,6 +57,8 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		arg.LeadID,
 		arg.Priority,
 		arg.DriUserID,
+		arg.StartDate,
+		arg.DueDate,
 	)
 	var i Project
 	err := row.Scan(
@@ -70,6 +74,8 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.UpdatedAt,
 		&i.Priority,
 		&i.DriUserID,
+		&i.StartDate,
+		&i.DueDate,
 	)
 	return i, err
 }
@@ -90,7 +96,7 @@ func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) er
 }
 
 const getProject = `-- name: GetProject :one
-SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, dri_user_id FROM project
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, dri_user_id, start_date, due_date FROM project
 WHERE id = $1
 `
 
@@ -110,12 +116,14 @@ func (q *Queries) GetProject(ctx context.Context, id pgtype.UUID) (Project, erro
 		&i.UpdatedAt,
 		&i.Priority,
 		&i.DriUserID,
+		&i.StartDate,
+		&i.DueDate,
 	)
 	return i, err
 }
 
 const getProjectInWorkspace = `-- name: GetProjectInWorkspace :one
-SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, dri_user_id FROM project
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, dri_user_id, start_date, due_date FROM project
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -140,6 +148,8 @@ func (q *Queries) GetProjectInWorkspace(ctx context.Context, arg GetProjectInWor
 		&i.UpdatedAt,
 		&i.Priority,
 		&i.DriUserID,
+		&i.StartDate,
+		&i.DueDate,
 	)
 	return i, err
 }
@@ -180,7 +190,7 @@ func (q *Queries) GetProjectIssueStats(ctx context.Context, projectIds []pgtype.
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, dri_user_id FROM project
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, dri_user_id, start_date, due_date FROM project
 WHERE workspace_id = $1
   AND ($2::text IS NULL OR status = $2)
   AND ($3::text IS NULL OR priority = $3)
@@ -215,6 +225,8 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 			&i.UpdatedAt,
 			&i.Priority,
 			&i.DriUserID,
+			&i.StartDate,
+			&i.DueDate,
 		); err != nil {
 			return nil, err
 		}
@@ -227,7 +239,7 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 }
 
 const listProjectsWithoutDRI = `-- name: ListProjectsWithoutDRI :many
-SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, dri_user_id FROM project
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, dri_user_id, start_date, due_date FROM project
 WHERE workspace_id = $1
   AND dri_user_id IS NULL
 ORDER BY created_at DESC
@@ -258,6 +270,8 @@ func (q *Queries) ListProjectsWithoutDRI(ctx context.Context, workspaceID pgtype
 			&i.UpdatedAt,
 			&i.Priority,
 			&i.DriUserID,
+			&i.StartDate,
+			&i.DueDate,
 		); err != nil {
 			return nil, err
 		}
@@ -274,7 +288,7 @@ UPDATE project
 SET dri_user_id = $1,
     updated_at = now()
 WHERE id = $2 AND workspace_id = $3
-RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, dri_user_id
+RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, dri_user_id, start_date, due_date
 `
 
 type SetProjectDRIParams struct {
@@ -301,6 +315,8 @@ func (q *Queries) SetProjectDRI(ctx context.Context, arg SetProjectDRIParams) (P
 		&i.UpdatedAt,
 		&i.Priority,
 		&i.DriUserID,
+		&i.StartDate,
+		&i.DueDate,
 	)
 	return i, err
 }
@@ -315,9 +331,11 @@ UPDATE project SET
     lead_type = $7,
     lead_id = $8,
     dri_user_id = COALESCE($9, dri_user_id),
+    start_date = $10,
+    due_date = $11,
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, dri_user_id
+RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, dri_user_id, start_date, due_date
 `
 
 type UpdateProjectParams struct {
@@ -330,6 +348,8 @@ type UpdateProjectParams struct {
 	LeadType    pgtype.Text `json:"lead_type"`
 	LeadID      pgtype.UUID `json:"lead_id"`
 	DriUserID   pgtype.UUID `json:"dri_user_id"`
+	StartDate   pgtype.Date `json:"start_date"`
+	DueDate     pgtype.Date `json:"due_date"`
 }
 
 func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error) {
@@ -343,6 +363,8 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		arg.LeadType,
 		arg.LeadID,
 		arg.DriUserID,
+		arg.StartDate,
+		arg.DueDate,
 	)
 	var i Project
 	err := row.Scan(
@@ -358,6 +380,8 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.UpdatedAt,
 		&i.Priority,
 		&i.DriUserID,
+		&i.StartDate,
+		&i.DueDate,
 	)
 	return i, err
 }

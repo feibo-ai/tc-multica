@@ -89,6 +89,12 @@ vi.mock("../common/actor-avatar", () => ({
   ActorAvatar: () => <span data-testid="actor-avatar" />,
 }));
 
+vi.mock("../common/calendar-date-picker", () => ({
+  CalendarDatePicker: ({ trigger }: { trigger?: React.ReactNode }) => (
+    <div>{trigger}</div>
+  ),
+}));
+
 vi.mock("@multica/ui/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DialogContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,

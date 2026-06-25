@@ -16,9 +16,9 @@ WHERE id = $1 AND workspace_id = $2;
 -- name: CreateProject :one
 INSERT INTO project (
     workspace_id, title, description, icon, status,
-    lead_type, lead_id, priority, dri_user_id
+    lead_type, lead_id, priority, dri_user_id, start_date, due_date
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 ) RETURNING *;
 
 -- name: UpdateProject :one
@@ -31,6 +31,8 @@ UPDATE project SET
     lead_type = sqlc.narg('lead_type'),
     lead_id = sqlc.narg('lead_id'),
     dri_user_id = COALESCE(sqlc.narg('dri_user_id'), dri_user_id),
+    start_date = sqlc.narg('start_date'),
+    due_date = sqlc.narg('due_date'),
     updated_at = now()
 WHERE id = $1
 RETURNING *;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { ChevronRight, FolderOpen, Maximize2, Minimize2, Search, X as XIcon, UserMinus } from "lucide-react";
+import { CalendarClock, CalendarDays, ChevronRight, FolderOpen, Maximize2, Minimize2, Search, X as XIcon, UserMinus } from "lucide-react";
 
 /**
  * GitHub mark — lucide-react v1 dropped brand icons, so we inline the
@@ -47,11 +47,13 @@ import { Popover, PopoverTrigger, PopoverContent } from "@multica/ui/components/
 import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
 import { Button } from "@multica/ui/components/ui/button";
 import { EmojiPicker } from "@multica/ui/components/common/emoji-picker";
+import { formatDateOnly } from "@multica/core/issues/date";
 import { ContentEditor, type ContentEditorRef, TitleEditor } from "../editor";
 import { PriorityIcon } from "../issues/components/priority-icon";
 import { ActorAvatar } from "../common/actor-avatar";
+import { CalendarDatePicker } from "../common/calendar-date-picker";
 import { useNavigation } from "../navigation";
-import { useT } from "../i18n";
+import { useT, useDateLocale } from "../i18n";
 import { matchesPinyin } from "../editor/extensions/pinyin-match";
 import {
   useProjectStatusLabels,
@@ -112,6 +114,10 @@ function RepoUrlText({
 
 export function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const { t } = useT("modals");
+  // Reuse the shared project date-picker copy for the clear-button label so it
+  // reads "Clear date" rather than the field name.
+  const { t: tProjects } = useT("projects");
+  const { locale } = useDateLocale();
   const router = useNavigation();
   const workspace = useCurrentWorkspace();
   const workspaceName = workspace?.name;
@@ -134,6 +140,8 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const [leadType, setLeadType] = useState<"member" | "agent" | undefined>(draft.leadType);
   const [leadId, setLeadId] = useState<string | undefined>(draft.leadId);
   const [icon, setIcon] = useState<string | undefined>(draft.icon);
+  const [startDate, setStartDate] = useState<string | null>(draft.startDate);
+  const [dueDate, setDueDate] = useState<string | null>(draft.dueDate);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -212,6 +220,8 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
     setDraft({ leadType: type, leadId: id });
   };
   const updateIcon = (v: string | undefined) => { setIcon(v); setDraft({ icon: v }); };
+  const updateStartDate = (v: string | null) => { setStartDate(v); setDraft({ startDate: v }); };
+  const updateDueDate = (v: string | null) => { setDueDate(v); setDraft({ dueDate: v }); };
 
   const [leadOpen, setLeadOpen] = useState(false);
   const [leadFilter, setLeadFilter] = useState("");
@@ -266,6 +276,8 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
         priority,
         lead_type: leadType,
         lead_id: leadId,
+        start_date: startDate ?? undefined,
+        due_date: dueDate ?? undefined,
         // Server attaches these in the same transaction as the project.
         resources,
       });
@@ -537,6 +549,42 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
               </div>
             </PopoverContent>
           </Popover>
+
+          <CalendarDatePicker
+            value={startDate}
+            onChange={updateStartDate}
+            align="start"
+            clearLabel={tProjects(($) => $.pickers.start_date.clear_action)}
+            triggerRender={<PillButton />}
+            trigger={
+              <>
+                <CalendarClock className="size-3 text-muted-foreground" />
+                {startDate ? (
+                  <span>{formatDateOnly(startDate, { month: "short", day: "numeric" }, locale)}</span>
+                ) : (
+                  <span className="text-muted-foreground">{t(($) => $.create_project.start_date)}</span>
+                )}
+              </>
+            }
+          />
+
+          <CalendarDatePicker
+            value={dueDate}
+            onChange={updateDueDate}
+            align="start"
+            clearLabel={tProjects(($) => $.pickers.due_date.clear_action)}
+            triggerRender={<PillButton />}
+            trigger={
+              <>
+                <CalendarDays className="size-3 text-muted-foreground" />
+                {dueDate ? (
+                  <span>{formatDateOnly(dueDate, { month: "short", day: "numeric" }, locale)}</span>
+                ) : (
+                  <span className="text-muted-foreground">{t(($) => $.create_project.due_date)}</span>
+                )}
+              </>
+            }
+          />
 
           <Popover
             open={repoPopoverOpen}

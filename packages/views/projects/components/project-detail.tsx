@@ -43,6 +43,7 @@ import { TitleEditor, ContentEditor, type ContentEditorRef } from "../../editor"
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { ProjectResourcesSection } from "./project-resources-section";
 import { ProjectDriSection } from "./project-dri-section";
+import { ProjectDatePicker } from "./project-date-picker";
 import { ProjectListRail } from "./project-list-rail";
 import { IssuesHeader } from "../../issues/components/issues-header";
 import { BoardView } from "../../issues/components/board-view";
@@ -753,6 +754,20 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           </PropRow>
           <PropRow label={t(($) => $.detail.dri_label)}>
             <ProjectDriSection project={project} members={members} wsId={wsId} />
+          </PropRow>
+          <PropRow label={t(($) => $.table.start_date)}>
+            <ProjectDatePicker
+              kind="start"
+              value={project.start_date}
+              onChange={(v) => handleUpdateField({ start_date: v })}
+            />
+          </PropRow>
+          <PropRow label={t(($) => $.table.due_date)}>
+            <ProjectDatePicker
+              kind="due"
+              value={project.due_date}
+              onChange={(v) => handleUpdateField({ due_date: v })}
+            />
           </PropRow>
         </div>}
       </div>

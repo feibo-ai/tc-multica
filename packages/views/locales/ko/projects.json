@@ -27,7 +27,9 @@
     "status": "상태",
     "progress": "진행률",
     "lead": "리드",
-    "created": "생성일"
+    "created": "생성일",
+    "start_date": "시작",
+    "due_date": "마감"
   },
   "status": {
     "planned": "계획됨",
@@ -136,5 +138,15 @@
   },
   "chip": {
     "fallback_label": "프로젝트"
+  },
+  "pickers": {
+    "start_date": {
+      "trigger_label": "시작일",
+      "clear_action": "날짜 지우기"
+    },
+    "due_date": {
+      "trigger_label": "마감일",
+      "clear_action": "날짜 지우기"
+    }
   }
 }

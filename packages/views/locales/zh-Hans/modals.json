@@ -96,6 +96,8 @@
     "members_group": "成员",
     "agents_group": "智能体",
     "no_results": "未找到结果",
+    "start_date": "开始日期",
+    "due_date": "截止日期",
     "submit": "创建项目",
     "submitting": "创建中...",
     "toast_created": "已创建项目",

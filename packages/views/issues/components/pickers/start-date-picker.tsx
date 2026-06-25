@@ -1,29 +1,18 @@
 "use client";
 
-import { useState } from "react";
 import { CalendarClock } from "lucide-react";
 import type { UpdateIssueRequest } from "@multica/core/types";
-import {
-  toDateOnly,
-  dateOnlyToLocalDate,
-  formatDateOnly,
-} from "@multica/core/issues/date";
-import { Calendar } from "@multica/ui/components/ui/calendar";
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "@multica/ui/components/ui/popover";
-import { Button } from "@multica/ui/components/ui/button";
-import { useT } from "../../../i18n";
+import { dateOnlyToLocalDate, formatDateOnly } from "@multica/core/issues/date";
+import { CalendarDatePicker } from "../../../common/calendar-date-picker";
+import { useDateLocale, useT } from "../../../i18n";
 
 export function StartDatePicker({
   startDate,
   onUpdate,
   trigger: customTrigger,
   triggerRender,
-  open: controlledOpen,
-  onOpenChange: controlledOnOpenChange,
+  open,
+  onOpenChange,
   align = "start",
   defaultOpen = false,
 }: {
@@ -39,55 +28,33 @@ export function StartDatePicker({
   defaultOpen?: boolean;
 }) {
   const { t } = useT("issues");
-  const [internalOpen, setInternalOpen] = useState(defaultOpen);
-  const open = controlledOpen ?? internalOpen;
-  const setOpen = controlledOnOpenChange ?? setInternalOpen;
+  const { locale } = useDateLocale();
   const date = dateOnlyToLocalDate(startDate);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        className={triggerRender ? undefined : "flex items-center gap-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors"}
-        render={triggerRender}
-      >
-        {customTrigger ?? (
+    <CalendarDatePicker
+      value={startDate}
+      onChange={(v) => onUpdate({ start_date: v })}
+      triggerRender={triggerRender}
+      open={open}
+      onOpenChange={onOpenChange}
+      align={align}
+      defaultOpen={defaultOpen}
+      clearLabel={t(($) => $.pickers.start_date.clear_action)}
+      trigger={
+        customTrigger ?? (
           <>
             <CalendarClock className="h-3.5 w-3.5 text-muted-foreground" />
             {date ? (
               <span>
-                {formatDateOnly(startDate, { month: "short", day: "numeric" }, "en-US")}
+                {formatDateOnly(startDate, { month: "short", day: "numeric" }, locale)}
               </span>
             ) : (
               <span className="text-muted-foreground">{t(($) => $.pickers.start_date.trigger_label)}</span>
             )}
           </>
-        )}
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align={align}>
-        <Calendar
-          mode="single"
-          selected={date}
-          onSelect={(d: Date | undefined) => {
-            onUpdate({ start_date: d ? toDateOnly(d) : null });
-            setOpen(false);
-          }}
-        />
-        {date && (
-          <div className="border-t px-3 py-2">
-            <Button
-              variant="ghost"
-              size="xs"
-              onClick={() => {
-                onUpdate({ start_date: null });
-                setOpen(false);
-              }}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              {t(($) => $.pickers.start_date.clear_action)}
-            </Button>
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
+        )
+      }
+    />
   );
 }

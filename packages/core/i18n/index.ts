@@ -17,4 +17,5 @@ export type {
 } from "./types";
 export { DEFAULT_LOCALE, SUPPORTED_LOCALES } from "./types";
 export { matchLocale, pickLocale } from "./pick-locale";
+export { toBcp47 } from "./date-locale";
 export { LOCALE_COOKIE } from "./browser-cookie-adapter";

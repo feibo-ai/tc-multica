@@ -27,7 +27,9 @@
     "status": "状态",
     "progress": "进度",
     "lead": "负责人",
-    "created": "创建时间"
+    "created": "创建时间",
+    "start_date": "开始",
+    "due_date": "截止"
   },
   "status": {
     "planned": "计划中",
@@ -136,5 +138,15 @@
   },
   "chip": {
     "fallback_label": "项目"
+  },
+  "pickers": {
+    "start_date": {
+      "trigger_label": "开始日期",
+      "clear_action": "清除日期"
+    },
+    "due_date": {
+      "trigger_label": "截止日期",
+      "clear_action": "清除日期"
+    }
   }
 }
