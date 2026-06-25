@@ -115,18 +115,35 @@ func (d *Daemon) saveCollectorStore(store collectorStore) {
 // so we attribute to a runtime of the matching provider that this daemon
 // manages, chosen deterministically by id.
 //
-// v1 LIMITATION (N4): if this daemon serves runtimes of one provider across
-// multiple workspaces, ALL machine-global ambient usage lands on the single
-// runtime chosen here. Cross-workspace machine-global attribution is explicitly
-// out of v1 scope. Returns "" when no matching runtime is registered yet.
+// Workspace attribution (TEA-922): when this daemon serves runtimes of one
+// provider across several workspaces, a member who works in many spaces should
+// not have all machine-global ambient usage silently land on the lowest-id
+// runtime (typically their personal space). If d.cfg.AmbientWorkspaceID is set
+// (env MULTICA_AMBIENT_WORKSPACE_ID, else the CLI default workspace) AND a
+// matching-provider runtime exists in that workspace, we pick the lowest-id
+// runtime *within that workspace*. Otherwise — no designated workspace, or no
+// matching runtime there — we fall back to the legacy global lowest-id. This
+// keeps behavior byte-for-byte identical when AmbientWorkspaceID is empty or
+// unmatched. Returns "" when no matching runtime is registered yet.
 func (d *Daemon) selectAmbientRuntime(source string) string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	wantWS := d.cfg.AmbientWorkspaceID
 	ids := make([]string, 0, len(d.runtimeIndex))
+	scoped := make([]string, 0, len(d.runtimeIndex))
 	for id, rt := range d.runtimeIndex {
-		if rt.Provider == source {
-			ids = append(ids, id)
+		if rt.Provider != source {
+			continue
 		}
+		ids = append(ids, id)
+		if wantWS != "" && rt.WorkspaceID == wantWS {
+			scoped = append(scoped, id)
+		}
+	}
+	// Prefer the designated workspace's lowest-id runtime when one exists.
+	if len(scoped) > 0 {
+		sort.Strings(scoped)
+		return scoped[0]
 	}
 	if len(ids) == 0 {
 		return ""
