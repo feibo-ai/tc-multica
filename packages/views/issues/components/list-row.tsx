@@ -14,6 +14,7 @@ import { useUpdateIssue } from "@multica/core/issues/mutations";
 import { useDateLocale } from "../../i18n";
 import { useT } from "../../i18n";
 import { ActorAvatar } from "../../common/actor-avatar";
+import { PickerWrapper } from "../../common/picker-wrapper";
 import { useIssueSelectionStore } from "@multica/core/issues/stores/selection-store";
 import { useWorkspacePaths } from "@multica/core/paths";
 import { useWorkspaceId } from "@multica/core/hooks";
@@ -35,20 +36,6 @@ export interface ChildProgress {
 
 function formatDate(date: string, locale: string): string {
   return formatDateOnly(date, { month: "short", day: "numeric" }, locale);
-}
-
-/** Stops the date-picker trigger click from bubbling to the row's Link / open
- *  handler (mirrors the same helper in board-card). */
-function PickerWrapper({ children, className }: { children: React.ReactNode; className?: string }) {
-  const stop = (e: React.SyntheticEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-  };
-  return (
-    <div onClick={stop} onMouseDown={stop} onPointerDown={stop} className={className}>
-      {children}
-    </div>
-  );
 }
 
 function ListRowContent({

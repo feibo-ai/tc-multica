@@ -11,6 +11,7 @@ import { formatDateOnly, isPastDateOnly } from "@multica/core/issues/date";
 import { CalendarClock, CalendarDays } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { ActorAvatar } from "../../common/actor-avatar";
+import { PickerWrapper } from "../../common/picker-wrapper";
 import { useUpdateIssue } from "@multica/core/issues/mutations";
 import { useWorkspacePaths } from "@multica/core/paths";
 import { useWorkspaceId } from "@multica/core/hooks";
@@ -42,19 +43,6 @@ function descriptionPreview(markdown: string): string {
     .replace(/^[\s>#]+/gm, "")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-/** Stops event from bubbling to Link/drag handlers */
-function PickerWrapper({ children, className }: { children: React.ReactNode; className?: string }) {
-  const stop = (e: React.SyntheticEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-  };
-  return (
-    <div onClick={stop} onMouseDown={stop} onPointerDown={stop} className={className}>
-      {children}
-    </div>
-  );
 }
 
 export const BoardCardContent = memo(function BoardCardContent({
