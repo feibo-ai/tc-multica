@@ -34,8 +34,8 @@ Common resource types:
 ```bash
 multica project list --output json
 multica project get <project-id> --output json
-multica project create --title "<title>" --repo <github-url> --output json
-multica project update <project-id> --title "<title>" --output json
+multica project create --title "<title>" --dri <user-uuid> --start-date <YYYY-MM-DD> --due-date <YYYY-MM-DD> --priority <urgent|high|medium|low|none> --repo <github-url> --output json
+multica project update <project-id> --start-date <YYYY-MM-DD> --due-date <YYYY-MM-DD> --priority <urgent|high|medium|low|none> --output json
 multica project status <project-id> in_progress --output json
 multica project resource list <project-id> --output json
 multica project resource add <project-id> --type github_repo --url <github-url> --output json
@@ -45,6 +45,8 @@ multica project resource remove <project-id> <resource-id> --output json
 ```
 
 Use `--ref '<json>'` only for resource types or payloads not covered by shortcuts.
+
+`--dri` (SOP P-5: the one human accountable), `--start-date` / `--due-date` (calendar day, `YYYY-MM-DD`), and `--priority` (`urgent|high|medium|low|none`) are settable on both `create` and `update`. On `update`, pass an empty string to `--start-date` / `--due-date` to clear the date. The server validates the priority enum and date format and rejects bad values.
 
 ## When to add a resource
 

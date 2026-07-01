@@ -146,6 +146,9 @@ func init() {
 	projectCreateCmd.Flags().String("icon", "", "Project icon (emoji)")
 	projectCreateCmd.Flags().String("lead", "", "Lead name (member or agent)")
 	projectCreateCmd.Flags().String("dri", "", "User UUID for the project DRI (SOP P-5)")
+	projectCreateCmd.Flags().String("priority", "", "Project priority (urgent, high, medium, low, none)")
+	projectCreateCmd.Flags().String("start-date", "", "Start date (calendar day, YYYY-MM-DD)")
+	projectCreateCmd.Flags().String("due-date", "", "Due date (calendar day, YYYY-MM-DD)")
 	projectCreateCmd.Flags().StringArray("repo", nil, "Attach a github_repo resource by URL (may be repeated)")
 	projectCreateCmd.Flags().String("output", "json", "Output format: table or json")
 
@@ -189,6 +192,9 @@ func init() {
 	projectUpdateCmd.Flags().String("icon", "", "New icon (emoji)")
 	projectUpdateCmd.Flags().String("lead", "", "New lead name (member or agent)")
 	projectUpdateCmd.Flags().String("dri", "", "Set DRI user UUID (use empty string to clear)")
+	projectUpdateCmd.Flags().String("priority", "", "New priority (urgent, high, medium, low, none)")
+	projectUpdateCmd.Flags().String("start-date", "", "New start date (calendar day, YYYY-MM-DD; pass empty string to clear)")
+	projectUpdateCmd.Flags().String("due-date", "", "New due date (calendar day, YYYY-MM-DD; pass empty string to clear)")
 	projectUpdateCmd.Flags().String("output", "json", "Output format: table or json")
 
 	// project delete
@@ -352,6 +358,17 @@ func runProjectCreate(cmd *cobra.Command, _ []string) error {
 	if v, _ := cmd.Flags().GetString("dri"); v != "" {
 		body["dri_user_id"] = v
 	}
+	// priority / start_date / due_date are validated server-side (enum +
+	// YYYY-MM-DD), mirroring `issue create` — pass the raw strings through.
+	if v, _ := cmd.Flags().GetString("priority"); v != "" {
+		body["priority"] = v
+	}
+	if v, _ := cmd.Flags().GetString("start-date"); v != "" {
+		body["start_date"] = v
+	}
+	if v, _ := cmd.Flags().GetString("due-date"); v != "" {
+		body["due_date"] = v
+	}
 
 	// Bundle resources into the create payload so the server attaches them in
 	// the same transaction; this avoids leaving a half-attached project on
@@ -441,9 +458,23 @@ func runProjectUpdate(cmd *cobra.Command, args []string) error {
 		v, _ := cmd.Flags().GetString("dri")
 		body["dri_user_id"] = v
 	}
+	// Passing an empty string clears the field server-side (priority keeps its
+	// enum validation; start/due dates become null). Matches `issue update`.
+	if cmd.Flags().Changed("priority") {
+		v, _ := cmd.Flags().GetString("priority")
+		body["priority"] = v
+	}
+	if cmd.Flags().Changed("start-date") {
+		v, _ := cmd.Flags().GetString("start-date")
+		body["start_date"] = v
+	}
+	if cmd.Flags().Changed("due-date") {
+		v, _ := cmd.Flags().GetString("due-date")
+		body["due_date"] = v
+	}
 
 	if len(body) == 0 {
-		return fmt.Errorf("no fields to update; use flags like --title, --status, --description, --icon, --lead, --dri")
+		return fmt.Errorf("no fields to update; use flags like --title, --status, --priority, --description, --icon, --lead, --dri, --start-date, --due-date")
 	}
 
 	var result map[string]any

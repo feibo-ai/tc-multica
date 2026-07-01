@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -192,4 +195,100 @@ func TestBuildResourceRefFromFlagsLocalDirectoryMerges(t *testing.T) {
 			t.Errorf("expected embedded label to be cleared, got %v", ref["label"])
 		}
 	})
+}
+
+func newProjectCreateTestCmd() *cobra.Command {
+	cmd := &cobra.Command{Use: "create"}
+	cmd.Flags().String("title", "", "")
+	cmd.Flags().String("description", "", "")
+	cmd.Flags().String("status", "", "")
+	cmd.Flags().String("icon", "", "")
+	cmd.Flags().String("lead", "", "")
+	cmd.Flags().String("dri", "", "")
+	cmd.Flags().String("priority", "", "")
+	cmd.Flags().String("start-date", "", "")
+	cmd.Flags().String("due-date", "", "")
+	cmd.Flags().StringArray("repo", nil, "")
+	cmd.Flags().String("output", "json", "")
+	return cmd
+}
+
+// TestRunProjectCreateSendsDatesDriPriority pins that `project create` forwards
+// --start-date/--due-date/--priority/--dri as start_date/due_date/priority/
+// dri_user_id in the POST body. These were API-only before; the CLI never
+// exposed them, so a CLI/skill-created project could not carry a start,
+// deadline, or priority.
+func TestRunProjectCreateSendsDatesDriPriority(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/projects" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"id": "proj-1", "title": "P", "status": "planned"})
+	}))
+	defer srv.Close()
+
+	t.Setenv("MULTICA_SERVER_URL", srv.URL)
+	t.Setenv("MULTICA_WORKSPACE_ID", "ws-1")
+	t.Setenv("MULTICA_TOKEN", "test-token")
+
+	cmd := newProjectCreateTestCmd()
+	_ = cmd.Flags().Set("title", "P")
+	_ = cmd.Flags().Set("dri", "11111111-1111-1111-1111-111111111111")
+	_ = cmd.Flags().Set("start-date", "2026-07-01")
+	_ = cmd.Flags().Set("due-date", "2026-07-31")
+	_ = cmd.Flags().Set("priority", "high")
+	if err := runProjectCreate(cmd, nil); err != nil {
+		t.Fatalf("runProjectCreate: %v", err)
+	}
+
+	if got := body["start_date"]; got != "2026-07-01" {
+		t.Errorf("start_date = %#v, want 2026-07-01", got)
+	}
+	if got := body["due_date"]; got != "2026-07-31" {
+		t.Errorf("due_date = %#v, want 2026-07-31", got)
+	}
+	if got := body["priority"]; got != "high" {
+		t.Errorf("priority = %#v, want high", got)
+	}
+	if got := body["dri_user_id"]; got != "11111111-1111-1111-1111-111111111111" {
+		t.Errorf("dri_user_id = %#v, want the passed UUID", got)
+	}
+}
+
+// TestRunProjectCreateOmitsUnsetFields pins that unset date/priority/dri flags
+// stay out of the body, so create never sends empty strings the server would
+// reject (bad date) or misread.
+func TestRunProjectCreateOmitsUnsetFields(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"id": "proj-1", "title": "P", "status": "planned"})
+	}))
+	defer srv.Close()
+
+	t.Setenv("MULTICA_SERVER_URL", srv.URL)
+	t.Setenv("MULTICA_WORKSPACE_ID", "ws-1")
+	t.Setenv("MULTICA_TOKEN", "test-token")
+
+	cmd := newProjectCreateTestCmd()
+	_ = cmd.Flags().Set("title", "P")
+	if err := runProjectCreate(cmd, nil); err != nil {
+		t.Fatalf("runProjectCreate: %v", err)
+	}
+
+	for _, k := range []string{"start_date", "due_date", "priority", "dri_user_id"} {
+		if _, present := body[k]; present {
+			t.Errorf("body should omit %q when its flag is unset, got %#v", k, body[k])
+		}
+	}
 }
